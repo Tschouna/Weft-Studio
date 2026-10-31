@@ -1,0 +1,86 @@
+{
+  "name": "weft-studio",
+  "productName": "Weft Studio",
+  "version": "1.0.0",
+  "description": "Parametric studio for 3D-printable homeware: planters, vases, bowls, boxes, cups and lamps.",
+  "main": "electron/main.js",
+  "author": "Jonah Scherrer",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "start": "npm run vendor && electron .",
+    "web": "node scripts/build-web.mjs",
+    "dist": "npm run vendor && electron-builder --win",
+    "dist:dir": "npm run vendor && electron-builder --win --dir",
+    "release": "npm run vendor && electron-builder --win --publish always",
+    "test": "node test/engine.mjs",
+    "set-repo": "node scripts/set-repo.mjs"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.17.0",
+    "fflate": "0.8.2",
+    "three": "0.160.0"
+  },
+  "weft": {
+    "updateRepo": ""
+  },
+  "build": {
+    "appId": "studio.weft.desktop",
+    "productName": "Weft Studio",
+    "copyright": "Copyright \u00a9 2026 Jonah Scherrer",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "app/**",
+      "!app/**/*.map",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Weft Studio",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "Weft-Studio-Setup-${version}.${ext}"
+    },
+    "fileAssociations": [
+      {
+        "ext": "weft",
+        "name": "Weft design",
+        "description": "Weft Studio design",
+        "icon": "build/icon.ico",
+        "role": "Editor"
+      }
+    ],
+    "publish": null,
+    "electronLanguages": [
+      "en-US",
+      "en-GB",
+      "de"
+    ],
+    "compression": "maximum"
+  }
+}

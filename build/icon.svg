@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d4724a"/>
+      <stop offset="1" stop-color="#8a381f"/>
+    </linearGradient>
+    <linearGradient id="pot" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fcf7ef"/>
+      <stop offset="1" stop-color="#e8dccb"/>
+    </linearGradient>
+    <clipPath id="body"><path d="M300 500 C300 500 286 690 384 818 Q398 838 428 838 H596 Q626 838 640 818 C738 690 724 500 724 500 Z"/></clipPath>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="212" fill="url(#bg)"/>
+  <rect x="48" y="48" width="928" height="464" rx="212" fill="#fff" opacity=".06"/>
+  <!-- leaves -->
+  <path d="M506 470 C430 410 352 330 330 210 C430 230 500 310 524 452 Z" fill="#b9c8a6"/>
+  <path d="M520 470 C560 380 640 300 760 288 C736 392 650 456 534 476 Z" fill="#cfdcbd"/>
+  <path d="M512 470 C500 400 470 330 420 270" stroke="#8fa27c" stroke-width="10" fill="none" stroke-linecap="round" opacity=".7"/>
+  <!-- pot -->
+  <path d="M300 500 C300 500 286 690 384 818 Q398 838 428 838 H596 Q626 838 640 818 C738 690 724 500 724 500 Z" fill="url(#pot)"/>
+  <g clip-path="url(#body)" stroke="#bd5a35" stroke-width="22" stroke-linecap="round" fill="none" opacity=".92">
+    <path d="M120 500 L470 980 M250 500 L600 980 M380 500 L730 980 M510 500 L860 980 M640 500 L990 980 M-10 500 L340 980"/>
+    <path d="M904 500 L554 980 M774 500 L424 980 M644 500 L294 980 M514 500 L164 980 M384 500 L34 980 M1034 500 L684 980"/>
+  </g>
+  <rect x="270" y="436" width="484" height="84" rx="28" fill="#fcf7ef"/>
+  <rect x="290" y="506" width="444" height="20" rx="6" fill="#000" opacity=".07"/>
+</svg>
