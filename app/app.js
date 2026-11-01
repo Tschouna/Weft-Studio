@@ -14,6 +14,7 @@ const PATTERNS = {
   voronoi: { label: 'Voronoi', modes: ['cut', 'relief'], cellMM: 26, count: 'Cells around', def: { jitter: 0.75, stretch: 1.35, width: 2.2, round: 1.4, depth: 1.4, profile: 'round', arch: true } },
   honeycomb: { label: 'Honeycomb', modes: ['cut', 'relief'], cellMM: 26, count: 'Cells around', def: { stretch: 1.8, width: 2.4, round: 1.0, depth: 1.4, profile: 'round', arch: false } },
   dots: { label: 'Dots', modes: ['cut', 'relief'], cellMM: 12, count: 'Dots around', def: { fill: 0.6, jitter: 0, vary: 0, stretch: 1, arch: true, depth: 1.2, profile: 'soft' } },
+  perforated: { label: 'Perforated', modes: ['cut', 'relief'], cellMM: 7, count: 'Holes around', def: { fill: 0.5, jitter: 0, vary: 0, stretch: 1, arch: true, depth: 0.8, profile: 'soft' } },
   wicker: { label: 'Wicker', modes: ['cut'], cellMM: 10, count: 'Strands around', def: { stretch: 1, width: 2.4, depth: 0.7, round: 0.4 } },
   ribs: { label: 'Ribs', modes: ['relief', 'cut'], cellMM: 11, count: 'Ribs around', def: { angle: 0, fill: 1, depth: 2.2, profile: 'round', width: 2.4, wave: 0, waveFreq: 1.5, round: 0.4 } },
   chevron: { label: 'Chevron', modes: ['relief', 'cut'], cellMM: 12, count: 'Ribs around', def: { angle: 32, stretch: 1, fill: 1, depth: 1.8, profile: 'round', width: 2.4, round: 0.4 } },
@@ -25,12 +26,17 @@ const PATTERNS = {
   rings: { label: 'Rings', modes: ['relief'], cellMM: 160, count: 'Drops around', def: { width: 5.5, fill: 1, depth: 0.8, profile: 'soft' } },
   hammered: { label: 'Hammered', modes: ['relief'], cellMM: 30, count: 'Dimples around', def: { jitter: 0.85, stretch: 1.1, depth: 2.0, profile: 'round' } },
   carved: { label: 'Carved', modes: ['relief'], cellMM: 30, count: 'Cells around', def: { stretch: 1.15, depth: 2.6, profile: 'round' } },
+  gouge: { label: 'Gouge', modes: ['relief'], cellMM: 28, count: 'Scoops around', def: { jitter: 0.8, stretch: 1.25, depth: 2.2 } },
+  cubes: { label: 'Cubes', modes: ['relief'], cellMM: 40, count: 'Cubes around', def: { stretch: 1, depth: 2.4 } },
+  knurl: { label: 'Knurl', modes: ['relief'], cellMM: 9, count: 'Diamonds around', def: { angle: 58, fill: 1, depth: 1.3, profile: 'sharp' } },
   knit: { label: 'Knit', modes: ['relief'], cellMM: 14, count: 'Stitches around', def: { stretch: 0.8, fill: 1, depth: 1.5, profile: 'soft' } },
   weave: { label: 'Basket', modes: ['relief'], cellMM: 18, count: 'Strands around', def: { stretch: 1, fill: 0.92, depth: 1.6, profile: 'round' } },
   petals: { label: 'Shingles', modes: ['relief'], cellMM: 30, count: 'Shingles around', def: { stretch: 0.9, depth: 1.3, profile: 'round' } },
+  seigaiha: { label: 'Seigaiha', modes: ['relief'], cellMM: 36, count: 'Waves around', def: { rows: 4, fill: 0.8, stretch: 1, depth: 1.2, profile: 'round' } },
   quilt: { label: 'Quilt', modes: ['relief'], cellMM: 30, count: 'Diamonds around', def: { angle: 60, fill: 1, depth: 2.0, profile: 'round' } },
   facets: { label: 'Facets', modes: ['relief'], cellMM: 34, count: 'Facets around', def: { stretch: 1, jitter: 0.5, depth: 2.2 } },
   tiles: { label: 'Tiles', modes: ['relief'], cellMM: 34, count: 'Tiles around', def: { stretch: 1, width: 1.6, depth: 1.2, profile: 'sharp', alt: true, round: 0.5 } },
+  herringbone: { label: 'Herringbone', modes: ['relief'], cellMM: 26, count: 'Chevrons around', def: { width: 1.4, depth: 1.2, profile: 'sharp' } },
   smooth: { label: 'Smooth', modes: ['none'], cellMM: 0, count: '', def: {} },
 };
 const PATTERN_CONTROLS = {
@@ -43,6 +49,12 @@ const PATTERN_CONTROLS = {
   voronoi: { cut: ['count', 'jitter', 'stretch', 'width', 'round', 'arch', 'gradient', 'seed'], relief: ['count', 'jitter', 'stretch', 'width', 'depth', 'profile', 'invert', 'seed'] },
   honeycomb: { cut: ['count', 'stretch', 'width', 'round', 'arch', 'gradient'], relief: ['count', 'stretch', 'width', 'depth', 'profile', 'invert'] },
   dots: { cut: ['count', 'dotSize', 'rowGap', 'jitter', 'vary', 'teardrop', 'seed'], relief: ['count', 'dotSize', 'rowGap', 'jitter', 'vary', 'depth', 'profile', 'invert', 'seed'] },
+  perforated: { cut: ['count', 'dotSize', 'rowGap', 'teardrop'], relief: ['count', 'dotSize', 'rowGap', 'depth', 'profile', 'invert'] },
+  gouge: { relief: ['count', 'jitter', 'stretch', 'depth', 'seed'] },
+  cubes: { relief: ['count', 'stretch', 'depth', 'invert'] },
+  knurl: { relief: ['count', 'angle', 'fill', 'depth', 'profile', 'invert'] },
+  seigaiha: { relief: ['count', 'fanRings', 'stretch', 'fill', 'depth', 'profile'] },
+  herringbone: { relief: ['count', 'grout', 'depth', 'profile', 'seed'] },
   wicker: { cut: ['count', 'strandGap', 'width', 'weaveDepth', 'round'] },
   reeds: { relief: ['count', 'nodes', 'fill', 'depth', 'profile', 'seed'] },
   bark: { relief: ['count', 'wander', 'fill', 'depth', 'profile', 'seed'] },
@@ -68,8 +80,8 @@ const SURF_SPECS = {
   count: { min: 3, max: 120, step: 1, fmt: (v) => `${v}` },
   rows: { label: 'Rows up the side', min: 6, max: 60, step: 1, fmt: (v) => `${v}` },
   angle: { label: 'Angle', min: 35, max: 78, step: 1, fmt: (v) => `${v}°` },
-  twist: { key: 'angle', label: 'Twist', min: -60, max: 60, step: 1, fmt: (v) => `${v}°` },
-  twistCut: { key: 'angle', label: 'Twist', min: -40, max: 40, step: 1, fmt: (v) => `${v}°` },
+  twist: { key: 'angle', label: 'Lean', min: -60, max: 60, step: 1, fmt: (v) => `${v}°` },
+  twistCut: { key: 'angle', label: 'Lean', min: -40, max: 40, step: 1, fmt: (v) => `${v}°` },
   zig: { key: 'angle', label: 'Zigzag angle', min: 10, max: 60, step: 1, fmt: (v) => `${v}°` },
   zigCut: { key: 'angle', label: 'Zigzag angle', min: 10, max: 40, step: 1, fmt: (v) => `${v}°` },
   zigH: { key: 'stretch', label: 'Zigzag height', min: 0.5, max: 3, step: 0.05, fmt: times },
@@ -96,6 +108,8 @@ const SURF_SPECS = {
   ripples: { key: 'rows', label: 'Ripples up the side', min: 8, max: 60, step: 1, fmt: (v) => `${v}` },
   drift: { key: 'wave', label: 'Drift', min: 0, max: 1, step: 0.01, fmt: (v) => v.toFixed(2) },
   ringGap: { key: 'width', label: 'Ring spacing', min: 2.5, max: 12, step: 0.1, fmt: mm1 },
+  fanRings: { key: 'rows', label: 'Rings per wave', min: 2, max: 7, step: 1, fmt: (v) => `${v}` },
+  swirl: { label: 'Swirl around the piece', min: -360, max: 360, step: 5, fmt: (v) => (v ? `${v > 0 ? '+' : ''}${v}°` : 'none') },
   round: { label: 'Fillet', min: 0, max: 3, step: 0.1, fmt: mm1 },
   wave: { label: 'Wave', min: 0, max: 1.2, step: 0.01, fmt: (v) => v.toFixed(2) },
   waveFreq: { label: 'Waves up the side', min: 0.5, max: 6, step: 0.5, fmt: (v) => `${v}` },
@@ -118,6 +132,7 @@ const OBJECT_DEFAULTS = {
   planter: { form: { height: 140, diameter: 150, base: 0.88, top: 1, belly: 0.5, fullness: 0.3, lip: 0, lipH: 12, inset: 1.5, wall: 1.8, floor: 2.4 }, extras: { drain: 8 } },
   box: { form: { height: 100, diameter: 180, base: 0.86, top: 0.9, belly: 0.5, fullness: 0.75, lip: 0, lipH: 12, inset: 1.2, wall: 1.8, floor: 2 }, extras: { lid: true } },
   pendant: { form: { height: 190, diameter: 250, base: 0.42, top: 0.93, belly: 0.6, fullness: 0.3, lip: 0, lipH: 12, inset: 0, wall: 1.6, floor: 2.4 }, extras: {} },
+  lamp: { form: { height: 210, diameter: 140, base: 1, top: 1.02, belly: 0.5, fullness: 0.12, lip: 0, lipH: 12, inset: 0, wall: 1.6, floor: 2 }, extras: { socket: 40, baseH: 55, cord: true } },
   bowl: { form: { height: 80, diameter: 240, base: 0.62, top: 0.97, belly: 0.7, fullness: 0.45, lip: 0, lipH: 12, inset: 1.2, wall: 1.8, floor: 2 }, extras: {} },
   vase: { form: { height: 180, diameter: 110, base: 0.85, top: 0.8, belly: 0.4, fullness: 0.5, lip: 4, lipH: 20, inset: 1.2, wall: 1.6, floor: 2 }, extras: {} },
   cup: { form: { height: 105, diameter: 90, base: 0.93, top: 1.03, belly: 0.5, fullness: 0.2, lip: 0, lipH: 12, inset: 1, wall: 1.8, floor: 2 }, extras: {} },
@@ -145,6 +160,7 @@ const MATERIALS = {
 const ICONS = {
   planter: '<path d="M9 14h22l-2.5 17a3 3 0 01-3 2.6h-11a3 3 0 01-3-2.6z"/><path d="M8 14h24"/><path d="M20 14c0-5 3-8 7-9M20 14c-1-4-4-6-8-6"/>',
   box: '<path d="M8 15h24l-1.5 15.5a3 3 0 01-3 2.5H12.5a3 3 0 01-3-2.5z"/><path d="M7 15c0-2 1-3 3-3h20c2 0 3 1 3 3z"/><path d="M18 12c0-2 1-3 2-3s2 1 2 3"/><path d="M12 19l4 10M18 19l4 10M24 19l4 10M28 19l-4 10M22 19l-4 10M16 19l-4 10" stroke-width="1" opacity=".6"/>',
+  lamp: '<path d="M13 5h14l3 21H10z"/><path d="M11 26h18v8H11z"/><path d="M15 9l11 13M25 9L14 22M12 16l6 7M28 16l-6 7" stroke-width="1" opacity=".6"/>',
   pendant: '<path d="M20 3v9"/><path d="M15 12h10l7 14c1 3-1 5-4 5H12c-3 0-5-2-4-5z"/><path d="M15 16l12 15M25 16L13 31M11 22l18 9M29 22l-18 9" stroke-width="1" opacity=".6"/>',
   bowl: '<path d="M5 18h30c0 7-6 13-15 13S5 25 5 18z"/><path d="M14 31h12"/><path d="M8 22l8 8M14 19l11 11M20 18l10 10M26 18l7 7M32 21l-9 9M26 19l-11 11M20 18L10 28" stroke-width="1" opacity=".6"/>',
   vase: '<path d="M15 4h10M16 4c0 4-6 7-6 15 0 7 3 13 5 15h10c2-2 5-8 5-15 0-8-6-11-6-15"/><path d="M16 15v18M20 13v21M24 15v18" stroke-width="1" opacity=".6"/>',
@@ -161,12 +177,14 @@ const NAMES = {
   box: ['Cache', 'Nest', 'Coffer', 'Trove', 'Keep', 'Burrow', 'Locket', 'Vault', 'Hearth', 'Ark', 'Den', 'Hollow'],
   cup: ['Quill', 'Nib', 'Spool', 'Thimble', 'Bobbin', 'Tally', 'Cairn', 'Pocket', 'Nook', 'Inkwell', 'Easel', 'Sketch'],
   pendant: ['Lumen', 'Halo', 'Aurora', 'Corona', 'Nimbus', 'Vesper', 'Lucia', 'Ember', 'Beacon', 'Solstice', 'Comet', 'Lyra', 'Stella', 'Orion'],
+  lamp: ['Strala', 'Glow', 'Lantern', 'Hearth', 'Candela', 'Lux', 'Dusk', 'Ember', 'Firefly', 'Nocturne'],
   lattice: ['Trellis', 'Lattice', 'Arbor'], prism: ['Prisma', 'Facet', 'Spectra'], ogee: ['Riad', 'Medina', 'Souk', 'Kasbah'],
   arches: ['Nave', 'Cloister', 'Vault', 'Abbey'], voronoi: ['Cellula', 'Coral', 'Sponge'], honeycomb: ['Hive', 'Comb', 'Apis'],
   dots: ['Pip', 'Polka', 'Dew'], wicker: ['Rattan', 'Cane', 'Wicker'], ribs: ['Pleat', 'Flute', 'Fold'], chevron: ['Zigzag', 'Herring', 'Arrow'],
   reeds: ['Bamboo', 'Cane', 'Reed'], waves: ['Ripple', 'Swell', 'Current'], topo: ['Contour', 'Strata', 'Ridge'], knit: ['Purl', 'Stitch', 'Cable'],
   weave: ['Loom', 'Warp', 'Basket'], petals: ['Scale', 'Shingle', 'Petal'], quilt: ['Tuft', 'Pillow', 'Quilt'], facets: ['Gem', 'Crystal', 'Shard'],
-  tiles: ['Tessera', 'Mosaic', 'Zellige'], hammered: ['Anvil', 'Forge', 'Pewter', 'Tinsmith'], carved: ['Chisel', 'Gouge', 'Burl', 'Comb'],
+  tiles: ['Tessera', 'Mosaic', 'Zellige'], perforated: ['Sieve', 'Pore', 'Glimmer'], knurl: ['Pinecone', 'Knurl', 'Rasp'],
+  cubes: ['Isomer', 'Cubist', 'Escher'], gouge: ['Chisel', 'Adze', 'Whittle'], seigaiha: ['Seigaiha', 'Nami', 'Kai'], herringbone: ['Parquet', 'Oak', 'Chevron'], hammered: ['Anvil', 'Forge', 'Pewter', 'Tinsmith'], carved: ['Chisel', 'Gouge', 'Burl', 'Comb'],
   rings: ['Ondine', 'Rain', 'Puddle', 'Droplet'], dunes: ['Sirocco', 'Erg', 'Sahel', 'Drift'], bark: ['Cork', 'Timber', 'Bough', 'Cedar'],
 };
 function makeName(d) {
@@ -608,13 +626,29 @@ function buildDisplay(res, d, opts) {
     root.add(cord, sock, cup);
     lightZ = top - 81; power = 30;
   }
+  if (d.object === 'lamp') {
+    // table lamp: the socket stands in the base's centre hole, the bulb above it inside the shade
+    const plate = d.extras.baseH ?? 55;
+    const sockMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1b, roughness: 0.6 });
+    const sockR = Math.max(10, d.extras.socket / 2 - 1.5);
+    const sock = new THREE.Mesh(new THREE.CylinderGeometry(sockR, sockR, 56, 32), sockMat);
+    sock.rotation.x = Math.PI / 2; sock.position.z = plate + 6;
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(sockR + 5, sockR + 5, 5, 32), sockMat);
+    ring.rotation.x = Math.PI / 2; ring.position.z = plate + 2.5;
+    for (const o of [sock, ring]) { o.castShadow = true; o.userData.noFrame = true; }
+    root.add(sock, ring);
+    bulb = new THREE.Mesh(new THREE.SphereGeometry(30, 40, 24), opts.glow ? glowMat() : new THREE.MeshPhysicalMaterial({ color: 0xf3f1ec, roughness: 0.25, transparent: true, opacity: 0.85 }));
+    bulb.position.z = plate + 34 + 32;
+    bulb.scale.set(1, 1, 1.15);
+    lightZ = plate + 66; power = 30;
+  }
   if (bulb) {
     bulb.userData.noFrame = true;
     bulb.visible = L.bulb !== false;
     root.add(bulb);
     root.userData.bulb = bulb;
   }
-  if (opts.glow && d.object === 'pendant') {
+  if (opts.glow && OBJECTS[d.object].lamp) {
     const light = new THREE.PointLight(tint, power * (L.bright ?? 1), 0, 2);
     light.position.z = lightZ;
     light.castShadow = true;
@@ -696,7 +730,7 @@ let lastObjectKey = '';
 function showResult(res) {
   state.result = res;
   const d = state.design;
-  const glow = state.light.on && d.object === 'pendant' && state.view === 'studio';
+  const glow = state.light.on && !!OBJECTS[d.object].lamp && state.view === 'studio';
   const { root } = buildDisplay(res, d, { mode: state.view, explode: state.explode, cut: state.cut, glow, xray: state.xray, printer: state.printer, light: state.light });
   if (stage.content) { stage.spin.remove(stage.content); disposeGroup(stage.content); }
   stage.content = root;
@@ -786,7 +820,7 @@ function dimLayout(minGap = 0) {
   let yRim = pend ? yBot : F.height + lift, yBase = pend ? yTop : 0;
   for (const p of res.parts) {
     const b = p.stats.bbox, half = Math.max(b[3] - b[0], b[4] - b[1]) / 2;
-    if ((p.key === 'saucer' || p.key === 'sleeve') && lift > 0) rBase = Math.max(rBase, half);
+    if ((p.key === 'saucer' || p.key === 'sleeve' || p.key === 'base') && lift > 0) rBase = Math.max(rBase, half);
     if (p.key === 'lid') { rRim = Math.max(rRim, half); yRim = yTop; }
   }
   const g = Math.max(clamp(0.1 * Math.max(w, ht), 8, 22), minGap);
@@ -1571,13 +1605,17 @@ function renderObject() {
   }
   const opts = [];
   if (d.object === 'planter') {
-    opts.push(sliderCtl('x-drain', 'Drainage hole', { min: 0, max: 30, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
-    opts.push(chipsCtl('Base', [{ value: 'none', label: 'None' }, { value: 'saucer', label: 'Saucer' }, { value: 'sleeve', label: 'Two-tone sleeve' }], () => X.base, (v) => { X.base = v; }, { structural: true }));
+    if (X.base !== 'insert') opts.push(sliderCtl('x-drain', 'Drainage hole', { min: 0, max: 30, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
+    opts.push(chipsCtl('Base', [{ value: 'none', label: 'None' }, { value: 'saucer', label: 'Saucer' }, { value: 'sleeve', label: 'Two-tone sleeve' }, { value: 'insert', label: 'Self-watering' }], () => X.base, (v) => { X.base = v; }, { structural: true }));
+    if (X.base === 'insert') {
+      opts.push(sliderCtl('x-res', 'Water reservoir height', { min: 12, max: 60, step: 1, fmt: mm }, () => X.reservoir ?? 30, (v) => { X.reservoir = v; }));
+      opts.push(h('p', { class: 'note' }, 'An inner pot hangs from the rim over a water reservoir. Pour water down the channel at the side, and thread a cotton wick through the hole in the insert. The outer pot has no drainage hole.'));
+    }
     if (X.base === 'sleeve') {
       opts.push(sliderCtl('x-sleeveH', 'Sleeve height', { min: 0.2, max: 0.7, step: 0.01, fmt: pct }, () => X.sleeveH, (v) => { X.sleeveH = v; }));
       opts.push(sliderCtl('x-tilt', 'Sleeve tilt', { min: 0, max: 60, step: 1, fmt: (v) => (v ? `${v} mm` : 'level') }, () => X.sleeveTilt, (v) => { X.sleeveTilt = v; }));
     }
-    if (X.base !== 'none') opts.push(sliderCtl('x-gap', 'Clearance around the pot', { min: 0.4, max: 4, step: 0.1, fmt: mm1 }, () => X.gap, (v) => { X.gap = v; }));
+    if (X.base !== 'none') opts.push(sliderCtl('x-gap', X.base === 'insert' ? 'Gap between insert and pot' : 'Clearance around the pot', { min: 0.4, max: 4, step: 0.1, fmt: mm1 }, () => X.gap, (v) => { X.gap = v; }));
   }
   if (d.object === 'box') {
     opts.push(switchCtl('x-lid', 'Lid', () => X.lid, (v) => { X.lid = v; }, { structural: true }));
@@ -1593,6 +1631,13 @@ function renderObject() {
     opts.push(chipsCtl('Socket', [{ value: 40, label: 'E27 · Ø 40', title: 'E27 lamp holder with shade ring' }, { value: 29, label: 'E14 · Ø 29' }, { value: 42, label: 'E27 + ring · Ø 42' }], () => X.socket, (v) => { X.socket = v; }, { structural: true }));
     opts.push(sliderCtl('x-socket', 'Socket hole', { min: 20, max: 60, step: 0.5, fmt: (v) => `Ø ${v} mm` }, () => X.socket, (v) => { X.socket = v; }));
     opts.push(h('p', { class: 'note' }, 'Prints crown-down on the plate. Use LED bulbs of 10 W or less.'));
+  }
+  if (d.object === 'lamp') {
+    opts.push(chipsCtl('Socket', [{ value: 40, label: 'E27 · Ø 40' }, { value: 42, label: 'E27 + ring · Ø 42' }, { value: 29, label: 'E14 · Ø 29' }], () => X.socket, (v) => { X.socket = v; }, { structural: true }));
+    opts.push(sliderCtl('x-lsocket', 'Socket hole', { min: 20, max: 60, step: 0.5, fmt: (v) => `Ø ${v} mm` }, () => X.socket, (v) => { X.socket = v; }));
+    opts.push(sliderCtl('x-baseH', 'Base height', { min: 30, max: 120, step: 1, fmt: mm }, () => X.baseH ?? 55, (v) => { X.baseH = v; }));
+    opts.push(switchCtl('x-cord', 'Notch for the cord', () => X.cord !== false, (v) => { X.cord = v; }));
+    opts.push(h('p', { class: 'note' }, 'For an E27 lamp kit (socket with a cord): the socket clips into the hole in the base, the shade stands in a groove around it and lifts off to change the bulb. The base prints top-down. LED bulbs only.'));
   }
   if (d.object === 'vase') {
     opts.push(switchCtl('x-vasemode', 'Solid body for spiral vase mode', () => X.vaseMode, (v) => { X.vaseMode = v; }, { structural: true }));
@@ -1612,7 +1657,7 @@ function switchObject(k) {
   Object.assign(d.form, OBJECT_DEFAULTS[k].form);
   Object.assign(d.extras, OBJECT_DEFAULTS[k].extras);
   rescaleCount(oldD, d.form.diameter);
-  if (k === 'pendant' && d.surface.mode === 'relief' && d.surface.pattern !== 'smooth' && PATTERNS[d.surface.pattern].modes.includes('cut')) d.surface.mode = 'cut';
+  if (OBJECTS[k].lamp && d.surface.mode === 'relief' && d.surface.pattern !== 'smooth' && PATTERNS[d.surface.pattern].modes.includes('cut')) d.surface.mode = 'cut';
   keepWatertight();
   rename();
   lastObjectKey = '';
@@ -1789,6 +1834,10 @@ function renderSurface() {
       ctls.push(sliderCtl(`s-${c}`, label, spec, () => S[key], (v) => { S[key] = v; }));
     }
   }
+  if (S.pattern !== 'smooth') {
+    ctls.push(sliderCtl('s-swirl', SURF_SPECS.swirl.label, SURF_SPECS.swirl, () => S.swirl || 0, (v) => { S.swirl = v; }));
+    if (mode === 'cut' && S.swirl) ctls.push(h('p', { class: 'note' }, 'Openwork turned by a swirl can lean past 45°; the stripes on the model show where.'));
+  }
   if (ctls.length) kids.push(group(mode === 'cut' ? 'Openwork' : 'Relief', null, ...ctls));
   if (S.pattern !== 'smooth') {
     const bands = [
@@ -1809,7 +1858,7 @@ function switchPattern(k) {
   Object.assign(S, P.def);
   if (P.cellMM) S.count = clamp(Math.round((Math.PI * d.form.diameter) / P.cellMM), 3, 120);
   if (!P.modes.includes(S.mode)) S.mode = P.modes[0];
-  if (d.object === 'pendant' && P.modes.includes('cut')) S.mode = 'cut';
+  if (OBJECTS[d.object].lamp && P.modes.includes('cut')) S.mode = 'cut';
   if (OBJECTS[d.object].watertight && P.modes.includes('relief')) S.mode = 'relief';
   if (S.mode === 'cut') { S.bandBottom = Math.max(S.bandBottom, 5); S.bandTop = Math.max(S.bandTop, 4); }
   onEdit(true, true);
@@ -1833,7 +1882,7 @@ function renderFinish() {
     ...groups,
     multiGroup(d),
     group('Material', 'Preview only', chipsCtl('', Object.entries(MATERIALS).map(([k, m]) => ({ value: k, label: m.label })), () => F.material, (v) => { F.material = v; }, { local: true, after: () => { refreshMaterials(); commitHistory(); } })),
-    d.object !== 'pendant' ? null : group('Light', 'A bulb in the socket, shining through the shade',
+    !OBJECTS[d.object].lamp ? null : group('Light', 'A bulb in the socket, shining through the shade',
       switchCtl('l-on', 'Light on', () => state.light.on, (v) => setLight(v), { local: true }),
       sliderCtl('l-bright', 'Brightness', { min: 0.2, max: 2.5, step: 0.05, fmt: pct }, () => state.light.bright, (v) => { state.light.bright = v; }, { local: true, after: lightAfter }),
       chipsCtl('Colour temperature', [{ value: 'candle', label: 'Candle' }, { value: 'warm', label: 'Warm' }, { value: 'neutral', label: 'Neutral' }, { value: 'daylight', label: 'Daylight' }], () => state.light.warm, (v) => { state.light.warm = v; }, { local: true, after: lightAfter }),
@@ -2001,10 +2050,12 @@ function refreshListing() {
     mc ? `• Multicolor: ${fils} filaments, colour changes at ${colorChangeHeights(d).map((z) => `${z.toFixed(1)} mm`).join(', ')}. ${vase ? 'Add the changes on the layer slider.' : 'AMS ready: the 3MF loads as one object with a part per colour, already assigned. Single-colour printers can use a filament change at each height.'}` : null,
     d.object === 'box' && d.extras.lid ? `• Lid prints top-down with ${d.extras.clearance.toFixed(2)} mm clearance. Glue the knob peg with a drop of CA glue.` : null,
     d.object === 'pendant' ? `• Prints crown-down. Socket hole Ø ${d.extras.socket} mm. LED bulbs only, 10 W or less.` : null,
-    d.object === 'planter' && d.extras.drain ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
+    d.object === 'lamp' ? `• Table lamp: the base prints top-down and takes an E27 lamp kit in its Ø ${d.extras.socket} mm socket hole; the shade stands in a groove in the base. LED bulbs only, 10 W or less.` : null,
+    d.object === 'planter' && d.extras.base === 'insert' ? '• Self-watering: print the insert too. Thread a cotton wick through its floor and fill the reservoir through the side channel.' : null,
+    d.object === 'planter' && d.extras.drain && d.extras.base !== 'insert' ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
     d.object === 'planter' && d.extras.base === 'sleeve' ? '• Print the sleeve in a second colour for a two-tone look.' : null,
     '',
-    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', 'no supports', d.object === 'pendant' ? 'lamp shade' : null, d.object === 'planter' ? 'plant pot' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
+    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', 'no supports', d.object === 'pendant' ? 'lamp shade' : null, d.object === 'planter' ? 'plant pot' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
   ];
   ta.value = lines.filter((l) => l !== null).join('\n');
 }
@@ -2494,7 +2545,8 @@ state.shuffleParts = { shape: true, surface: true, colour: true, ...store.get('w
 function shuffleShape(d) {
   const F = d.form, X = d.extras, obj = d.object;
   const sils = {
-    planter: ['cylinder', 'taper', 'barrel', 'tulip', 'urn', 'funnel'], box: ['barrel', 'cylinder', 'ovoid', 'lantern'], pendant: ['bell', 'ovoid', 'tulip', 'globe'],
+    planter: ['cylinder', 'taper', 'barrel', 'tulip', 'urn', 'funnel', 'orb', 'orb'], box: ['barrel', 'cylinder', 'ovoid', 'lantern'], pendant: ['bell', 'ovoid', 'tulip', 'globe'],
+    lamp: ['cylinder', 'taper', 'barrel', 'lantern', 'waist', 'ovoid'],
     bowl: ['bowl'], vase: ['tulip', 'ovoid', 'taper', 'barrel', 'waist', 'amphora', 'urn', 'lantern', 'cone'], cup: ['cylinder', 'taper', 'barrel', 'waist', 'funnel'],
   }[obj];
   const s = SILHOUETTES[pick(sils)];
@@ -2505,34 +2557,41 @@ function shuffleShape(d) {
   F.section = shape;
   if (shape === 'polygon') { F.sides = pick([5, 6, 6, 8, 10]); F.corner = +rnd(0.1, 0.3).toFixed(2); }
   if (shape === 'lobed') { F.lobes = Math.round(rnd(6, 12)); F.lobeDepth = +rnd(0.06, 0.14).toFixed(2); F.lobeStyle = pick(['scallop', 'wave']); }
-  F.twist = shape === 'round' ? 0 : pick([0, 0, Math.round(rnd(-90, 90))]);
+  // twisting turns lobes and corners into leaning flanks: keep it moderate so the piece still prints
+  F.twist = shape === 'round' ? 0 : pick([0, 0, Math.round(rnd(-1, 1) * (shape === 'lobed' ? 30 : 55))]);
   // a third of rims get a shaped edge or line
   F.rimEdge = pick(['flat', 'flat', 'round', 'bevel', 'rolled']);
-  F.rimShape = obj === 'box' ? 'level' : pick(['level', 'level', 'level', 'wavy', 'slant']);
+  if (obj === 'planter') X.base = pick(['none', 'saucer', 'sleeve', 'sleeve', 'insert', 'insert']);
+  F.rimShape = obj === 'box' || (obj === 'planter' && X.base === 'insert') ? 'level' : pick(['level', 'level', 'level', 'wavy', 'slant']);
   F.rimWaves = Math.round(rnd(4, 10)); F.rimDepth = Math.round(rnd(4, 14));
-  if (obj === 'planter') X.base = pick(['none', 'saucer', 'sleeve', 'sleeve']);
+  // table lamps look best with a turned square or polygon
+  if (obj === 'lamp' && Math.random() < 0.6) { F.section = 'polygon'; F.sides = pick([4, 4, 5, 6]); F.corner = +rnd(0.25, 0.45).toFixed(2); F.twist = Math.round(rnd(30, 90)) * pick([1, -1]); }
 }
 function shuffleSurface(d) {
   const F = d.form, S = d.surface, obj = d.object;
-  const pats = obj === 'pendant'
-    ? ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots']
-    : ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'wicker', 'ribs', 'chevron', 'reeds', 'waves', 'topo', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles', 'hammered', 'carved', 'rings', 'dunes', 'bark'];
+  const lampObj = !!OBJECTS[obj].lamp;
+  const pats = lampObj
+    ? ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'perforated']
+    : ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'wicker', 'ribs', 'chevron', 'reeds', 'waves', 'topo', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles', 'hammered', 'carved', 'rings', 'dunes', 'bark',
+      'gouge', 'cubes', 'knurl', 'knurl', 'seigaiha', 'herringbone'];
   const tight = !!OBJECTS[obj].watertight;
   const pid = pick(tight ? pats.filter((k) => PATTERNS[k].modes.includes('relief')) : pats);
   S.pattern = pid;
   const P = PATTERNS[pid];
   Object.assign(S, P.def);
-  S.mode = obj === 'pendant' ? 'cut' : tight ? 'relief' : pick(P.modes);
+  S.mode = lampObj ? 'cut' : tight ? 'relief' : pick(P.modes);
+  // ribs and knurls look good turned; other patterns now and then
+  S.swirl = S.mode === 'cut' ? 0 : pid === 'ribs' || pid === 'knurl' ? pick([0, 60, 90, 120, -90]) : pick([0, 0, 0, 0, 45, -45]);
   if (P.cellMM) S.count = clamp(Math.round(((Math.PI * F.diameter) / P.cellMM) * rnd(0.8, 1.25)), 4, 110);
   if (pid === 'lattice' || pid === 'quilt' || pid === 'prism') S.angle = Math.round(rnd(50, 66));
   if (pid === 'ribs') S.angle = S.mode === 'cut' ? Math.round(rnd(-30, 30)) : pick([0, 0, Math.round(rnd(-45, 45))]);
   if (pid === 'ribs' && S.mode === 'relief') { S.wave = pick([0, 0, rnd(0.2, 0.7)]); S.waveFreq = pick([1, 1.5, 2, 3]); S.profile = pick(['round', 'sharp', 'soft']); }
   if (pid === 'chevron') S.angle = Math.round(rnd(20, S.mode === 'cut' ? 38 : 50));
-  if (['voronoi', 'topo', 'facets', 'reeds', 'hammered', 'rings', 'dunes', 'bark'].includes(pid)) S.seed = Math.floor(Math.random() * 9999);
+  if (['voronoi', 'topo', 'facets', 'reeds', 'hammered', 'rings', 'dunes', 'bark', 'gouge', 'herringbone'].includes(pid)) S.seed = Math.floor(Math.random() * 9999);
   if (pid === 'voronoi') { S.jitter = rnd(0.5, 0.9); S.stretch = rnd(1.2, 1.6); }
   if (pid === 'arches' || pid === 'tiles' || pid === 'prism') S.alt = Math.random() < 0.5;
   if (S.mode === 'cut') { S.width = +rnd(1.8, 2.8).toFixed(1); S.bandBottom = Math.round(rnd(5, 10)); S.bandTop = Math.round(rnd(3, 8)); S.gradient = pick([0, 0, +rnd(-0.3, 0.3).toFixed(2)]); }
-  else { if (!['topo', 'rings', 'dunes', 'hammered', 'carved', 'bark'].includes(pid)) S.depth = +rnd(1.1, 2.2).toFixed(1); S.bandBottom = pick([0, 0, 3]); S.bandTop = pick([0, 3, 5]); }
+  else { if (!['topo', 'rings', 'dunes', 'hammered', 'carved', 'bark', 'knurl', 'gouge', 'cubes'].includes(pid)) S.depth = +rnd(1.1, 2.2).toFixed(1); S.bandBottom = pick([0, 0, 3]); S.bandTop = pick([0, 3, 5]); }
 }
 function shuffleColours(d) {
   d.finish.color = pick(FILAMENTS)[1];
@@ -2596,7 +2655,7 @@ function syncToggles() {
   $('#view-print').setAttribute('aria-pressed', state.view === 'print');
   $('#t-explode').hidden = !(state.design.object === 'box' && state.design.extras.lid) || state.view === 'print';
   $('#t-spin').hidden = state.view === 'print';
-  $('#t-glow').hidden = state.design.object !== 'pendant';
+  $('#t-glow').hidden = !OBJECTS[state.design.object].lamp;
   const fh = $('#f-handles');
   if (fh) fh.checked = state.handles;
   $('#t-handles').hidden = state.view === 'print';

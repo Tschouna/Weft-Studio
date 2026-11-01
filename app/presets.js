@@ -11,11 +11,11 @@ export const BASE = {
   surface: {
     pattern: 'lattice', mode: 'cut', count: 24, angle: 55, width: 2.0, fill: 0.85, depth: 1.6, profile: 'round', invert: false,
     jitter: 0.6, stretch: 1, round: 0.6, wave: 0, waveFreq: 1.5, rows: 24, gradient: 0, bandBottom: 6, bandTop: 4, bulge: 0, seed: 7,
-    alt: false, vary: 0, arch: false, edge: 'pattern',
+    alt: false, vary: 0, arch: false, edge: 'pattern', swirl: 0,
   },
   extras: {
     drain: 0, base: 'none', sleeveH: 0.38, sleeveTilt: 18, gap: 1.0, lid: true, knob: 'ball', knobSize: 26, lidOverhang: 0.6,
-    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false,
+    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 30, baseH: 55, cord: true,
   },
   finish: {
     color: '#22211f', color2: '#eeebe4', color3: '#22211f', material: 'matte',
@@ -32,6 +32,7 @@ export const OBJECTS = {
   box: { label: 'Storage box', blurb: 'Basket with a press-fit lid and knob' },
   cup: { label: 'Cup & holder', blurb: 'Pen cups, utensil holders, sleeves' },
   pendant: { label: 'Pendant lamp', blurb: 'Shade for an E27 or E14 socket', lamp: true },
+  lamp: { label: 'Table lamp', blurb: 'Shade on a base for an E27 lamp kit', lamp: true },
 };
 
 // Silhouettes as ratios; the size sliders stay where they are.
@@ -50,6 +51,7 @@ export const SILHOUETTES = {
   bowl: { label: 'Bowl', base: 0.6, top: 0.97, belly: 0.66, fullness: 0.55 },
   bell: { label: 'Bell', base: 0.46, top: 0.94, belly: 0.62, fullness: 0.3 },
   waist: { label: 'Waist', base: 1.16, top: 1.2, belly: 0.46, fullness: 0 },
+  orb: { label: 'Orb', base: 0.58, top: 0.8, belly: 0.46, fullness: 0.95 },
 };
 
 const merge = (a, b) => {
@@ -193,5 +195,53 @@ export const COLLECTION = [
     form: { height: 210, diameter: 120, base: 0.82, top: 0.72, belly: 0.4, fullness: 0.5, lip: 5, lipH: 22, inset: 1.2, wall: 1.6, floor: 2.0 },
     surface: { pattern: 'dunes', mode: 'relief', count: 8, rows: 30, wave: 0.35, depth: 1.1, bandBottom: 0, bandTop: 3, seed: 3 },
     finish: { color: '#c9b8a3', material: 'satin' },
+  }),
+  design({
+    name: 'Pinecone', object: 'planter',
+    form: { height: 130, diameter: 190, base: 0.58, top: 0.8, belly: 0.46, fullness: 0.95, inset: 1.5, wall: 1.8, floor: 2.4 },
+    surface: { pattern: 'knurl', mode: 'relief', count: 64, angle: 58, depth: 1.3, fill: 1, profile: 'sharp', bandBottom: 0, bandTop: 4 },
+    extras: { base: 'insert', reservoir: 28, gap: 1.5 },
+    finish: { color: '#3a3b3d', color2: '#8d8f8e' },
+  }),
+  design({
+    name: 'Torsion', object: 'planter',
+    form: { height: 120, diameter: 170, base: 0.6, top: 0.8, belly: 0.46, fullness: 0.9, inset: 1.5, wall: 1.8, floor: 2.4 },
+    surface: { pattern: 'ribs', mode: 'relief', count: 72, angle: 0, depth: 1.3, fill: 0.92, profile: 'round', swirl: 110, bandBottom: 0, bandTop: 4 },
+    extras: { base: 'insert', reservoir: 26, gap: 1.5 },
+    finish: { color: '#5b4a3a', color2: '#8d8f8e', material: 'satin' },
+  }),
+  design({
+    name: 'Isomer', object: 'planter',
+    form: { height: 150, diameter: 160, base: 0.98, top: 1, belly: 0.5, fullness: 0, inset: 1.5, wall: 1.8, floor: 2.4 },
+    surface: { pattern: 'cubes', mode: 'relief', count: 11, depth: 2.4, stretch: 1, bandBottom: 0, bandTop: 0 },
+    extras: { drain: 8 },
+    finish: { color: '#c9cbc8' },
+  }),
+  design({
+    name: 'Chisel', object: 'planter',
+    form: { height: 120, diameter: 150, section: 'polygon', sides: 4, corner: 0.36, base: 0.92, top: 1, belly: 0.5, fullness: 0.15, inset: 1.5, wall: 2.0, floor: 2.4 },
+    surface: { pattern: 'gouge', mode: 'relief', count: 16, depth: 2.2, stretch: 1.25, jitter: 0.8, bandBottom: 0, bandTop: 3, seed: 11 },
+    extras: { drain: 8 },
+    finish: { color: '#6f7d6b', material: 'satin' },
+  }),
+  design({
+    name: 'Strala', object: 'lamp',
+    form: { height: 210, diameter: 140, section: 'polygon', sides: 4, corner: 0.42, twist: 70, base: 1, top: 1.02, belly: 0.5, fullness: 0.12, inset: 0, wall: 1.6, floor: 2 },
+    surface: { pattern: 'perforated', mode: 'cut', count: 52, fill: 0.5, jitter: 0, arch: true, bandBottom: 8, bandTop: 5 },
+    extras: { socket: 40, baseH: 55, cord: true },
+    finish: { color: '#d8a647', color2: '#a34f31' },
+  }),
+  design({
+    name: 'Seigaiha', object: 'vase',
+    form: { height: 190, diameter: 120, base: 0.8, top: 0.74, belly: 0.42, fullness: 0.55, lip: 4, lipH: 20, inset: 1.2, wall: 1.6, floor: 2.0 },
+    surface: { pattern: 'seigaiha', mode: 'relief', count: 12, rows: 4, depth: 1.2, fill: 0.8, profile: 'round', bandBottom: 0, bandTop: 4 },
+    finish: { color: '#26324a', material: 'silk' },
+  }),
+  design({
+    name: 'Parquet', object: 'box',
+    form: { height: 95, diameter: 170, section: 'polygon', sides: 4, corner: 0.3, base: 0.95, top: 1, belly: 0.5, fullness: 0, inset: 1.2, wall: 1.8, floor: 2 },
+    surface: { pattern: 'herringbone', mode: 'relief', count: 18, depth: 1.2, width: 1.4, profile: 'sharp', bandBottom: 0, bandTop: 0 },
+    extras: { lid: true, knob: 'disc', knobSize: 30 },
+    finish: { color: '#b9a58a', color3: '#5b4a3a' },
   }),
 ];

@@ -1,6 +1,6 @@
 # Weft Studio
 
-A desktop studio for designing 3D-printable homeware: planters, vases, bowls, storage boxes with lids, cups and holders, and pendant lamps. Shape the silhouette, pick one of 25 surface textures or openwork patterns, choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
+A desktop studio for designing 3D-printable homeware: planters (including self-watering ones), vases, bowls, storage boxes with lids, cups and holders, pendant lamps and table lamps. Shape the silhouette, pick one of 31 surface textures or openwork patterns (and swirl them around the piece), choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
 
 Every piece is built as a watertight mesh, oriented for printing, with overhangs held at 45° or less so it prints without supports.
 
@@ -44,7 +44,7 @@ Requirements: Node.js 22 and npm.
 | Path | What it is |
 |---|---|
 | `app/` | The studio itself, plain HTML and JavaScript modules. It is the same code in the desktop app and the browser. |
-| `app/engine.js` | The geometry engine: silhouettes, cross-sections, the 25 textures, the mesher, lids, saucers, sleeves, multicolour bands and overhang checks. Runs in a Web Worker. |
+| `app/engine.js` | The geometry engine: silhouettes, cross-sections, the 31 textures and swirl, the mesher, lids, saucers, sleeves, self-watering inserts, lamp bases, multicolour bands and overhang checks. Runs in a Web Worker. |
 | `app/presets.js` | Defaults, silhouettes and the starter collection. |
 | `app/app.js` | UI, 3D preview, drag handles, dimensions, size references, export (3MF, STL, PNG). |
 | `app/fonts/` | The bundled fonts, so the app works offline. |

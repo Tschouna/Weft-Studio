@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.0
+
+- **New textures:**
+  - **Knurl:** fine diamond pyramids.
+  - **Cubes:** a 3D cube illusion; each hexagon is three flat faces.
+  - **Gouge:** overlapping hand-carved scoops.
+  - **Seigaiha:** Japanese wave fans.
+  - **Herringbone:** a parquet pattern.
+  - **Perforated:** dense round holes with self-supporting teardrop tops, made for lamps.
+- **Swirl:** turns any pattern around the piece from bottom to top (Surface → Swirl).
+  - On a twisted shape, openwork now stays upright, so holes keep their self-supporting tops.
+- **Table lamp (new object):** a shade on a base for an E27 lamp kit.
+  - The base prints top-down. It has a socket hole, a groove the shade stands in, and a notch for the cord.
+  - The light toggle and the glowing bulb now work for table lamps too.
+- **Self-watering planters:** a new planter option.
+  - An inner pot hangs from the rim on a 45° flare over a water reservoir, with a wick hole in its floor.
+  - A side channel lets you pour water into the reservoir.
+  - The studio shows how much water the reservoir holds.
+- **Orb silhouette:** a round bowl planter shape.
+- **Collection:** 7 new pieces (27 in all): Pinecone, Torsion, Isomer, Chisel, Strala, Seigaiha and Parquet.
+- **Shuffle:**
+  - Can now pick the new textures, self-watering inserts, the Orb shape and swirls.
+  - Lamps get turned polygon shades.
+
 ## 1.0.0
 
 This is the first desktop release. It's the Weft studio as a Windows app.

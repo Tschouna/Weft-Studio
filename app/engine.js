@@ -216,8 +216,12 @@ function sampleRows(rFn, H, step, zFrom = 0, fineTop = null, cutZ = null) {
 
 // ---------------------------------------------------------------- surface patterns
 // Each pattern yields g (mm, > 0 = material, used for cut-through) and h (0..1 relief height).
-export const PATTERN_IDS = ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'wicker', 'ribs', 'chevron',
-  'reeds', 'bark', 'waves', 'dunes', 'topo', 'rings', 'hammered', 'carved', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles', 'smooth'];
+export const PATTERN_IDS = ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'wicker', 'ribs', 'chevron',
+  'reeds', 'bark', 'waves', 'dunes', 'topo', 'rings', 'hammered', 'carved', 'gouge', 'cubes', 'knurl', 'seigaiha', 'herringbone',
+  'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles', 'smooth'];
+// Patterns that share another pattern's geometry and differ only in their defaults.
+const ALIAS = { knurl: 'quilt', perforated: 'dots' };
+export const basePattern = (p) => ALIAS[p] || p;
 // Openings are closed cells: any that would reach into a rim is filled, so rims meet whole cells.
 const CELL_PATTERNS = new Set(['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'wicker']);
 
@@ -322,9 +326,12 @@ function buildSurface(rows, NU, S, mode, opts) {
   const n = rows.n, L = rows.L;
   const perim = opts.perim || 1;
   const F = new Float32Array(n * NU);
-  const pid = S.pattern;
+  const pid = basePattern(S.pattern), look = S.pattern;
   const topL = opts.topL || null, edge = opts.edge || null;
   const Dsp = mode === 'cut' && !(S.bulge > 0) && pid !== 'wicker' && !edge ? null : new Float32Array(n * NU);
+  // swirl: the whole pattern turns around the piece by this much from bottom to top (opts.unswirl
+  // cancels a twist of the shape, in turns, so openings stay upright when the outline twists)
+  const swirlTurns = (S.swirl || 0) / 360 + (opts.unswirl || 0), zTop = Math.max(1e-6, rows.z[rows.n - 1]);
   const Din = edge ? new Float32Array(n * NU) : null;
   const zoneMask = new Uint8Array(n * NU);
   const N = Math.max(1, Math.round(S.count));
@@ -358,6 +365,7 @@ function buildSurface(rows, NU, S, mode, opts) {
   if (pid === 'voronoi' || pid === 'honeycomb') V = makeVoronoi(S, N, tauMax / stretch, pid === 'honeycomb' ? 0 : S.jitter);
   if (pid === 'dots') V = makeVoronoi(S, N, tauMax / stretch, S.jitter || 0);
   if (pid === 'hammered' || pid === 'rings') V = makeVoronoi(S, N, tauMax / stretch, pid === 'rings' ? 0.95 : S.jitter ?? 0.85);
+  if (pid === 'gouge') V = makeVoronoi(S, N, tauMax / stretch, S.jitter ?? 0.8);
   if (pid === 'carved') V = makeVoronoi(S, N, tauMax / stretch, 0);
   const wN = pid === 'weave' && (N & 1) ? N + 1 : N;
 
@@ -414,9 +422,11 @@ function buildSurface(rows, NU, S, mode, opts) {
     const NN = pid === 'weave' ? wN : N;
     const Sc = (TAU * r) / NN;
     const bulgeFade = smoothstep(0, 2, -(cellFill ? rimG : bandG));
+    const swirl = swirlTurns * NN * (rows.z[j] / zTop);
 
     for (let i = 0; i < NU; i++) {
-      const sig = (NN * i) / NU;
+      let sig = (NN * i) / NU + swirl;
+      if (swirl) sig -= Math.floor(sig / NN) * NN;
       // the rim line can vary around the piece (wavy or slanted tops)
       const lTop = topL ? topL[i] : L, u = lTop - l;
       const bandGi = topL ? Math.max(bandB - l, l - (lTop - bandT)) : bandG;
@@ -637,6 +647,81 @@ function buildSurface(rows, NU, S, mode, opts) {
           // a cliff would alias into a saw-tooth on any grid; a 0.7 mm ramp prints as a crisp step
           const ramp = top < 0 ? 0 : smoothstep(1, 1 - 0.7 / (rho * Sc), top);
           h = sh(under) + (sh(top) - sh(under)) * ramp;
+          break;
+        }
+        case 'cubes': {
+          // tumbling blocks: each hexagon is three flat rhombi, a cube corner seen end-on. The corners of
+          // all hexagons share heights (1/3 or 2/3), so the surface is continuous and needs no cliffs.
+          const R = 1 / Math.sqrt(3), x = sig, y = Y;
+          const qf = ((Math.sqrt(3) / 3) * x - y / 3) / R, rf = ((2 / 3) * y) / R;
+          let qx = qf, qz = rf, qy = -qf - rf;
+          let rx = Math.round(qx), ry = Math.round(qy), rz = Math.round(qz);
+          const dx = Math.abs(rx - qx), dy = Math.abs(ry - qy), dz = Math.abs(rz - qz);
+          if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
+          const cx = R * Math.sqrt(3) * (rx + rz / 2), cy = R * 1.5 * rz;
+          let lx = x - cx; const ly = y - cy;
+          if (lx > N * 0.5) lx -= N; else if (lx < -N * 0.5) lx += N;
+          const th = (Math.atan2(ly, lx) * 180) / Math.PI;
+          const v = (deg) => [R * Math.cos((deg * Math.PI) / 180), R * Math.sin((deg * Math.PI) / 180)];
+          const [s1, s2] = th >= 30 && th < 150 ? [v(30), v(150)] : th >= -90 && th < 30 ? [v(-90), v(30)] : [v(150), v(-90)];
+          const det = s1[0] * s2[1] - s1[1] * s2[0];
+          const a = (lx * s2[1] - ly * s2[0]) / det, b = (s1[0] * ly - s1[1] * lx) / det;
+          h = clamp(1 - (a + b) * 0.5, 0, 1);
+          break;
+        }
+        case 'gouge': {
+          // overlapping chisel scoops in staggered rows, each tilted a little and deepest at its lower end
+          const kc = Math.round(Y / V.h);
+          let carve = 0;
+          for (let k = kc - 2; k <= kc + 2; k++) {
+            if (k < V.k0 || k > V.k1) continue;
+            const base = (k - V.k0) * N, off = (k & 1) * 0.5, mc = Math.round(sig - off);
+            for (let m = mc - 1; m <= mc + 1; m++) {
+              let mm = m % N; if (mm < 0) mm += N;
+              let dx = sig - V.sx[base + mm];
+              if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
+              const dy = (Y - V.sy[base + mm]) * stretch;
+              const tilt = (hash(mm, k * 7 + 3, S.seed) - 0.5) * 0.8, ct = Math.cos(tilt), st = Math.sin(tilt);
+              const u = (dx * ct - dy * st) / 0.74, w = (dx * st + dy * ct) / (1.05 * Math.max(0.6, stretch * 0.9));
+              const q = u * u + w * w;
+              if (q < 1) { const c = (1 - q) * (0.8 - 0.2 * w); if (c > carve) carve = c; }
+            }
+          }
+          h = 1 - Math.min(1, carve);
+          break;
+        }
+        case 'seigaiha': {
+          // Japanese waves: overlapping fans in rows, each with concentric ridges
+          const rowH = 0.5, rho = 0.62, nR = Math.max(2, Math.round(S.rows || 4));
+          const kc = Math.floor(Y / rowH);
+          let top = -1, under = -1;
+          for (let k = kc - 1; k <= kc + 2 && under < 0; k++) {
+            const off = (k & 1) * 0.5, dy = Y - k * rowH;
+            const mc = Math.round(sig - off);
+            for (let m = mc - 1; m <= mc + 1; m++) {
+              let dx = sig - (m + off);
+              if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
+              const dd = Math.sqrt(dx * dx + dy * dy) / rho;
+              if (dd < 1) { if (top < 0) top = dd; else { under = dd; break; } }
+            }
+          }
+          const fan = (dd) => (dd < 0 ? 0 : 0.3 + 0.7 * crest(Math.abs(fract(dd * nR + 0.5) - 0.5) * 2 / Math.max(0.3, fill), prof));
+          const ramp = top < 0 ? 0 : smoothstep(1, 1 - 0.7 / (rho * Sc), top);
+          h = fan(under) + (fan(top) - fan(under)) * ramp;
+          break;
+        }
+        case 'herringbone': {
+          // parquet: 2:1 planks in a herringbone, turned 45° so the planks rise in chevrons
+          const x = (sig + Y) * 2, y = (Y - sig) * 2;
+          const ix = Math.floor(x), iy = Math.floor(y);
+          const c4 = (((ix + iy) % 4) + 4) % 4;
+          let x0, x1, y0, y1;
+          if (c4 === 0) { x0 = ix; x1 = ix + 2; y0 = iy; y1 = iy + 1; } else if (c4 === 1) { x0 = ix - 1; x1 = ix + 1; y0 = iy; y1 = iy + 1; }
+          else if (c4 === 2) { x0 = ix; x1 = ix + 1; y0 = iy; y1 = iy + 2; } else { x0 = ix; x1 = ix + 1; y0 = iy - 1; y1 = iy + 1; }
+          const e = Math.min(x - x0, x1 - x, y - y0, y1 - y) * (Sc / (2 * Math.SQRT2));
+          const plank = hash(((x0 % 4096) + 4096) % 4096, y0 * 3 + (c4 >> 1), S.seed);
+          const bevel = Math.max(0.6, depth * 1.2);
+          h = crest(1 - clamp((e - halfW * 0.5) / bevel, 0, 1), prof) * (0.86 + 0.14 * plank);
           break;
         }
         case 'quilt': {
@@ -1023,7 +1108,7 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
       const ct = capV(0, 0, zIn[0]);
       for (let i = 0; i < NU; i++) mesh.tri(ct, ringI[i], ringI[(i + 1) % NU]);
     }
-  } else if (floor.type === 'hole') {
+  } else if (floor.type === 'hole' || floor.type === 'groove') {
     const hb = [], ht = [], wb = [], wt = [];
     for (let i = 0; i < NU; i++) {
       const a = ANG[i] + Math.atan2(sphi[0], cphi[0]);
@@ -1032,9 +1117,25 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
       hb.push(mesh.v(x, y, z0, idB)); ht.push(mesh.v(x, y, zIn[0], idT));
       wb.push(mesh.v(x, y, z0, idB)); wt.push(mesh.v(x, y, zIn[0], idT));
     }
+    // the underside, from the outer edge in to the hole: flat, or with a groove that locates a shade
+    const strip = (A, B) => { for (let i = 0; i < NU; i++) { const i1 = (i + 1) % NU; mesh.tri(B[i], B[i1], A[i1]); mesh.tri(B[i], A[i1], A[i]); } };
+    if (floor.type === 'groove') {
+      const G = floor.groove;
+      const ring = (o, z) => {
+        const r = [];
+        for (let i = 0; i < NU; i++) {
+          const x0 = G.sc * CX[i] + o * NX[i], y0 = G.sc * CY[i] + o * NY[i];
+          r.push(mesh.v(x0 * cphi[0] - y0 * sphi[0], x0 * sphi[0] + y0 * cphi[0], z, extra++));
+        }
+        return r;
+      };
+      const g0 = ring(G.oOut, z0), g1 = ring(G.oOut, z0 + G.depth), g2 = ring(G.oIn, z0 + G.depth), g3 = ring(G.oIn, z0);
+      strip(ringO, g0); strip(g0, g1);
+      mesh.g = 1; strip(g1, g2); mesh.g = 0; // the groove's roof is a short bridge
+      strip(g2, g3); strip(g3, hb);
+    } else strip(ringO, hb);
     for (let i = 0; i < NU; i++) {
       const i1 = (i + 1) % NU;
-      mesh.tri(hb[i], hb[i1], ringO[i1]); mesh.tri(hb[i], ringO[i1], ringO[i]);
       mesh.tri(ht[i], ringI[i], ringI[i1]); mesh.tri(ht[i], ringI[i1], ht[i1]);
       mesh.tri(wb[i], wt[i1], wb[i1]); mesh.tri(wb[i], wt[i], wt[i1]);
     }
@@ -1215,7 +1316,8 @@ function finish(mesh, { overhangLimit = 46 } = {}) {
 
 // ---------------------------------------------------------------- object recipes
 // Grid spacing in mm: fine enough to resolve the thinnest feature of the chosen pattern.
-function cellFor(S, mode, rMinEff, L, quality) {
+function cellFor(S0, mode, rMinEff, L, quality) {
+  const S = { ...S0, pattern: basePattern(S0.pattern) };
   const N = Math.max(1, S.count);
   const Sc = (TAU * rMinEff) / N;
   let c;
@@ -1234,6 +1336,9 @@ function cellFor(S, mode, rMinEff, L, quality) {
       case 'hammered': case 'carved': f *= 0.9; break;
       case 'voronoi': case 'honeycomb': f = Math.min(f, (S.width || 2) * 0.2); break;
       case 'dots': f = Math.min(f, Math.max(0.6, (S.fill || 0.5) * 0.45 * Sc) / 3); break;
+      case 'cubes': case 'gouge': f *= 0.8; break;
+      case 'seigaiha': f = Math.min(f * 0.5, (0.62 * Sc) / Math.max(2, S.rows || 4) / 6); break;
+      case 'herringbone': f = Math.min(f, (Sc * 0.35) / 8); break;
       case 'rings': f = Math.min(f, (S.width || 4) / 6); break;
       case 'dunes': f = Math.min(f, L / Math.max(2, S.rows) / 10); break;
       default: break;
@@ -1285,7 +1390,8 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const rim = rimSet ? rimProfile(rimSet.edge, P.form.wall) : null;
   const drop = rimSet && rimSet.shape !== 'level' ? rimSet.drop : 0;
   // dense rows where the rim edge and any wavy rim line live
-  const zoneTot = (rim ? rim.zone * 1.15 : 0) + drop;
+  const notchD = extra.notch ? extra.notch.depth : 0;
+  const zoneTot = (rim ? rim.zone * 1.15 : 0) + Math.max(drop, notchD);
   const fine = Math.min(cell, rim ? rim.zone / 10 : cell * 0.6);
   // colour bands: cuts stay clear of the floor and of the shaped rim
   let cuts = [];
@@ -1309,12 +1415,33 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     topL = new Float64Array(NU);
     for (let i = 0; i < NU; i++) topL[i] = rows.L - drop * (0.5 - 0.5 * Math.cos(k * ang[i]));
   }
-  const bandB = mode === 'cut' ? Math.max(S.bandBottom, floor.type === 'open' ? 1.2 : floor.thick + 1.2) : S.bandBottom;
+  // a rounded notch cut down into the rim, e.g. for a lamp cord
+  if (extra.notch) {
+    const { angle, width, depth } = extra.notch, ang = sectionColumns(sec, NU).A, half = width / 2, rTop = rFn(H);
+    if (!topL) topL = new Float64Array(NU).fill(rows.L);
+    for (let i = 0; i < NU; i++) {
+      const xm = Math.abs(Math.atan2(Math.sin(ang[i] - angle), Math.cos(ang[i] - angle))) * rTop;
+      if (xm < half) topL[i] = Math.min(topL[i], rows.L - depth * Math.sqrt(1 - (xm / half) ** 2));
+    }
+  }
+  const bandB = Math.max(mode === 'cut' ? Math.max(S.bandBottom, floor.type === 'open' ? 1.2 : floor.thick + 1.2) : S.bandBottom, extra.minBottomBand || 0);
   // patterns stop below a shaped rim so the edge profile stays clean
   const rimBand = rim ? rim.zone + 1.5 : 0;
   const bandT = mode === 'cut' ? Math.max(S.bandTop, extra.minTopBand || 1.2, rimBand) : Math.max(S.bandTop, extra.minTopBand || 0, rimBand);
   const freezeL = extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 0.4 : 0;
-  const { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, freezeL });
+  // openings must keep their printable orientation, so a twisted outline does not drag them round
+  const unswirl = mode === 'cut' ? ((extra.twist || 0) / TAU) * (H / Math.max(1e-6, rows.z[rows.n - 1])) : 0;
+  let { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, freezeL, unswirl });
+  // a vertical channel pressed into the whole wall (outside in, inside out by the same amount)
+  if (extra.channel) {
+    const { angle, width, depth } = extra.channel, ang = sectionColumns(sec, NU).A, half = width / 2, edgeW = Math.min(6, half * 0.6);
+    D = D || new Float32Array(rows.n * NU); Din = Din || new Float32Array(rows.n * NU);
+    for (let i = 0; i < NU; i++) {
+      const xm = Math.abs(Math.atan2(Math.sin(ang[i] - angle), Math.cos(ang[i] - angle))) * rMax;
+      const w = depth * (1 - smoothstep(half - edgeW, half + edgeW, xm));
+      if (w > 1e-4) for (let j = 0; j < rows.n; j++) { D[j * NU + i] -= w; Din[j * NU + i] -= w; }
+    }
+  }
   if (D) processRelief(D, rows, NU, { sec, perim, mode, twist: extra.twist || 0, H, fillBelow: extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 1 : 0 });
   const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1 };
   if (!cuts.length) {
@@ -1388,8 +1515,14 @@ export function generate(P, quality = 1) {
   let floor = { type: 'solid', thick: F.floor };
   let top = 'rim';
   let minTopBand = 0;
-  if (obj === 'planter' && X.drain > 0) floor = { type: 'hole', thick: F.floor, holeR: X.drain / 2 };
+  const insert = obj === 'planter' && X.base === 'insert';
+  const lamp = obj === 'lamp';
+  // a self-watering pot keeps its water: no drain hole in the outer pot
+  if (obj === 'planter' && X.drain > 0 && !insert) floor = { type: 'hole', thick: F.floor, holeR: X.drain / 2 };
   if (obj === 'pendant') floor = { type: 'hole', thick: F.floor, holeR: X.socket / 2 };
+  // a table-lamp shade is open at both ends and stands in a groove in the base
+  const GROOVE = 3;
+  if (lamp) floor = { type: 'open' };
   if (obj === 'vase' && X.vaseMode && mode !== 'cut') top = 'cap';
   const lidOn = obj === 'box' && X.lid;
   if (lidOn) minTopBand = X.plugDepth + 2;
@@ -1402,16 +1535,17 @@ export function generate(P, quality = 1) {
 
   // rim: an edge profile, and a wavy or slanted top line (not where a lid has to sit flat)
   const rimEdge = top === 'rim' ? F.rimEdge || 'flat' : 'flat';
-  const rimShape = top === 'rim' && !lidOn ? F.rimShape || 'level' : 'level';
+  // a lid or a self-watering insert has to sit on a level rim
+  const rimShape = top === 'rim' && !lidOn && !insert ? F.rimShape || 'level' : 'level';
   const rimDrop = clamp(F.rimDepth || 0, 0, H * 0.35);
   const shaped = rimShape !== 'level' && rimDrop > 0.5;
-  const extraMain = { minTopBand, sec, twist, freezeChamfer: true };
+  const extraMain = { minTopBand, sec, twist, freezeChamfer: !lamp, minBottomBand: lamp ? GROOVE + 3 : 0 };
   const mc = P.multicolor && P.multicolor.cuts && P.multicolor.cuts.length ? P.multicolor : null;
   if (mc) extraMain.bands = mc;
   if (rimEdge !== 'flat' || shaped) extraMain.rim = { edge: rimEdge, shape: shaped ? rimShape : 'level', drop: rimDrop, waves: clamp(Math.round(F.rimWaves || 6), 2, 24) };
   const shell = makePatternedShell(rFn, H, P, quality, floor, top, extraMain);
-  const mainKey = { planter: 'pot', box: 'box', pendant: 'shade', bowl: 'bowl', vase: 'vase', cup: 'cup' }[obj];
-  const mainLabel = { planter: 'Pot', box: 'Box', pendant: 'Shade', bowl: 'Bowl', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup' }[obj];
+  const mainKey = { planter: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', bowl: 'bowl', vase: 'vase', cup: 'cup' }[obj];
+  const mainLabel = { planter: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', bowl: 'Bowl', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup' }[obj];
 
   let mainLift = 0;
 
@@ -1424,14 +1558,18 @@ export function generate(P, quality = 1) {
     const steps = 400; const prefix = new Float64Array(steps + 1);
     for (let k = 0; k <= steps; k++) { run = Math.max(run, rFn(Math.max(0, (Hs * k) / steps - fS))); prefix[k] = run; }
     const inset = Math.min(3, F.inset + 1.5);
+    const tilt = Math.min(X.sleeveTilt, Hs * 0.45), shiftFrom = Math.min(Hs * 0.4, inset + 6);
+    // the slanted top squeezes the wall's height on its low side, which steepens any flare there:
+    // ease the flare by that much more so it is still 44° after the squeeze
+    const squeeze = Math.max(0.3, 1 - tilt / Math.max(1, Hs - shiftFrom));
+    const sDeg = (Math.atan(Math.tan((44 * Math.PI) / 180) * squeeze) * 180) / Math.PI;
     const sFn = easeProfile((z) => {
       const x = clamp((z / Hs) * steps, 0, steps), k = Math.min(steps - 1, Math.floor(x));
       return prefix[k] + (prefix[k + 1] - prefix[k]) * (x - k) - (z < inset ? inset - z : 0);
-    }, Hs, 44).fn;
-    const tilt = Math.min(X.sleeveTilt, Hs * 0.45);
+    }, Hs, sDeg).fn;
     const P2 = { ...P, form: { ...F, wall: ts }, surface: { ...S, pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 } };
     const sl = makePatternedShell(sFn, Hs, P2, quality, { type: 'solid', thick: fS }, 'rim', {
-      cell: 1.6 / quality, sec: accSec, offset: relief + gap + ts, shiftFrom: Math.min(Hs * 0.4, inset + 6),
+      cell: 1.6 / quality, sec: accSec, offset: relief + gap + ts, shiftFrom,
       zShift: (NU, ang) => { const a = new Float64Array(NU); for (let i = 0; i < NU; i++) a[i] = -tilt * 0.5 + tilt * 0.5 * Math.cos(ang[i]); return a; },
     });
     mainLift = fS;
@@ -1445,6 +1583,51 @@ export function generate(P, quality = 1) {
     const segs = Math.max(96, Math.ceil(((r0 + gap) * accSec.L) / 1.2));
     add('saucer', 'Saucer', sweep(poly, accSec, segs), { z: 0, color: 1 });
     mainLift = tf;
+  }
+
+  // ---- table lamp base: printed top-down. Its top plate holds an E27 socket in a centre hole and has a
+  // groove the shade stands in; a notch in the bottom edge lets the cord out.
+  if (lamp) {
+    const c = 0.45, tB = 2.4, plate = GROOVE + 2.6, Hb = clamp(X.baseH || 55, 30, 140);
+    let kLo = Infinity;
+    const cols = sectionColumns(sec, 256);
+    for (let i = 0; i < 256; i++) kLo = Math.min(kLo, cols.CX[i] * cols.NX[i] + cols.CY[i] * cols.NY[i]);
+    const rS = rFn(0), rB = rS + (F.wall + c + 4) / Math.max(0.4, kLo);
+    let holeR = (X.socket || 40) / 2;
+    const room = rS * sec.minR - F.wall - c - 3;
+    if (holeR > room) { holeR = Math.max(8, room); warnings.push({ level: 'warn', text: 'The socket hole was reduced to stay inside the shade groove.' }); }
+    const bFn = (z) => rB - Math.max(0, 1.2 - z);
+    const PB = { ...P, form: { ...F, wall: tB, floor: plate, height: Hb }, surface: { ...S, pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0, swirl: 0 } };
+    const bs = makePatternedShell(bFn, Hb, PB, quality, { type: 'groove', thick: plate, holeR, groove: { sc: rS, oIn: -(F.wall + c), oOut: c, depth: GROOVE } }, 'rim', {
+      sec, cell: 1.4 / quality, notch: X.cord !== false ? { angle: -Math.PI / 2, width: 10, depth: 8 } : null,
+    });
+    add('base', 'Base', bs.mesh, { z: Hb, flipZ: true, color: 1 });
+    mainLift = Hb - GROOVE;
+  }
+
+  // ---- self-watering insert: an inner pot hanging from the rim on a 45° flare, with a wick hole in its
+  // floor. Water goes in through a channel down one side, which also leaves a pour gap in the flare.
+  let reservoirMl = 0;
+  if (insert) {
+    const gap = clamp(X.gap ?? 1.5, 0.8, 4), tI = 1.6, zr = clamp(X.reservoir || 30, F.floor + 10, H * 0.45);
+    const fH = F.wall + gap + 1.5, Hi = H - zr + fH;
+    const iFn = (z) => rFn(Math.min(H, z + zr)) + Math.max(0, z - (H - zr));
+    const PI2 = { ...P, form: { ...F, wall: tI, floor: tI, height: Hi }, surface: { ...S, pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0, swirl: 0 } };
+    const ins = makePatternedShell(iFn, Hi, PI2, quality, { type: 'hole', thick: tI, holeR: 7 }, 'rim', {
+      cell: 1.6 / quality, sec: accSec, offset: -(F.wall + gap), channel: { angle: -0.6, width: 26, depth: 7 },
+    });
+    add('insert', 'Self-watering insert', ins.mesh, { z: zr, color: 1 });
+    // water below the insert: the inner outline's area times the depth
+    const cols = sectionColumns(accSec, 256), rIn = rFn(zr * 0.5);
+    let area = 0;
+    for (let i = 0; i < 256; i++) {
+      const j = (i + 1) % 256;
+      const xa = rIn * cols.CX[i] - F.wall * cols.NX[i], ya = rIn * cols.CY[i] - F.wall * cols.NY[i];
+      const xb = rIn * cols.CX[j] - F.wall * cols.NX[j], yb = rIn * cols.CY[j] - F.wall * cols.NY[j];
+      area += (xa * yb - xb * ya) / 2;
+    }
+    reservoirMl = (Math.abs(area) * Math.max(0, zr - F.floor - 2)) / 1000;
+    if (zr > H - 25) warnings.push({ level: 'warn', text: 'The reservoir is very tall; the insert has little room for soil.' });
   }
 
   add(mainKey, mainLabel, shell.mesh, { z: mainLift, color: 0, flip: obj === 'pendant' });
@@ -1502,9 +1685,10 @@ export function generate(P, quality = 1) {
   const checks = [];
   const cellW = (TAU * shell.rMax * shell.perim) / Math.max(1, S.count);
   const cellMin = (TAU * shell.rMin * shell.perim) / Math.max(1, S.count);
+  const pBase = basePattern(S.pattern);
   if (mode === 'cut') {
-    const strip = S.pattern === 'dots' ? cellMin * (1 - 0.9 * (S.fill || 0.5)) : S.width;
-    const what = S.pattern === 'dots' ? 'The thinnest gap between holes is' : 'Strips are';
+    const strip = pBase === 'dots' ? cellMin * (1 - 0.9 * (S.fill || 0.5)) : S.width;
+    const what = pBase === 'dots' ? 'The thinnest gap between holes is' : 'Strips are';
     if (strip < 0.85) checks.push({ level: 'bad', text: `${what} ${strip.toFixed(1)} mm. Use 0.9 mm or more so a 0.4 mm nozzle can lay two lines.` });
     else if (strip < 1.3) checks.push({ level: 'warn', text: `${what} ${strip.toFixed(1)} mm. They print, but 1.3 mm or more is sturdier.` });
     else checks.push({ level: 'ok', text: `${what} ${strip.toFixed(1)} mm: prints with a 0.4 mm nozzle.` });
@@ -1527,12 +1711,19 @@ export function generate(P, quality = 1) {
     if (['lattice', 'prism', 'ogee', 'arches'].includes(S.pattern)) span = follow ? 0 : cellW * 0.9 - S.width;
     else if (S.pattern === 'ribs' || S.pattern === 'chevron') span = follow ? 0 : cellW - S.width;
     else if (S.pattern === 'wicker') span = cellW - S.width;
-    else if (S.pattern === 'dots') span = !S.arch ? cellW * 0.9 * (S.fill || 0.5) : 0;
+    else if (pBase === 'dots') span = !S.arch ? cellW * 0.9 * (S.fill || 0.5) : 0;
     else span = S.arch ? 0 : cellW * (S.pattern === 'honeycomb' ? 0.5 / Math.max(1, S.stretch) : 0.62) - S.width;
     if (span > 14) checks.push({ level: 'warn', text: `Some openings bridge about ${Math.round(span)} mm. Use pointed tops, more cells, or taller cells.` });
     else checks.push({ level: 'ok', text: 'Opening tops are short bridges or self-supporting.' });
   }
   if (eased > 0.5) checks.push({ level: 'ok', text: `Silhouette eased by up to ${eased.toFixed(1)} mm to keep walls under 44°.` });
+  if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert. Fill it through the channel at the rim, and thread a cotton wick through the hole in the insert's floor.` });
+  if (lamp) {
+    let rMinIn = Infinity;
+    for (let j = 0; j < shell.rows.n; j++) if (shell.rows.z[j] > 25 && shell.rows.z[j] < 140) rMinIn = Math.min(rMinIn, shell.rows.r[j] * sec.minR - F.wall);
+    if (rMinIn < 45) checks.push({ level: 'warn', text: 'The shade is narrow around the bulb. Keep 3 cm around the bulb and use LED bulbs only.' });
+    else checks.push({ level: 'ok', text: 'Room for an A60 LED bulb. The shade stands in a groove in the base and lifts off to change the bulb.' });
+  }
   if (obj === 'pendant') {
     // an A60 bulb hangs roughly 30-110 mm below the socket
     let rMinIn = Infinity;
@@ -1552,7 +1743,7 @@ export function generate(P, quality = 1) {
 const SWATCH_REPEATS = {
   lattice: 3, prism: 3, ogee: 3, arches: 4, voronoi: 3, honeycomb: 3, dots: 4, wicker: 5, ribs: 6, chevron: 5,
   reeds: 6, waves: 2, topo: 3, knit: 4, weave: 4, petals: 3, quilt: 3, facets: 4, tiles: 3, smooth: 1,
-  hammered: 3, carved: 3, rings: 2, dunes: 2, bark: 5,
+  hammered: 3, carved: 3, rings: 2, dunes: 2, bark: 5, gouge: 4, cubes: 3, knurl: 6, seigaiha: 3, herringbone: 3, perforated: 7,
 };
 export function swatch(S0, mode, w, h) {
   const reps = SWATCH_REPEATS[S0.pattern] || 3;
