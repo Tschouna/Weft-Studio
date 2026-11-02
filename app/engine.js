@@ -66,14 +66,21 @@ export function makeProfile(F) {
   const s0 = (rm - rb) / tb, s1 = (rt - rm) / (1 - tb);
   const m0 = s0 * (1 - f), m2 = s1 * (1 - f);
   const m1 = s0 * s1 <= 0 ? 0 : (2 * s0 * s1) / (s0 + s1);
-  const lipH = Math.min(F.lipH || 0, H * 0.5), lip = F.lip || 0, inset = F.inset || 0;
+  const lipH = Math.min(F.lipH || 0, H * 0.5), lip = F.lip || 0;
+  // a rounded bottom (hanging and wall planters): the silhouette carries on down at 40°, blending in,
+  // to a small foot that it stands on while printing
+  const round = F.bottom === 'round', inset = round ? 0 : F.inset || 0;
+  // the base chamfer runs at 45°, steeper (35°) on twisted shaped pieces, whose flanks the twist leans further
+  const chk = F.twist && F.section && F.section !== 'round' ? 0.7 : 1;
+  const tip = Math.max(10, (F.wall || 3) * 2 + 6), k = R * 0.35, slope = Math.tan((40 * Math.PI) / 180);
   return (z) => {
     const t = clamp(z / H, 0, 1);
     let r;
     if (t <= tb) r = hermite(rb, rm, m0 * tb, m1 * tb, t / tb);
     else r = hermite(rm, rt, m1 * (1 - tb), m2 * (1 - tb), (t - tb) / (1 - tb));
     if (lip && lipH > 0 && z > H - lipH) { const q = (z - (H - lipH)) / lipH; r += lip * q * q; }
-    if (inset > 0 && z < inset) r -= inset - z;
+    if (inset > 0 && z < inset / chk) r -= inset - z * chk;
+    if (round) r = smin(r, tip + z * slope, k);
     return Math.max(r, 2);
   };
 }
@@ -146,6 +153,12 @@ export function makeSection(F = {}) {
   } else {
     for (let q = 0; q < 1024; q++) { const th = (TAU * q) / 1024; pts.push([Math.cos(th), Math.sin(th)]); }
   }
+  const sec = sectionFromPoints(pts, kind);
+  sectionCache.set(key, sec);
+  return sec;
+}
+// An outline from anticlockwise points, resampled at even arc length, with outward normals.
+function sectionFromPoints(pts, kind = 'custom') {
   const m = pts.length, cum = new Float64Array(m + 1);
   for (let q = 0; q < m; q++) { const a = pts[q], b = pts[(q + 1) % m]; cum[q + 1] = cum[q] + Math.hypot(b[0] - a[0], b[1] - a[1]); }
   const L = cum[m], M = SECTION_SAMPLES;
@@ -163,9 +176,21 @@ export function makeSection(F = {}) {
     const tx = x[n2] - x[p], ty = y[n2] - y[p], tl = Math.hypot(tx, ty) || 1;
     nx[k] = ty / tl; ny[k] = -tx / tl;
   }
-  const sec = { kind, round: kind === 'round', L, minR, x, y, nx, ny, M };
-  sectionCache.set(key, sec);
-  return sec;
+  return { kind, round: kind === 'round', L, minR, x, y, nx, ny, M };
+}
+// How far an outline must shrink to stay inside itself while it turns by up to ±dphi: a lid plug the
+// same shape as the box, just small enough to pass its twisted opening.
+function turnedScale(sec, dphi) {
+  const K = 1440, rad = new Float64Array(K);
+  for (let q = 0; q < sec.M; q++) {
+    const a = Math.atan2(sec.y[q], sec.x[q]), k = ((Math.round((a / TAU) * K) % K) + K) % K;
+    rad[k] = Math.max(rad[k], Math.hypot(sec.x[q], sec.y[q]));
+  }
+  for (let k = 0; k < K; k++) if (!rad[k]) { let a = k, b = k; while (!rad[(a + K) % K]) a--; while (!rad[b % K]) b++; rad[k] = rad[(a + K) % K] + ((rad[b % K] - rad[(a + K) % K]) * (k - a)) / (b - a); }
+  const span = Math.ceil((dphi / TAU) * K);
+  let s = 1;
+  for (let k = 0; k < K; k++) for (let d = -span; d <= span; d++) s = Math.min(s, rad[(((k + d) % K) + K) % K] / rad[k]);
+  return s;
 }
 // Point, normal and polar angle of the outline at arc-length fraction s.
 function sectionColumns(sec, count) {
@@ -186,7 +211,7 @@ const NORMAL_SPAN = 2.5;
 // Resample the meridian at even arc-length steps.
 // fineTop: { zone (mm of arc under the rim), count } adds dense rows there for shaped rim edges
 // cutZ: heights that must land exactly on a row (colour band boundaries)
-function sampleRows(rFn, H, step, zFrom = 0, fineTop = null, cutZ = null) {
+function sampleRows(rFn, H, step, zFrom = 0, fineTop = null, cutZ = null, fineBot = null) {
   const nd = 1600, dz = (H - zFrom) / (nd - 1);
   const dr = new Float64Array(nd), dzA = new Float64Array(nd), dl = new Float64Array(nd);
   for (let k = 0; k < nd; k++) { dzA[k] = zFrom + k * dz; dr[k] = rFn(dzA[k]); }
@@ -199,6 +224,13 @@ function sampleRows(rFn, H, step, zFrom = 0, fineTop = null, cutZ = null) {
     for (let j = 0; j <= NV; j++) { const t = (L * j) / NV; if (t < lz - step * 0.4) targets.push(t); }
     for (let q = 0; q <= fineTop.count; q++) targets.push(lz + (fineTop.zone * q) / fineTop.count);
   } else for (let j = 0; j <= NV; j++) targets.push((L * j) / NV);
+  // dense rows over the bottom edge of an open piece too
+  if (fineBot && fineBot.zone > 0 && fineBot.zone < L * 0.4) {
+    const keep = targets.filter((t) => t > fineBot.zone + step * 0.4);
+    targets.length = 0;
+    for (let q = 0; q <= fineBot.count; q++) targets.push((fineBot.zone * q) / fineBot.count);
+    targets.push(...keep);
+  }
   if (cutZ && cutZ.length) {
     const cutL = cutZ.map((zc) => {
       const x = clamp((zc - zFrom) / dz, 0, nd - 1), kk = Math.min(nd - 2, Math.floor(x));
@@ -385,11 +417,14 @@ function buildSurface(rows, NU, S, mode, opts) {
   const F = new Float32Array(n * NU);
   const pid = basePattern(S.pattern), look = S.pattern;
   const topL = opts.topL || null, edge = opts.edge || null;
-  const Dsp = mode === 'cut' && !(S.bulge > 0) && pid !== 'wicker' && !edge ? null : new Float32Array(n * NU);
+  const edgeBot = opts.edgeBot || null;
+  const Dsp = mode === 'cut' && !(S.bulge > 0) && pid !== 'wicker' && !edge && !edgeBot ? null : new Float32Array(n * NU);
   // swirl: the whole pattern turns around the piece by this much from bottom to top (opts.unswirl
   // cancels a twist of the shape, in turns, so openings stay upright when the outline twists)
-  const swirlTurns = (S.swirl || 0) / 360 + (opts.unswirl || 0), zTop = Math.max(1e-6, rows.z[rows.n - 1]);
-  const Din = edge ? new Float32Array(n * NU) : null;
+  // (the user's swirl runs along the pattern's own up-the-wall coordinate, so it winds at the same angle on a
+  // narrow neck as on a wide belly; cancelling a twist follows the height, like the twist itself)
+  const swirlTurns = (S.swirl || 0) / 360, unswirlTurns = opts.unswirl || 0, zTop = Math.max(1e-6, rows.z[rows.n - 1]);
+  const Din = edge || edgeBot ? new Float32Array(n * NU) : null;
   const zoneMask = new Uint8Array(n * NU);
   const N = Math.max(1, Math.round(S.count));
   const prof = PROFILE[S.profile] ?? 0;
@@ -470,6 +505,17 @@ function buildSurface(rows, NU, S, mode, opts) {
   // across the base chamfer the relief runs straight down, so it never steepens the chamfer
   const freezeL = mode === 'relief' && bandB <= 0 ? opts.freezeL || 0 : 0;
   const tauFreeze = freezeL > 0 ? interpTau(rows, tau, freezeL) : 0;
+  // Relief gets shallower where the wall leans out: there is less room under each feature before it
+  // overhangs, and filling under deep features there drags them into long streaks. Full depth up to
+  // about 20°, two thirds at 30°, a quarter at 40°, almost none at 44°. (The base chamfer takes the
+  // depth of the wall just above it.)
+  const leanK = new Float64Array(n);
+  for (let j = 0; j < n; j++) {
+    const tl = Math.max(0, -rows.nz[j]) / Math.max(1e-3, rows.nr[j]);
+    leanK[j] = mode === 'relief' && !opts.keepDepth ? clamp((1 - tl) / 0.65, 0.04, 1) : 1;
+  }
+  let jFreeze = 0;
+  while (jFreeze < n - 1 && rows.l[jFreeze] < freezeL) jFreeze++;
   for (let j = 0; j < n; j++) {
     const r = rows.r[j] * perim, l = rows.l[j];
     const frozen = l < freezeL;
@@ -483,13 +529,13 @@ function buildSurface(rows, NU, S, mode, opts) {
     // relief starts full depth at the bed, ramps in at 45° above a plain band
     const fadeLo = bandB > 0 ? smoothstep(bandB, bandB + rampLen, l) : 1;
     const fadeHi = bandT > 0 ? smoothstep(L - bandT, L - bandT - rampLen, l) : 1;
-    const dep = depth * Math.max(0, grad) * fadeLo * fadeHi;
+    const dep = depth * Math.max(0, grad) * fadeLo * fadeHi * leanK[frozen ? jFreeze : j];
     const wavePhase = waveA * Math.sin(TAU * waveF * lt);
     const Y = t / stretch;
     const NN = pid === 'weave' ? wN : N;
     const Sc = (TAU * r) / NN;
     const bulgeFade = smoothstep(0, 2, -(cellFill ? rimG : bandG));
-    const swirl = swirlTurns * NN * (rows.z[j] / zTop);
+    const swirl = NN * (swirlTurns * (tau[j] / Math.max(1e-6, tauMax)) + unswirlTurns * (rows.z[j] / zTop));
 
     for (let i = 0; i < NU; i++) {
       let sig = (NN * i) / NU + swirl;
@@ -863,11 +909,12 @@ function buildSurface(rows, NU, S, mode, opts) {
       // trim along the rim line; the edge profile rounds or bevels just under it
       if (topL) fv = Math.min(fv, u);
       if (edge) { Dsp[id] += edge.out(Math.max(0, u)); Din[id] = edge.inn(Math.max(0, u)); }
+      if (edgeBot && l < edgeBot.zone) { Dsp[id] += edgeBot.out(l); Din[id] += edgeBot.inn(l); }
       F[id] = Math.abs(fv) < 1e-4 ? (fv < 0 ? -1e-4 : 1e-4) : fv;
     }
   }
   if (cellFill) fillRimHoles(F, NU, n, zoneMask, 0.5);
-  return { F, D: mode === 'none' && !edge ? null : Dsp, Din };
+  return { F, D: mode === 'none' && !edge && !edgeBot ? null : Dsp, Din };
 }
 function smax(a, b, k) { return -smin(-a, -b, k); }
 
@@ -877,7 +924,7 @@ function smax(a, b, k) { return -smin(-a, -b, k); }
 // turns into a staircase that the printer reproduces. Then undersides are held at 45°.
 const RELIEF_FILLET = 0.45;
 function processRelief(D, rows, NU, o) {
-  const lim = () => limitUndersides(D, rows, NU, o.sec, o.twist, o.H, o.fillBelow);
+  const lim = () => limitUndersides(D, rows, NU, o.sec, o.twist, o.H, o.fillBelow, 45.5, o.slide);
   if (o.mode !== 'relief') { if (o.mode !== 'none') lim(); return; }
   smoothRelief(D, rows, NU, o.perim, o.fillet ?? RELIEF_FILLET);
   lim();
@@ -950,7 +997,7 @@ function softenCliffs(D, rows, NU, perim) {
 // A twisted outline also swings sideways from row to row, which counts as growing outward on the flanks.
 // Up to `fillBelow` (the base chamfer) it may also fill where the bare wall alone is too steep; higher up
 // it only stops the relief from making a wall worse, so a long flare never piles material up.
-function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg = 45.5) {
+function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg = 45.5, slide = null) {
   const T = Math.tan((deg * Math.PI) / 180), n = rows.n;
   const { CX, CY, NX, NY } = sectionColumns(sec, NU);
   const Htot = H || rows.z[n - 1] || 1;
@@ -969,16 +1016,18 @@ function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg 
       const below = (vx * c - vy * sn) * NX[i] + (vx * sn + vy * c) * NY[i];
       const kN = CX[i] * NX[i] + CY[i] * NY[i];
       const above = rows.r[j + 1] * kN + o1;
-      const dR = above - below;
+      // a sliding back moves toward +y between the rows: its part along the normal is outward travel
+      const dSl = slide ? (slide.amt[j + 1] - slide.amt[j]) * slide.w[i] : 0;
+      const dR = above - below + dSl * NY[i];
       const raw = (rows.z[j + 1] - rows.z[j]) * T - dR;
       const allow = rows.l[j + 1] <= fillBelow ? raw : Math.max(0, raw);
       const need = D[(j + 1) * NU + i] - allow;
-      if (!twist && sec.round) { const a = j * NU + i; if (D[a] < need) D[a] = need; continue; }
+      if (!twist && sec.round && !slide) { const a = j * NU + i; if (D[a] < need) D[a] = need; continue; }
       // the point straight under this one: a twist turns the row round, and on the flank of a shaped
       // outline a widening (or narrowing) wall slides sideways as well, by the radius change times the
       // outline's tangential component (in columns: that distance over the row's column spacing)
       const kT = CY[i] * NX[i] - CX[i] * NY[i], rj = Math.max(1e-3, rows.r[j]);
-      const s = i + (-dphi[j] * kN + ((rows.r[j + 1] - rows.r[j]) * kT) / rj) * colsPerRad, f = Math.floor(s), w = s - f;
+      const s = i + (-dphi[j] * kN + ((rows.r[j + 1] - rows.r[j]) * kT + dSl * NX[i]) / rj) * colsPerRad, f = Math.floor(s), w = s - f;
       const i0 = ((f % NU) + NU) % NU, i1 = i0 + 1 === NU ? 0 : i0 + 1;
       fillBetween(D, j * NU + i0, j * NU + i1, w, need);
     }
@@ -1014,7 +1063,7 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
   const sec = opts.sec || ROUND();
   const { CX, CY, NX, NY, A: ANG } = sectionColumns(sec, NU);
   const zShift = opts.zShift ? opts.zShift(NU, ANG) : null;
-  const Din = opts.Din || null;
+  const Din = opts.Din || null, slide = opts.slide || null;
 
   // each row: outline scale r, outward offset off, twist angle; inner wall sits t further in
   const off = new Float64Array(NR), offIn = new Float64Array(NR), zIn = new Float64Array(NR), zw = new Float64Array(NR);
@@ -1052,9 +1101,13 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
       offIn[j] = Math.min(offIn[j], offIn[j + 1] + dr * (dr >= 0 ? kLo : kHi));
     }
     // ...and it must climb at least as fast as it widens, or that ring would print in the air over the floor
+    // (a twist swings the flanks of a shaped outline out too: count that as widening)
+    let kT = 0;
+    if (opts.twist) for (let i = 0; i < NU; i++) kT = Math.max(kT, Math.abs(CY[i] * NX[i] - CX[i] * NY[i]));
     for (let j = 1; j < NR; j++) {
       const dr = rows.r[j] - rows.r[j - 1];
-      const dRin = dr * (dr >= 0 ? kHi : kLo) + offIn[j] - offIn[j - 1];
+      const swing = kT ? (rows.r[j] * kT * Math.abs(opts.twist) * (rows.z[j] - rows.z[j - 1])) / Htot : 0;
+      const dRin = dr * (dr >= 0 ? kHi : kLo) + offIn[j] - offIn[j - 1] + swing;
       // (at 45°: the outside is eased to 44°, so an even wall never trips this; a stricter limit here
       // pushed a bowl's inside up row after row until the rows piled up into folds under the rim)
       zIn[j] = Math.max(zIn[j], zIn[j - 1] + Math.max(dRin, 1e-3));
@@ -1088,7 +1141,7 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     else { o = off[j] + (D ? D[j * NU + i] : 0); zz = rows.z[j]; }
     if (zShift) zz += zShift[i] * zw[j];
     const sc = rows.r[j];
-    const x0 = sc * CX[i] + o * NX[i], y0 = sc * CY[i] + o * NY[i];
+    const x0 = sc * CX[i] + o * NX[i], y0 = sc * CY[i] + o * NY[i] + (slide ? slide.w[i] * slide.amt[j] : 0);
     px = x0 * cphi[j] - y0 * sphi[j]; py = x0 * sphi[j] + y0 * cphi[j]; pz = zz;
   }
   function point(key, inner) {
@@ -1113,7 +1166,7 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     mesh.tri(po, pi, qi); mesh.tri(po, qi, qo);
   };
 
-  const hasInner = top !== 'cap';
+  const hasInner = top !== 'cap' && top !== 'pocket';
   // A solid wall (no openings) has a plain inner surface: it gets a coarser grid of its own, stitched to
   // full-resolution rows at the floor, the rim and anywhere the inner edge is shaped.
   const kIn = opts.innerStep || 1;
@@ -1280,6 +1333,26 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     const ct = capV(0, 0, zc);
     for (let i = 0; i < NU; i++) mesh.tri(ct, ring[i], ring[(i + 1) % NU]);
   }
+  if (top === 'pocket') {
+    // a solid body with a round pocket in its top (a candle holder): a flat ring from the outside in to
+    // the pocket, its upright wall, and its floor. Each pocket point sits at the angle of its rim point.
+    const jt = NR - 1, ring = [], pr = [], pf = [], P = opts.pocket;
+    for (let i = 0; i < NU; i++) { point(jt * NU + i, false); ring.push(mesh.v(px, py, pz, jt * NU + i)); }
+    let zc = 0; for (let i = 0; i < NU; i++) zc += mesh.P.a[ring[i] * 3 + 2]; zc /= NU;
+    const zf = zc - P.depth;
+    for (let i = 0; i < NU; i++) {
+      const a = Math.atan2(mesh.P.a[ring[i] * 3 + 1], mesh.P.a[ring[i] * 3]);
+      pr.push(capV(P.r * Math.cos(a), P.r * Math.sin(a), zc));
+      pf.push(capV(P.r * Math.cos(a), P.r * Math.sin(a), zf));
+    }
+    const cf = capV(0, 0, zf);
+    for (let i = 0; i < NU; i++) {
+      const i1 = (i + 1) % NU;
+      mesh.tri(pr[i], ring[i], ring[i1]); mesh.tri(pr[i], ring[i1], pr[i1]);
+      mesh.tri(pr[i], pr[i1], pf[i1]); mesh.tri(pr[i], pf[i1], pf[i]);
+      mesh.tri(cf, pf[i], pf[i1]);
+    }
+  }
   return mesh;
 }
 
@@ -1313,7 +1386,7 @@ function mergeMeshes(list) {
 function sweep(poly, sec, segs, rot = 0) {
   const mesh = new Mesh();
   const n = poly.length;
-  const cols = sectionColumns(sec, segs);
+  const cols0 = sectionColumns(sec, segs);
   const cr = Math.cos(rot), sr = Math.sin(rot);
   const eff = poly.map(([r, z, o = 0]) => [r + o, z]);
   // sharp corners get their own vertex columns per edge
@@ -1328,6 +1401,7 @@ function sweep(poly, sec, segs, rot = 0) {
     const key = sharp[k] ? `${k}:${edge}` : `${k}`;
     if (shared.has(key)) return shared.get(key);
     const [r, z, o = 0, round = false] = poly[k];
+    const cols = cols0;
     const col = [];
     if ((round || sec.round) ? r + o < 1e-6 : r < 1e-6 && Math.abs(o) < 1e-6) {
       const v = mesh.v(0, 0, z, k * segs); for (let q = 0; q < segs; q++) col.push(v);
@@ -1515,6 +1589,25 @@ export function rimProfile(edge, t) {
   return null;
 }
 
+// An inside chamfer at an open end: the inner wall flares out by c at the very edge, at 45°.
+const chamferEdge = (c) => ({ zone: c, out: () => 0, inn: (u) => Math.max(0, c - u) });
+// Two edge profiles at once: the outside follows the first, the inside takes whichever cuts deeper.
+function combineEdges(a, b) {
+  if (!a) return b; if (!b) return a;
+  return { zone: Math.max(a.zone, b.zone), out: (u) => a.out(u) + b.out(u), inn: (u) => Math.max(a.inn(u), b.inn(u)), extra: Math.max(a.extra || 0, b.extra || 0) };
+}
+// A rim edge mirrored onto the bottom of an open piece (a napkin ring) and kept printable: going up from
+// the bed, the outside may lean out and the inside lean in by at most 45°, so curves that would hang out
+// over the bed become chamfers there.
+function bottomEdge(edge) {
+  const zone = edge.zone + 0.5, du = 0.02, n = Math.ceil(zone / du) + 2;
+  const out = new Float64Array(n), inn = new Float64Array(n);
+  for (let k = 0; k < n; k++) { out[k] = edge.out(k * du); inn[k] = edge.inn(k * du); }
+  for (let k = n - 2; k >= 0; k--) { out[k] = Math.max(out[k], out[k + 1] - du); inn[k] = Math.min(inn[k], inn[k + 1] + du); }
+  const at = (arr) => (u) => { if (u <= 0) return arr[0]; const x = u / du, k = Math.floor(x); return k >= n - 1 ? arr[n - 1] : arr[k] + (arr[k + 1] - arr[k]) * (x - k); };
+  return { zone, out: at(out), inn: at(inn), extra: edge.extra || 0 };
+}
+
 function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const S = P.surface;
   const mode = S.pattern === 'smooth' ? 'none' : S.mode;
@@ -1531,7 +1624,11 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const est = () => (Math.ceil((rMax * sec.L) / cell) * coarse.L) / cell;
   while (est() > budget) cell *= 1.12;
   const rimSet = top === 'rim' ? extra.rim : null;
-  const rim = rimSet ? rimProfile(rimSet.edge, P.form.wall) : null;
+  const rimEdgeP = rimSet ? rimProfile(rimSet.edge, P.form.wall) : null;
+  // edge profiles at the rim and, on open pieces, at the bottom (the same edge mirrored, an inside chamfer)
+  const chamfer = extra.innerChamfer > 0 ? chamferEdge(extra.innerChamfer) : null;
+  const rim = top === 'rim' ? combineEdges(rimEdgeP, chamfer) : null;
+  const edgeBot = floor.type === 'open' && !floor.cut ? combineEdges(extra.edgeBoth && rimEdgeP ? bottomEdge(rimEdgeP) : null, chamfer) : null;
   const drop = rimSet && rimSet.shape !== 'level' ? rimSet.drop : 0;
   // dense rows where the rim edge and any wavy rim line live
   const notchD = extra.notch ? extra.notch.depth : 0;
@@ -1539,7 +1636,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const fine = Math.min(cell, rim ? rim.zone / 10 : cell * 0.6);
   // colour bands: cuts stay clear of the floor and of the shaped rim
   let cuts = [];
-  if (extra.bands && top !== 'cap') {
+  if (extra.bands && top !== 'cap' && top !== 'pocket') {
     const lo = Math.max(P.form.floor + P.form.wall + 3, mode === 'cut' ? Math.max(S.bandBottom, P.form.floor + 1.2) + 0.5 : 0, 3);
     const hi = H - (rim ? rim.zone * 1.15 : 0) - drop - 3;
     for (const zc of extra.bands.cuts) {
@@ -1548,7 +1645,8 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     }
     cuts.sort((a, b) => a - b);
   }
-  const rows = sampleRows(rFn, H, cell, 0, zoneTot > 0 ? { zone: zoneTot, count: Math.min(180, Math.ceil(zoneTot / fine)) } : null, cuts);
+  const rows = sampleRows(rFn, H, cell, 0, zoneTot > 0 ? { zone: zoneTot, count: Math.min(180, Math.ceil(zoneTot / fine)) } : null, cuts,
+    edgeBot ? { zone: edgeBot.zone * 1.15, count: Math.min(180, Math.ceil((edgeBot.zone * 1.15) / Math.min(cell, edgeBot.zone / 10))) } : null);
   if (extra.offset) rows.off = new Float64Array(rows.n).fill(extra.offset);
   if (rim) rMax += rim.extra || 0;
   let NU = Math.ceil((rMax * sec.L) / cell);
@@ -1568,14 +1666,14 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
       if (xm < half) topL[i] = Math.min(topL[i], rows.L - depth * Math.sqrt(1 - (xm / half) ** 2));
     }
   }
-  const bandB = Math.max(mode === 'cut' ? Math.max(S.bandBottom, floor.type === 'open' ? 1.2 : floor.thick + 1.2) : S.bandBottom, extra.minBottomBand || 0);
+  const bandB = Math.max(mode === 'cut' ? Math.max(S.bandBottom, floor.type === 'open' ? 1.2 : floor.thick + 1.2) : S.bandBottom, extra.minBottomBand || 0, edgeBot ? edgeBot.zone + 1.5 : 0);
   // patterns stop below a shaped rim so the edge profile stays clean
   const rimBand = rim ? rim.zone + 1.5 : 0;
   const bandT = mode === 'cut' ? Math.max(S.bandTop, extra.minTopBand || 1.2, rimBand) : Math.max(S.bandTop, extra.minTopBand || 0, rimBand);
   const freezeL = extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 0.4 : 0;
   // openings must keep their printable orientation, so a twisted outline does not drag them round
   const unswirl = mode === 'cut' ? ((extra.twist || 0) / TAU) * (H / Math.max(1e-6, rows.z[rows.n - 1])) : 0;
-  let { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, freezeL, unswirl });
+  let { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, edgeBot, freezeL, unswirl });
   // In the valleys of a shaped outline the inside of the wall is wider than the outside, so an opening is
   // stretched sideways on its way through and its pointed top flattens. Where that stretch passes 12%
   // the wall stays solid; openings there end in upright sides instead.
@@ -1606,29 +1704,22 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
       if (w > 1e-4) for (let j = 0; j < rows.n; j++) { D[j * NU + i] -= w; Din[j * NU + i] -= w; }
     }
   }
-  // a flat back (wall planters): no texture where it meets the wall
-  let backW = null;
+  // a flat back (wall planters): it stands upright on one plane whatever the silhouette does. The back
+  // half of the wall slides toward the wall by however much narrower each row is than the widest one,
+  // fully on the flat back and fading out round the sides (a smooth slide: no creases, and never more lean)
+  let slide = null;
   if (extra.flatBack) {
-    const cols = sectionColumns(sec, NU), nyArc = Math.max(0, extra.flatBack.nyArc);
-    backW = new Float32Array(NU);
-    for (let i = 0; i < NU; i++) backW[i] = cols.NY[i] > 0 ? smoothstep(nyArc, 1, cols.NY[i]) : 0;
+    const cols = sectionColumns(sec, NU);
+    let rTop = 0;
+    for (let j = 0; j < rows.n; j++) rTop = Math.max(rTop, rows.r[j]);
+    slide = { w: new Float64Array(NU), amt: new Float64Array(rows.n) };
+    for (let i = 0; i < NU; i++) slide.w[i] = cols.NY[i] > 0 ? smoothstep(0, 1, cols.NY[i]) : 0;
+    for (let j = 0; j < rows.n; j++) slide.amt[j] = extra.flatBack.b * (rTop - rows.r[j]);
     // the texture fades out round the sides, before the corners that turn onto the back
     const fa = extra.flatBack.nyArc;
     if (D) for (let i = 0; i < NU; i++) { const k = 1 - smoothstep(fa - 0.3, fa - 0.02, cols.NY[i]); if (k < 1) for (let j = 0; j < rows.n; j++) D[j * NU + i] *= k; }
   }
-  if (D) processRelief(D, rows, NU, { sec, perim, mode, twist: extra.twist || 0, H, fillBelow: extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 1 : 0 });
-  if (backW) {
-    // ...and it stands upright on one plane, whatever the silhouette does: the back is pushed out to
-    // the plane at the widest point, inside and out, fading through the rounded corners
-    let rTop = 0;
-    for (let j = 0; j < rows.n; j++) rTop = Math.max(rTop, rows.r[j]);
-    const b = extra.flatBack.b;
-    D = D || new Float32Array(rows.n * NU); Din = Din || new Float32Array(rows.n * NU);
-    for (let i = 0; i < NU; i++) {
-      if (!(backW[i] > 0)) continue;
-      for (let j = 0; j < rows.n; j++) { const push = backW[i] * b * (rTop - rows.r[j]); D[j * NU + i] += push; Din[j * NU + i] += push; }
-    }
-  }
+  if (D) processRelief(D, rows, NU, { sec, perim, mode, twist: extra.twist || 0, H, fillBelow: extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 1 : 0, slide });
   // holes through the wall: teardrops for hanging cords, keyholes for a screw
   if (extra.holes && extra.holes.length) {
     const cols = sectionColumns(sec, NU), du = sec.L / NU;
@@ -1650,7 +1741,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
       }
     }
   }
-  const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1 };
+  const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1, slide, pocket: extra.pocket };
   if (!cuts.length) {
     const mesh = buildShell(rows, NU, F, D, P.form.wall, { ...floor, band: bandB }, top, shellOpts);
     return { mesh, rows, NU, cell, rMax, rMin, perim };
@@ -1668,7 +1759,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     const view = (arr) => (arr ? arr.subarray(a * NU, (e + 1) * NU) : null);
     const fl = b === 0 ? { ...floor, band: bandB } : { type: 'open', cut: true };
     const tp = b + 2 === bounds.length ? top : 'cut';
-    bodies.push(buildShell(sub, NU, view(F), view(D), P.form.wall, fl, tp, { ...shellOpts, Din: view(Din) }));
+    bodies.push(buildShell(sub, NU, view(F), view(D), P.form.wall, fl, tp, { ...shellOpts, Din: view(Din), slide: slide && { w: slide.w, amt: slide.amt.subarray(a, e + 1) } }));
   }
   const merged = mergeMeshes(bodies);
   // which original band each body falls in, so its filament slot survives clamping
@@ -1755,9 +1846,11 @@ function maxRelief(S) {
 }
 
 // Pieces that hold soil or water never get cut-through patterns.
-export const WATERTIGHT = new Set(['planter', 'vase', 'hanging', 'wall']);
+export const WATERTIGHT = new Set(['planter', 'vase', 'hanging', 'wall', 'candle']);
 
 export function generate(P, quality = 1) {
+  // only hanging and wall planters can have a rounded bottom; it has no base chamfer
+  if (P.form.bottom === 'round') P = { ...P, form: P.object === 'hanging' || P.object === 'wall' ? { ...P.form, inset: 0 } : { ...P.form, bottom: 'flat' } };
   const F = P.form, X = P.extras;
   let S = P.surface;
   if (WATERTIGHT.has(P.object) && S.mode === 'cut') { S = { ...S, mode: 'relief' }; P = { ...P, surface: S }; }
@@ -1814,6 +1907,10 @@ export function generate(P, quality = 1) {
   const GROOVE = 3;
   if (lamp || obj === 'ring') floor = { type: 'open' };
   if (obj === 'vase' && X.vaseMode && mode !== 'cut') top = 'cap';
+  // a candle holder is solid, with a pocket in the top just the size of the candle
+  const CANDLES = { tealight: { d: 40, depth: 17, label: 'tealight' }, maxi: { d: 60, depth: 24, label: 'maxi tealight' }, taper: { d: 22.5, depth: 20, label: 'taper candle' } };
+  const candle = obj === 'candle' ? CANDLES[X.candle] || CANDLES.tealight : null;
+  if (candle) top = 'pocket';
   const lidOn = obj === 'box' && X.lid;
   if (lidOn) minTopBand = X.plugDepth + 2;
 
@@ -1830,6 +1927,16 @@ export function generate(P, quality = 1) {
   const rimDrop = clamp(F.rimDepth || 0, 0, H * 0.35);
   const shaped = rimShape !== 'level' && rimDrop > 0.5;
   const extraMain = { minTopBand, sec, twist, freezeChamfer: floor.type !== 'open', minBottomBand: lamp ? GROOVE + 3 : 0 };
+  // napkin rings: the rim edge at both ends, and an inside chamfer
+  if (obj === 'ring') { extraMain.edgeBoth = X.edgeBoth !== false; extraMain.innerChamfer = clamp(X.innerChamfer || 0, 0, Math.max(0, F.wall - 0.8)); }
+  if (candle) extraMain.pocket = { r: candle.d / 2, depth: Math.min(candle.depth, H - 6) };
+  // a rounded bottom stays plain where it narrows to its foot: cells there would crowd into a knot
+  if (F.bottom === 'round') {
+    const R = F.diameter / 2;
+    let l = 0, z = 0, r = rFn(0);
+    while (z < H * 0.6 && r < 0.45 * R) { const z2 = z + 0.5, r2 = rFn(z2); l += Math.hypot(0.5, r2 - r); z = z2; r = r2; }
+    extraMain.minBottomBand = Math.max(extraMain.minBottomBand, l);
+  }
   // hanging planter: teardrop holes for the cords in a plain collar under the rim
   const holes = [];
   const rimZone = rimEdge !== 'flat' ? (rimProfile(rimEdge, F.wall)?.zone || 0) + 1.5 : 0;
@@ -1853,8 +1960,8 @@ export function generate(P, quality = 1) {
   if (mc) extraMain.bands = mc;
   if (rimEdge !== 'flat' || shaped) extraMain.rim = { edge: rimEdge, shape: shaped ? rimShape : 'level', drop: rimDrop, waves: clamp(Math.round(F.rimWaves || 6), 2, 24) };
   const shell = makePatternedShell(rFn, H, P, quality, floor, top, extraMain);
-  const mainKey = { planter: 'pot', hanging: 'pot', wall: 'pot', orchid: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', lantern: 'lantern', bowl: 'bowl', tray: 'tray', vase: 'vase', cup: 'cup', ring: 'ring' }[obj];
-  const mainLabel = { planter: 'Pot', hanging: 'Pot', wall: 'Pot', orchid: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', lantern: 'Lantern', bowl: 'Bowl', tray: 'Tray', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup', ring: 'Ring' }[obj];
+  const mainKey = { candle: 'holder', planter: 'pot', hanging: 'pot', wall: 'pot', orchid: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', lantern: 'lantern', bowl: 'bowl', tray: 'tray', vase: 'vase', cup: 'cup', ring: 'ring' }[obj];
+  const mainLabel = { candle: 'Candle holder', planter: 'Pot', hanging: 'Pot', wall: 'Pot', orchid: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', lantern: 'Lantern', bowl: 'Bowl', tray: 'Tray', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup', ring: 'Ring' }[obj];
 
   let mainLift = 0;
 
@@ -1971,11 +2078,11 @@ export function generate(P, quality = 1) {
     const oOut = reliefTop + X.lidOverhang;
     const knob = X.knob !== 'none';
     const pegR = 4, holeR = knob ? pegR + 0.15 : 0;
-    // a twisted, non-round opening turns under the plug, so the plug becomes a circle that clears it
-    const roundPlug = !sec.round && twist !== 0;
-    const pr = roundPlug ? rP * sec.minR - wallN - X.clearance : rP;
-    const po = roundPlug ? 0 : -wallN - X.clearance;
-    const pl = (z, extraO) => (roundPlug ? [pr, z, extraO, true] : [rP, z, po + extraO]);
+    // a twisted, shaped opening turns under the plug as it goes in, so the plug keeps the outline's shape,
+    // shrunk just enough to stay inside the opening through that turn
+    const plugScale = !sec.round && twist !== 0 ? turnedScale(sec, (Math.abs(twist) * (hp + 1)) / H + 0.01) : 1;
+    const po = -wallN - X.clearance;
+    const pl = (z, extraO) => [rP * plugScale, z, po + extraO];
     const poly = [
       [holeR, 0, 0, true], [rT, 0, oOut - c], [rT, c, oOut], [rT, tp, oOut],
       pl(tp, 0), pl(tp + hp - 0.8, 0), pl(tp + hp, -0.8), pl(tp + hp, -tpl), pl(tp, -tpl), [holeR, tp, 0, true],
@@ -1983,7 +2090,7 @@ export function generate(P, quality = 1) {
     const segs = Math.max(128, Math.ceil(((rT + oOut) * sec.L) / 1.0));
     // printed upside down: mirror the twist so it lines up once flipped onto the box
     add('lid', 'Lid', sweep(poly, sec, segs, -twist), { z: H + tp, flipZ: true, color: 2, lidLift: true });
-    const plugInner = roundPlug ? pr - tpl : rP * sec.minR + po - tpl;
+    const plugInner = rP * plugScale * sec.minR + po - tpl;
     if (knob) {
       let kp;
       const pegL = tp - 0.3;
@@ -2049,7 +2156,7 @@ export function generate(P, quality = 1) {
   }
   const loops = Math.max(1, Math.round(F.wall / 0.45));
   if (F.wall < 0.8) checks.push({ level: 'bad', text: 'Walls under 0.8 mm are too thin for a 0.4 mm nozzle.' });
-  else if (F.wall < 2 && top !== 'cap') checks.push({ level: 'warn', text: `Wall ${F.wall.toFixed(1)} mm is thin and can flex or crack. 3 mm makes a sturdy piece.` });
+  else if (F.wall < 2 && top !== 'cap' && top !== 'pocket') checks.push({ level: 'warn', text: `Wall ${F.wall.toFixed(1)} mm is thin and can flex or crack. 3 mm makes a sturdy piece.` });
   else checks.push({ level: 'ok', text: `Wall ${F.wall.toFixed(1)} mm ≈ ${loops} wall loop${loops > 1 ? 's' : ''} at 0.45 mm line width.` });
   const overArea = parts.reduce((acc, p) => acc + p.stats.overhang, 0);
   const bridgeArea = parts.reduce((acc, p) => acc + p.stats.bridge, 0);
@@ -2069,9 +2176,15 @@ export function generate(P, quality = 1) {
     else checks.push({ level: 'ok', text: 'Opening tops are short bridges or self-supporting.' });
   }
   if (eased > 0.5) checks.push({ level: 'ok', text: `Silhouette eased by up to ${eased.toFixed(1)} mm to keep walls under 44°.` });
+  if (F.bottom === 'round') checks.push({ level: 'ok', text: `The rounded bottom stands on a ${Math.round(2 * rFn(0))} mm foot while it prints: use a brim for a firm hold.` });
   if (obj === 'hanging') checks.push({ level: 'ok', text: `Hangs from ${holes.length} cords through teardrop holes under the rim (up to Ø 4 mm cord).${floor.type === 'hole' ? ' Water drips from the drainage hole.' : ' No drainage hole: water sparingly.'}` });
   if (wallObj) checks.push({ level: 'ok', text: 'The flat back has a keyhole for a screw with a head up to 8 mm. Leave the head 4 mm out of the wall and hook the planter over it.' });
   if (standInfo) checks.push({ level: 'ok', text: `Stand: two flat pieces that slot together into a cross; the pot sits ${Math.round(standInfo.lift)} mm up on the crossbars. Both print flat with no supports.` });
+  if (candle) {
+    let rMin = Infinity; for (let j = 0; j < shell.rows.n; j++) if (shell.rows.z[j] > H - candle.depth - 1) rMin = Math.min(rMin, shell.rows.r[j] * sec.minR);
+    if (rMin < candle.d / 2 + 2.5) checks.push({ level: 'bad', text: `The top is too narrow for a ${candle.label} (Ø ${candle.d} mm): widen the rim to at least Ø ${Math.ceil(candle.d + 6)} mm.` });
+    else checks.push({ level: 'ok', text: `The ${candle.label} sits in a Ø ${candle.d} × ${Math.round(extraMain.pocket.depth)} mm pocket in the top. Print it solid with 15% infill. LED candles are safest; a real one needs a glass or metal cup.` });
+  }
   if (obj === 'lantern') checks.push({ level: 'ok', text: 'For LED tealights only, never a real flame: PLA and PETG soften from about 60 °C.' });
   if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert${X.slots !== false ? ', and the slots round its foot let the soil drink from it' : ''}. Fill it through the channel at the rim${X.slots !== false ? '' : ", and thread a cotton wick through the hole in the insert's floor"}.` });
   if (lamp) {
@@ -2090,7 +2203,7 @@ export function generate(P, quality = 1) {
   for (const w of warnings) checks.push(w);
 
   // spiral vase mode prints one body, so colours become filament changes at these heights instead
-  const colorChanges = mc && top === 'cap' ? mc.cuts.map((z) => Math.round(clamp(z, 3, H - 3) / 0.2) * 0.2) : shell.cuts || [];
+  const colorChanges = mc && (top === 'cap' || top === 'pocket') ? mc.cuts.map((z) => Math.round(clamp(z, 3, H - 3) / 0.2) * 0.2) : shell.cuts || [];
   // where the wall is, for the preview: the plane of a wall planter's flat back
   let wallY = null;
   if (wallObj) { let rTop = 0; for (let j = 0; j < shell.rows.n; j++) rTop = Math.max(rTop, shell.rows.r[j]); wallY = secF.back * rTop; }

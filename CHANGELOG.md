@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.2.0
+
+- **Candle holder (new object):**
+  - A solid base you shape and texture however you like.
+  - A pocket at the very top, just the candle's own height deep.
+  - Three candle sizes:
+    - Tealight (Ø 40).
+    - Maxi tealight (Ø 60).
+    - Taper candle (Ø 22).
+  - Prints solid with infill, with no supports.
+  - The light switch shows the candle glowing.
+  - LED candles are safest; a real one needs a glass or metal cup.
+- **Rounded bottoms:**
+  - Hanging and wall planters can now carry their shape on down and close at the bottom, instead of ending flat (Form → Bottom → Rounded).
+  - It prints standing on a small foot (use a brim).
+  - The texture fades out where it narrows.
+  - Wall planters keep a perfectly flat back all the way down.
+- **Lids that match the box:**
+  - On a twisted square, hexagonal or lobed box, the lid's plug now has the box's own shape instead of turning into a circle.
+  - It is shrunk just enough to pass the twisted opening.
+- **No more stretched patterns:**
+  - Textures get shallower where a wall leans out (bowls, flared pots, rounded bottoms): full depth up to about 20°, little at 44°.
+  - Before, deep features there were smeared into long streaks to keep them printable.
+  - Swirls now wind at the same angle on a narrow neck as on a wide belly, instead of bending into an S.
+- **Napkin rings:**
+  - The rim edge (rounded, bevel or rolled lip) can go on both ends.
+  - At the bottom, curves that would hang out over the bed become 45° chamfers.
+  - A new **Inside chamfer** softens the inner edge at both ends.
+- **Collection:** 7 new pieces, 56 in all: Vigil, Altar, Chapel, Pendula, Sconce, Gilt and Keep.
+
 ## 2.1.0
 
 - **Plant stands:**

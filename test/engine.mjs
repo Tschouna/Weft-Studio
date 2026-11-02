@@ -6,6 +6,7 @@
 //  5. self-watering inserts drop into their pots
 //  6. bold, deep relief keeps its undersides printable on bellied, twisted and flared shapes
 //  7. shuffled designs print without supports
+//  8. lids fit twisted, shaped boxes
 import { generate, makeProfile, easeProfile, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
@@ -129,7 +130,7 @@ for (const [name, d] of [
 // ---------------------------------------------------------------- 4
 if (run(4)) {
 console.log('4. random designs');
-const objects = ['planter', 'vase', 'bowl', 'box', 'cup', 'pendant', 'lamp', 'hanging', 'wall', 'orchid', 'lantern', 'tray', 'ring'];
+const objects = ['planter', 'vase', 'bowl', 'box', 'cup', 'pendant', 'lamp', 'hanging', 'wall', 'orchid', 'lantern', 'tray', 'ring', 'candle'];
 const patterns = ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'ribs', 'chevron', 'reeds', 'waves', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles',
   'hammered', 'carved', 'rings', 'dunes', 'bark', 'gouge', 'cubes', 'knurl', 'seigaiha', 'herringbone', 'blocks', 'spikes', 'shards', 'fins', 'hobnail', 'smooth'];
 for (let k = 0; k < 48; k++) {
@@ -137,9 +138,9 @@ for (let k = 0; k < 48; k++) {
   const low = obj === 'tray' || obj === 'ring';
   const d = design({
     object: obj,
-    form: { height: low ? 25 + rand() * 30 : 60 + rand() * 160, diameter: (obj === 'ring' ? 40 : 70) + rand() * (obj === 'ring' ? 40 : 160), base: 0.6 + rand() * 0.5, top: 0.7 + rand() * 0.5, section: any(['round', 'round', 'polygon', 'lobed']), twist: any([0, 0, 40]), rimEdge: any(['flat', 'round', 'bevel']) },
+    form: { bottom: any(['flat', 'round']), rimEdge: any(['flat', 'round', 'bevel', 'rolled']), height: low ? 25 + rand() * 30 : 60 + rand() * 160, diameter: (obj === 'ring' ? 40 : 70) + rand() * (obj === 'ring' ? 40 : 160), base: 0.6 + rand() * 0.5, top: 0.7 + rand() * 0.5, section: any(['round', 'round', 'polygon', 'lobed']), twist: any([0, 0, 40]), rimEdge: any(['flat', 'round', 'bevel']) },
     surface: { pattern: pat, mode: obj === 'pendant' || obj === 'lamp' || obj === 'lantern' ? 'cut' : any(['relief', 'relief', 'cut']), bandBottom: low ? 2 : 6, bandTop: low ? 2 : 4, count: 8 + Math.floor(rand() * 30), depth: 0.8 + rand() * rand() * 8, swirl: any([0, 0, 90, -150]) },
-    extras: { base: obj === 'planter' ? any(['none', 'saucer', 'sleeve', 'insert']) : obj === 'orchid' ? any(['none', 'saucer']) : 'none', baseH: 40 + rand() * 50, hangers: any([3, 4]), back: rand() * 0.6, drain: any([0, 10]), stand: any(['none', 'none', 'mid', 'upright', 'wide']), standLift: 40 + rand() * 120, standHug: 0.2 + rand() * 0.4 },
+    extras: { base: obj === 'planter' ? any(['none', 'saucer', 'sleeve', 'insert']) : obj === 'orchid' ? any(['none', 'saucer']) : 'none', baseH: 40 + rand() * 50, hangers: any([3, 4]), back: rand() * 0.6, drain: any([0, 10]), stand: any(['none', 'none', 'mid', 'upright', 'wide']), standLift: 40 + rand() * 120, standHug: 0.2 + rand() * 0.4, candle: any(['tealight', 'maxi', 'taper']), edgeBoth: any([true, false]), innerChamfer: any([0, 1.5]) },
   });
   const r = generate(d, 0.7);
   for (const p of r.parts) { const bad = openEdges(p); if (bad) fail(`random #${k} ${obj}/${pat} ${p.key}: ${bad} open edges`); }
@@ -242,6 +243,37 @@ for (let k = 0; k < n; k++) {
 console.log(`  ${n} shuffles: ${bad} unprintable, ${warn} with small overhangs`);
 if (bad) fail(`${bad} shuffled designs need supports`);
 if (warn > n * 0.08) fail(`${warn} of ${n} shuffled designs have small overhangs (more than 8%)`);
+}
+
+// ---------------------------------------------------------------- 8
+if (run(8)) {
+// A lid's plug on a twisted, shaped box keeps the box's outline and must pass the opening as it turns:
+// at every angle and depth, the plug stays inside the box's inner wall.
+console.log('8. lids fit twisted boxes');
+for (const [sec, extra] of [['polygon', { sides: 4, corner: 0.3 }], ['polygon', { sides: 6, corner: 0.2 }], ['lobed', { lobes: 8, lobeDepth: 0.1 }]]) for (const twist of [35, -70]) {
+  const d = design({ object: 'box', form: { height: 100, diameter: 170, section: sec, twist, ...extra }, extras: { lid: true }, surface: { pattern: 'smooth', mode: 'none' } });
+  const r = generate(d, 0.7), box = r.parts.find((p) => p.key === 'box'), lid = r.parts.find((p) => p.key === 'lid');
+  const A = 720, H = d.form.height, bins = Math.ceil(H) + 1, inner = new Float64Array(A * bins).fill(Infinity), P = box.position;
+  for (let v = 0; v < P.length; v += 3) {
+    const z = P[v + 2]; if (z < 10) continue;
+    const a = Math.floor(((Math.atan2(P[v + 1], P[v]) / TAU) + 1) * A) % A, hb = Math.floor(z);
+    inner[a * bins + hb] = Math.min(inner[a * bins + hb], Math.hypot(P[v], P[v + 1]));
+  }
+  // the plug passes every height above where it ends up on its way in
+  for (let a = 0; a < A; a++) for (let hb = bins - 2; hb >= 0; hb--) inner[a * bins + hb] = Math.min(inner[a * bins + hb], inner[a * bins + hb + 1]);
+  // the lid prints upside down: placed on the box it is mirrored in y and z
+  let worst = Infinity;
+  const Q = lid.position, z0 = lid.place.z;
+  for (let v = 0; v < Q.length; v += 3) {
+    const x = Q[v], y = -Q[v + 1], z = z0 - Q[v + 2];
+    if (z > H - 0.3 || z < H - 20) continue;
+    const a = Math.floor(((Math.atan2(y, x) / TAU) + 1) * A) % A;
+    for (const hb of [Math.floor(z), Math.ceil(z)]) { const lim = inner[a * bins + clamp(hb, 0, bins - 1)]; if (Number.isFinite(lim)) worst = Math.min(worst, lim - Math.hypot(x, y)); }
+  }
+  console.log(`  ${sec.padEnd(7)} ${JSON.stringify(extra).padEnd(26)} twist ${String(twist).padStart(3)}: clearance ${worst.toFixed(2)} mm, lid overhang ${lid.stats.overhang.toFixed(0)} mm²`);
+  if (!(worst > 0.1)) fail(`${sec} twist ${twist}: the lid plug hits the box (clearance ${worst.toFixed(2)} mm)`);
+  if (lid.stats.overhang > 5) fail(`${sec} twist ${twist}: lid overhang ${lid.stats.overhang.toFixed(0)} mm²`);
+}
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

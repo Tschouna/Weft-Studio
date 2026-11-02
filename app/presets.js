@@ -15,7 +15,7 @@ export const BASE = {
   },
   extras: {
     drain: 0, base: 'none', sleeveH: 0.38, sleeveTilt: 18, gap: 1.0, lid: true, knob: 'ball', knobSize: 26, lidOverhang: 0.6,
-    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 14, slots: true, stand: 'none', standLift: 70, standHug: 0.35, standLeg: 12, baseH: 55, cord: true, hangers: 3, back: 0.3,
+    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 14, slots: true, stand: 'none', standLift: 70, standHug: 0.35, standLeg: 12, candle: 'tealight', edgeBoth: true, innerChamfer: 0, baseH: 55, cord: true, hangers: 3, back: 0.3,
   },
   finish: {
     color: '#22211f', color2: '#eeebe4', color3: '#22211f', material: 'matte',
@@ -39,6 +39,7 @@ export const OBJECTS = {
   lantern: { label: 'Tealight lantern', blurb: 'Openwork glow around an LED tealight', lamp: true, candle: true },
   tray: { label: 'Tray', blurb: 'Low dish for keys, rings and jewellery' },
   ring: { label: 'Napkin ring', blurb: 'Open band: napkin rings, bangles, sleeves' },
+  candle: { label: 'Candle holder', blurb: 'A tealight sits in the top; shape the base below', watertight: true, light: true, candle: true },
 };
 
 // Silhouettes as ratios; the size sliders stay where they are.
@@ -399,5 +400,56 @@ export const COLLECTION = [
     surface: { pattern: 'arches', mode: 'cut', count: 12, stretch: 1.3, width: 2.6, round: 0.8, alt: true, bandBottom: 22, bandTop: 10 },
     extras: { drain: 14, base: 'saucer', stand: 'upright', standLift: 80, standHug: 0.3, standLeg: 12 },
     finish: { color: '#6f7d6b', color2: '#c9b8a3', material: 'satin' },
+  }),
+
+  // ---- 2.2: candle holders, rounded bottoms, both-sided ring edges, fitted lids
+  design({
+    name: 'Vigil', object: 'candle',
+    form: { height: 90, diameter: 90, base: 0.9, top: 0.72, belly: 0.4, fullness: 0.6, inset: 1, wall: 3, floor: 3 },
+    surface: { pattern: 'hobnail', mode: 'relief', count: 16, fill: 0.85, jitter: 0, vary: 0, stretch: 1, arch: false, depth: 3, profile: 'round', bandBottom: 0, bandTop: 4 },
+    extras: { candle: 'tealight' },
+    finish: { color: '#eeebe4', material: 'silk' },
+  }),
+  design({
+    name: 'Altar', object: 'candle',
+    form: { height: 70, diameter: 110, base: 1.05, top: 0.85, belly: 0.35, fullness: 0.4, inset: 1, wall: 3, floor: 3, section: 'polygon', sides: 8, corner: 0.2 },
+    surface: { pattern: 'fins', mode: 'relief', count: 32, fill: 0.45, depth: 4, profile: 'flat', angle: 0, bandBottom: 0, bandTop: 4 },
+    extras: { candle: 'maxi' },
+    finish: { color: '#22211f', material: 'matte' },
+  }),
+  design({
+    name: 'Chapel', object: 'candle',
+    form: { height: 120, diameter: 70, base: 1.3, top: 0.6, belly: 0.5, fullness: 0, inset: 1, wall: 3, floor: 3 },
+    surface: { pattern: 'ribs', mode: 'relief', count: 20, fill: 1, depth: 3, profile: 'round', angle: 0, swirl: 90, bandBottom: 0, bandTop: 4 },
+    extras: { candle: 'taper' },
+    finish: { color: '#a34f31', material: 'satin' },
+  }),
+  design({
+    name: 'Pendula', object: 'hanging',
+    form: { height: 125, diameter: 165, base: 0.62, top: 0.96, belly: 0.56, fullness: 0.6, inset: 0, wall: 3, floor: 3, bottom: 'round' },
+    surface: { pattern: 'spikes', mode: 'relief', count: 20, angle: 60, fill: 1, depth: 5, profile: 'sharp', bandBottom: 0, bandTop: 0 },
+    extras: { hangers: 3, drain: 8 },
+    finish: { color: '#c9b8a3', material: 'matte' },
+  }),
+  design({
+    name: 'Sconce', object: 'wall',
+    form: { height: 150, diameter: 150, base: 0.8, top: 1, belly: 0.5, fullness: 0.3, inset: 0, wall: 3, floor: 3, bottom: 'round', rimEdge: 'round' },
+    surface: { pattern: 'ribs', mode: 'relief', count: 40, angle: 0, fill: 1, depth: 3, profile: 'round', bandBottom: 0, bandTop: 0 },
+    extras: { back: 0.3, drain: 0 },
+    finish: { color: '#6f7d6b', material: 'matte' },
+  }),
+  design({
+    name: 'Gilt', object: 'ring',
+    form: { height: 36, diameter: 52, base: 1, top: 1, belly: 0.5, fullness: 0.15, inset: 0, wall: 3, floor: 3, rimEdge: 'rolled' },
+    surface: { pattern: 'knurl', mode: 'relief', count: 18, angle: 58, fill: 1, depth: 2, profile: 'sharp', bandBottom: 2, bandTop: 2 },
+    extras: { edgeBoth: true, innerChamfer: 1.5 },
+    finish: { color: '#d8a647', material: 'silk' },
+  }),
+  design({
+    name: 'Keep', object: 'box',
+    form: { height: 110, diameter: 160, section: 'polygon', sides: 4, corner: 0.3, twist: 40, base: 0.95, top: 1, belly: 0.5, fullness: 0, inset: 1.2, wall: 3, floor: 3 },
+    surface: { pattern: 'ribs', mode: 'relief', count: 44, angle: 0, fill: 1, depth: 2.5, profile: 'round', bandBottom: 0, bandTop: 0 },
+    extras: { lid: true, knob: 'disc', knobSize: 30 },
+    finish: { color: '#3a3b3d', color3: '#c9b8a3', material: 'satin' },
   }),
 ];
