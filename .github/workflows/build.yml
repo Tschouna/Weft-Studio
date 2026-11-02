@@ -42,13 +42,18 @@ jobs:
             echo "release=no" >> "$GITHUB_OUTPUT"
           fi
       - name: Build installer
-        if: steps.ver.outputs.release != 'yes'
         run: npx electron-builder --win --publish never
-      - name: Build installer and publish release v${{ steps.ver.outputs.version }}
+      # One step creates the release with all its files, so nothing races to create it twice.
+      # latest.yml is what installed copies read to find the update.
+      - name: Publish release v${{ steps.ver.outputs.version }}
         if: steps.ver.outputs.release == 'yes'
-        run: npx electron-builder --win --publish always
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          v="${{ steps.ver.outputs.version }}"
+          awk -v v="$v" '/^## /{p = ($2 == v); next} p' CHANGELOG.md > notes.md
+          gh release create "v$v" dist/*.exe dist/*.exe.blockmap dist/latest.yml --target "$GITHUB_SHA" --title "Weft Studio $v" --notes-file notes.md
       - uses: actions/upload-artifact@v4
         with:
           name: Weft-Studio-Setup

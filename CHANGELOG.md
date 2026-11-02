@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2
+
+- **First release built and published by GitHub:**
+  - Releases now include the update information (`latest.yml`), so installed copies can update themselves from here on.
+  - Install this version once by hand.
+- Everything else is the same as 1.1.1.
+
 ## 1.1.1
 
 - **Automatic updates:**
