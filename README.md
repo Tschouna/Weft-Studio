@@ -68,14 +68,15 @@ The same checks run on GitHub before every build.
 
 ## Releases and automatic updates
 
-Once the project is on GitHub:
+The repository is github.com/scherrerjonah-droid/Weft-Studio. Releases and updates point at it through `npm run set-repo`.
 
-1. Point releases at the repository once: `npm run set-repo -- <owner>/<repo>`, then commit.
-2. To publish a version, run `npm version patch` (or `minor`), then `git push --follow-tags`.
-   - GitHub Actions builds the installer and attaches it to a GitHub release.
-   - Installed copies find the update on their next start and offer to restart into it.
-
-Every push without a version tag also builds the installer. It appears under the workflow run's artifacts.
+- **Releasing:** change `"version"` in `package.json` (for example 1.1.1 → 1.2.0), commit and push to `main`. GitHub Actions then:
+  1. runs the tests,
+  2. builds the installer,
+  3. publishes it as release `v<version>` on the repository's Releases page.
+- **Installed copies:** they check for a newer release when they start, download it, and offer to restart into it. **Help → Check for Updates** checks right away.
+- **Other pushes:** pushes that don't change the version still build the installer, attached to the workflow run as an artifact. No release is made.
+- **Repository visibility:** the repository must be public for installed copies to see new releases.
 
 ## Licences
 

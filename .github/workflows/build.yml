@@ -1,11 +1,11 @@
-# Builds the Windows installer on every push. A version tag (v1.2.3) also publishes it as a GitHub
-# release, which installed copies of Weft Studio pick up as an automatic update.
+# Builds the Windows installer on every push. When package.json carries a version that has no release
+# yet, the build is published as GitHub release v<version>, which installed copies of Weft Studio pick up
+# as an automatic update. To release: bump "version" in package.json and push to main.
 name: Build
 
 on:
   push:
     branches: ['**']
-    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -30,11 +30,22 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run vendor
+      - name: Is this a new version?
+        id: ver
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF" = "refs/heads/main" ] && ! git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null; then
+            echo "release=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=no" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build installer
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: steps.ver.outputs.release != 'yes'
         run: npx electron-builder --win --publish never
-      - name: Build installer and publish release
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build installer and publish release v${{ steps.ver.outputs.version }}
+        if: steps.ver.outputs.release == 'yes'
         run: npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
