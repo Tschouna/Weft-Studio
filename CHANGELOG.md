@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+- **Automatic updates:**
+  - Weft Studio now checks GitHub (scherrerjonah-droid/Weft-Studio) for new versions when it starts.
+  - When one is ready, it offers to restart into it.
+  - Help → Check for Updates checks right away.
+- Everything else is the same as 1.1.0.
+
 ## 1.1.0
 
 - **New textures:**
