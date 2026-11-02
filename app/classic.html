@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- desktop:begin -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' data: blob:">
+<!-- desktop:end -->
+<title>Weft Studio</title>
+<meta name="weft-ui" content="classic">
+<meta name="description" content="Parametric studio for 3D-printable planters, hanging and wall planters, vases, bowls, trays, boxes, lamps, lanterns and napkin rings.">
+<!-- fonts:begin -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<!-- fonts:end -->
+<style>
+/* Layout: a studio bench. The live object owns the stage; a narrow tool rail on the right holds the steps. */
+:root {
+  --paper: #ebebe7;
+  --surface: #f7f7f4;
+  --raised: #ffffff;
+  --stage-hi: #f8f8f5;
+  --stage-lo: #d9d9d3;
+  --ink: #1b1c1a;
+  --muted: #676963;
+  --faint: #9a9b95;
+  --line: #d2d3cc;
+  --chip: #e4e4de;
+  --accent: #3243c4;
+  --accent-soft: #e2e5fa;
+  --on-accent: #ffffff;
+  --ok: #2e7a4c;
+  --warn: #a2690a;
+  --bad: #b5381f;
+  --shadow: 0 1px 2px rgb(20 20 18 / 0.06), 0 8px 24px rgb(20 20 18 / 0.08);
+  --f-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --bar: 56px;
+  --rail: 404px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #121311; --surface: #1a1b19; --raised: #222420; --stage-hi: #2a2c28; --stage-lo: #121311;
+    --ink: #ecece6; --muted: #a2a49c; --faint: #6f716a; --line: #30322d; --chip: #282a26;
+    --accent: #9aa6ff; --accent-soft: #252a4a; --on-accent: #10132a;
+    --ok: #6cc08e; --warn: #e2ad4a; --bad: #f07b62;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121311; --surface: #1a1b19; --raised: #222420; --stage-hi: #2a2c28; --stage-lo: #121311;
+  --ink: #ecece6; --muted: #a2a49c; --faint: #6f716a; --line: #30322d; --chip: #282a26;
+  --accent: #9aa6ff; --accent-soft: #252a4a; --on-accent: #10132a;
+  --ok: #6cc08e; --warn: #e2ad4a; --bad: #f07b62;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { background: var(--paper); color: var(--ink); font: 15px/1.5 var(--f-body); -webkit-font-smoothing: antialiased; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--surface); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; letter-spacing: -0.015em; text-wrap: balance; margin: 0; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font: 500 11px/1.2 var(--f-mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+
+/* ---------- top bar */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; height: var(--bar);
+  display: flex; align-items: center; gap: 24px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); }
+.brand b { font: 700 24px/1 var(--f-display); letter-spacing: -0.04em; }
+.brand small { font: 400 12px/1.2 var(--f-mono); color: var(--muted); letter-spacing: 0.02em; }
+.top nav { display: flex; gap: 18px; margin-left: auto; }
+.top nav a { color: var(--muted); text-decoration: none; font-weight: 500; font-size: 14px; }
+.top nav a:hover { color: var(--ink); }
+.icon-btn { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); }
+.icon-btn:hover { border-color: var(--faint); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+.icon-btn svg { width: 17px; height: 17px; }
+.top-actions { display: flex; gap: 6px; align-items: center; }
+.mc-btn { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 6px 0 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--raised); font-size: 13px; font-weight: 600; color: var(--ink); margin-right: 6px; }
+.mc-btn:hover { border-color: var(--faint); }
+.mc-dots { display: inline-flex; padding-left: 4px; }
+.mc-dots i { width: 13px; height: 13px; border-radius: 50%; margin-left: -4px; border: 1.5px solid var(--raised); background: var(--faint); }
+.mc-dots i:nth-child(2) { background: var(--muted); } .mc-dots i:nth-child(3) { background: var(--line); }
+.mc-btn[aria-pressed="false"] .mc-dots i:nth-child(4) { display: none; }
+.mc-btn[aria-pressed="false"] .mc-dots { opacity: 0.7; }
+.mc-state { font: 500 10.5px/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 7px; border-radius: 999px; background: var(--chip); color: var(--muted); min-width: 34px; text-align: center; }
+.mc-btn[aria-pressed="true"] { border-color: var(--ink); }
+.mc-btn[aria-pressed="true"] .mc-state { background: var(--ink); color: var(--paper); }
+@media (max-width: 640px) { .mc-lbl { display: none; } .mc-btn { margin-right: 2px; } }
+@media (max-width: 640px) { .top nav { display: none; } .brand small { display: none; } .top-actions { margin-left: auto; } }
+
+/* ---------- studio */
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) var(--rail); height: calc(100vh - var(--bar)); height: calc(100dvh - var(--bar) - env(safe-area-inset-top, 0px)); min-height: 640px; }
+.stage { position: relative; overflow: hidden; background: radial-gradient(120% 90% at 50% 38%, var(--stage-hi) 0%, var(--stage-lo) 100%); }
+.stage.night { --stage-hi: #2b2824; --stage-lo: #0d0d0c; --ink: #ecece6; --muted: #a9aaa2; --faint: #75776f; --raised: #1f201d; --line: #3a3b36; --paper: #121311; color-scheme: dark; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+.overlay { position: absolute; z-index: 2; pointer-events: none; }
+.overlay > * { pointer-events: auto; }
+.stage-head { top: 18px; left: max(18px, env(safe-area-inset-left, 0px)); display: grid; gap: 2px; max-width: calc(100% - 36px); }
+.name-row { display: flex; align-items: center; gap: 8px; }
+.name-dice { flex: none; background: color-mix(in srgb, var(--raised) 88%, transparent); }
+.name-input { font: 700 clamp(28px, 4vw, 46px)/1.02 var(--f-display); letter-spacing: -0.035em; background: transparent; border: 0; padding: 0; width: auto; min-width: 3ch; max-width: min(14ch, 60vw); color: var(--ink); border-bottom: 1px dashed transparent; }
+.name-input:hover { border-bottom-color: var(--line); }
+.name-input:focus { outline: none; border-bottom-color: var(--accent); }
+.kind { font-size: 13px; color: var(--muted); }
+.stage-views { top: 18px; right: 18px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.stage-foot { left: max(18px, env(safe-area-inset-left, 0px)); right: 18px; bottom: 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.readout { display: flex; gap: 6px 14px; flex-wrap: wrap; font: 13px/1.3 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.readout strong { color: var(--ink); font-weight: 500; }
+.stage-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: color-mix(in srgb, var(--raised) 88%, transparent); color: var(--ink); font-size: 13px; font-weight: 500; backdrop-filter: blur(8px); }
+.pill-btn:hover { border-color: var(--faint); }
+.pill-btn svg { width: 15px; height: 15px; }
+.pill-btn.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--raised) 88%, transparent); border: 1px solid var(--line); backdrop-filter: blur(8px); }
+.seg button { border: 0; background: transparent; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.toggles { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+/* a column of labelled tools down the right edge on wide screens, icon buttons on narrower ones */
+@media (min-width: 921px) { .toggles { flex-direction: column; align-items: flex-end; } }
+@media (min-width: 921px) and (max-height: 760px) { .toggles .pill-btn .lbl { display: none; } .toggles .pill-btn { width: 38px; padding: 0; justify-content: center; } }
+@media (max-width: 920px) { .toggles { max-width: min(380px, 52vw); } .toggles .pill-btn .lbl { display: none; } .toggles .pill-btn { width: 38px; padding: 0; justify-content: center; } }
+.ref-pick { display: grid; grid-template-columns: repeat(3, auto); gap: 2px; padding: 4px; border-radius: 14px; background: color-mix(in srgb, var(--raised) 88%, transparent); border: 1px solid var(--line); backdrop-filter: blur(8px); }
+.ref-pick button { border: 0; background: transparent; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.ref-pick button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.dims { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.dim-label { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); font: 500 12px/1 var(--f-mono); font-variant-numeric: tabular-nums; color: var(--dim); background: color-mix(in srgb, var(--stage-hi) 86%, transparent); padding: 3px 6px; border-radius: 5px; white-space: nowrap; pointer-events: auto; cursor: text; border: 1px solid transparent; }
+.dim-label:hover, .dim-label:focus-visible { border-color: var(--dim); outline: none; }
+.dim-input { font: inherit; color: inherit; width: 6ch; border: 0; padding: 0; background: transparent; text-align: right; outline: none; }
+.dim-label:has(.dim-input) { border-color: var(--dim); background: var(--raised); }
+.split-btn { position: relative; display: inline-flex; }
+.split-btn #shuffle { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 11px; }
+.split-btn .caret { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; width: 30px; padding: 0; justify-content: center; }
+.split-btn .caret[aria-expanded="true"] svg { transform: rotate(180deg); }
+.shuffle-menu { position: absolute; right: 0; bottom: calc(100% + 8px); width: 284px; display: grid; gap: 10px; padding: 12px; border-radius: 14px; background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow); z-index: 5; }
+@media (max-width: 520px) { .shuffle-menu { left: 0; right: auto; } }
+.stage { --dim: #1f4fbf; }
+:root[data-theme="dark"] .stage, .stage.night { --dim: #8fb2ff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stage { --dim: #8fb2ff; } }
+.legend i.ref { background: var(--dim); border-radius: 50%; }
+.mc-body { display: grid; grid-template-columns: 26px 1fr; gap: 14px; align-items: stretch; }
+.mc-strip { display: flex; flex-direction: column-reverse; border-radius: 7px; overflow: hidden; border: 1px solid var(--line); min-height: 118px; }
+.mc-strip i { display: block; min-height: 4px; }
+.mc-strip i + i { border-bottom: 1px solid rgb(0 0 0 / 0.12); }
+.mc-ctl { display: grid; gap: 12px; align-content: start; }
+.mc-slot { display: grid; gap: 8px; }
+.fil-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--c); border: 1px solid rgb(0 0 0 / 0.15); margin-right: 8px; vertical-align: -1px; }
+.parts td:nth-child(2) { color: var(--muted); }
+.busy { top: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font: 12px var(--f-mono); color: var(--muted); background: color-mix(in srgb, var(--raised) 90%, transparent); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; opacity: 0; transition: opacity 0.2s; }
+.busy.show { opacity: 1; }
+.busy i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.legend { right: 18px; bottom: 64px; display: none; gap: 12px; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--raised) 90%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.legend.show { display: flex; }
+.legend i.hazard { background: repeating-linear-gradient(135deg, #ff2185 0 3px, #ffdc0d 3px 6px); }
+.drag-tip { position: absolute; z-index: 4; pointer-events: none; transform: translate(14px, -50%); background: var(--ink); color: var(--paper); font: 12px/1.3 var(--f-mono); padding: 5px 8px; border-radius: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stage.dragging, .stage.dragging canvas { cursor: grabbing !important; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.hint { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); font-size: 12px; color: var(--faint); pointer-events: none; transition: opacity 0.6s; white-space: nowrap; }
+
+/* ---------- rail */
+.rail { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--line); }
+.steps { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 2; }
+.steps button { border: 0; background: transparent; padding: 12px 4px 11px; display: grid; gap: 1px; justify-items: center; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.steps button span { font: 500 10px/1 var(--f-mono); letter-spacing: 0.08em; color: var(--faint); }
+.steps button b { font-weight: 600; font-size: 13px; }
+.steps button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.steps button[aria-selected="true"] span { color: var(--accent); }
+.panes { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 18px 20px 28px; }
+.pane { display: grid; gap: 22px; }
+.group { display: grid; gap: 12px; }
+.group + .group { padding-top: 20px; border-top: 1px solid var(--line); }
+.group-head { display: grid; gap: 2px; }
+.group-head h3 { font-size: 17px; }
+.group-head p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.group-head.act { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; }
+.group-head.act > p { grid-column: 1 / -1; }
+.mini-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--raised); font-size: 12.5px; font-weight: 500; color: var(--ink); white-space: nowrap; }
+.mini-btn:hover { border-color: var(--faint); }
+.mini-btn svg { width: 14px; height: 14px; }
+.note { margin: 0; font-size: 13px; color: var(--muted); }
+
+.ctl { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 10px; }
+.ctl label { font-size: 13.5px; font-weight: 500; }
+.ctl-val { font: 13px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; width: 11ch; text-align: right; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; margin: -3px -7px -3px 0; cursor: text; }
+.ctl-val:hover { border-color: var(--line); color: var(--ink); }
+.ctl-val:focus { outline: none; border-color: var(--accent); background: var(--raised); color: var(--ink); }
+.ctl input[type="range"] { grid-column: 1 / -1; }
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; margin: 0; --p: 50%; }
+input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 3px; background: linear-gradient(90deg, var(--ink) var(--p), var(--line) var(--p)); }
+input[type="range"]::-moz-range-track { height: 3px; border-radius: 3px; background: linear-gradient(90deg, var(--ink) var(--p), var(--line) var(--p)); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--raised); border: 2px solid var(--ink); margin-top: -6.5px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.2); }
+input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--raised); border: 2px solid var(--ink); }
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-soft); border-color: var(--accent); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--raised); border-radius: 999px; height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; color: var(--ink); }
+.chip:hover { border-color: var(--faint); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.row-ctl { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row-ctl > label, .row-ctl > span { font-size: 13.5px; font-weight: 500; }
+.switch { position: relative; width: 38px; height: 22px; flex: none; }
+.switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.switch i { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background 0.15s; pointer-events: none; }
+.switch i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--raised); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); transition: transform 0.15s; }
+.switch input:checked + i { background: var(--ink); }
+.switch input:checked + i::after { transform: translateX(16px); }
+.switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.objects { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.obj { text-align: left; border: 1px solid var(--line); background: var(--raised); border-radius: 12px; padding: 10px 10px 11px; display: grid; gap: 4px; align-content: start; }
+.obj:hover { border-color: var(--faint); }
+.obj svg { width: 34px; height: 34px; color: var(--ink); }
+.obj b { font-size: 13.5px; }
+.obj small { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.obj[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+
+.patterns { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.pat { border: 0; background: transparent; padding: 0; display: grid; gap: 4px; justify-items: center; font-size: 11.5px; color: var(--muted); }
+.pat canvas { width: 100%; aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); display: block; }
+.pat:hover canvas { border-color: var(--faint); }
+.pat[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
+.pat[aria-pressed="true"] canvas { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.pat:disabled { cursor: not-allowed; opacity: 0.38; }
+.pat:disabled canvas { border-style: dashed; }
+.seg button:disabled { opacity: 0.4; cursor: not-allowed; }
+.lock-note { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--muted); background: var(--chip); border-radius: 10px; padding: 9px 11px; margin: 0; }
+.lock-note svg { flex: none; width: 15px; height: 15px; margin-top: 2px; }
+
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.sw { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgb(0 0 0 / 0.14); background: var(--c); padding: 0; position: relative; }
+.sw[aria-pressed="true"]::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--ink); }
+.sw-name { font-size: 12.5px; color: var(--muted); }
+
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.checks li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13px; line-height: 1.4; }
+.checks li::before { content: ""; width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; background: var(--ok); justify-self: center; }
+.checks li.warn::before { background: var(--warn); border-radius: 2px; transform: rotate(45deg); }
+.checks li.bad::before { background: var(--bad); border-radius: 2px; }
+
+.parts { width: 100%; border-collapse: collapse; font-size: 13px; }
+.parts th { text-align: left; font: 500 11px var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 0 6px; }
+.parts td { padding: 7px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.parts td + td, .parts th + th { text-align: right; padding-left: 10px; }
+.parts td.mono { font-size: 12.5px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 11px; border: 1px solid var(--line); background: var(--raised); font-weight: 600; font-size: 14px; color: var(--ink); }
+.btn:hover { border-color: var(--faint); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn:disabled { opacity: 0.55; cursor: progress; }
+.btn svg { width: 17px; height: 17px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-row .btn { flex: 1 1 auto; }
+select.select { height: 36px; border-radius: 9px; border: 1px solid var(--line); background: var(--raised); padding: 0 10px; font-size: 13.5px; width: 100%; }
+textarea.listing { width: 100%; min-height: 220px; resize: vertical; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); padding: 10px 12px; font: 12.5px/1.5 var(--f-mono); color: var(--ink); }
+input.text { height: 36px; border-radius: 9px; border: 1px solid var(--line); background: var(--raised); padding: 0 10px; font-size: 13.5px; width: 100%; }
+
+.status { border-top: 1px solid var(--line); padding: 10px 20px; display: flex; align-items: center; gap: 10px; font-size: 13px; background: var(--surface); }
+.status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex: none; }
+.status.warn .dot { background: var(--warn); }
+.status.bad .dot { background: var(--bad); }
+.status b { font-weight: 600; }
+.status .mono { margin-left: auto; color: var(--muted); font-size: 12.5px; }
+.status button { border: 0; background: none; padding: 0; color: inherit; text-align: left; display: flex; gap: 10px; align-items: center; flex: 1; min-width: 0; }
+
+@media (max-width: 920px) {
+  .studio { grid-template-columns: 1fr; height: auto; min-height: 0; }
+  .stage { height: 70vh; min-height: 460px; }
+  .rail { border-left: 0; border-top: 1px solid var(--line); }
+  .panes { overflow: visible; }
+  .steps { top: calc(var(--bar) + env(safe-area-inset-top, 0px)); }
+  .status { position: sticky; bottom: 0; z-index: 3; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 520px) {
+  .stage-head { top: 14px; left: 14px; }
+  .stage-head .eyebrow { display: none; }
+  .stage-views { top: auto; bottom: 56px; left: 12px; right: 12px; align-items: flex-start; flex-direction: column-reverse; }
+  .toggles { justify-content: flex-start; }
+  .stage-foot { bottom: 12px; left: 12px; right: 12px; }
+  .readout { display: none; }
+  .legend { bottom: auto; top: 96px; right: 12px; }
+  .toggles .pill-btn .lbl { display: none; }
+  .toggles .pill-btn { width: 38px; padding: 0; justify-content: center; }
+  .hint { display: none; }
+  .patterns { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ---------- collection + guide */
+.studio, .section { scroll-margin-top: calc(var(--bar) + env(safe-area-inset-top, 0px)); }
+.section { padding-block: 64px 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 28px; }
+.sec-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px 48px; align-items: end; }
+.sec-head h2 { font-size: clamp(32px, 5vw, 56px); line-height: 1; letter-spacing: -0.04em; }
+.sec-head p { margin: 0; color: var(--muted); max-width: 58ch; }
+@media (max-width: 760px) { .sec-head { grid-template-columns: 1fr; } }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+@media (max-width: 600px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .card .meta b { font-size: 17px; } }
+.card { text-align: left; padding: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 16px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; align-content: start; width: 100%; height: 100%; color: var(--ink); transition: transform 0.2s, box-shadow 0.2s; }
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+@media (prefers-reduced-motion: reduce) { .card, .card:hover { transition: none; transform: none; } }
+.card .thumb { aspect-ratio: 4 / 3; background: radial-gradient(120% 90% at 50% 38%, var(--stage-hi) 0%, var(--stage-lo) 100%); position: relative; display: grid; place-items: center; }
+.card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .thumb .ph { font: 12px var(--f-mono); color: var(--faint); }
+.card .meta { padding: 12px 14px 14px; display: grid; gap: 2px; }
+.card .meta b { font: 600 20px/1.1 var(--f-display); letter-spacing: -0.02em; }
+.card .meta span { font-size: 13px; color: var(--muted); }
+.card .meta small { font: 12px var(--f-mono); color: var(--faint); margin-top: 4px; }
+.card-wrap { position: relative; }
+.card-del { position: absolute; top: 8px; right: 8px; z-index: 1; }
+.empty { border: 1px dashed var(--line); border-radius: 16px; padding: 22px; color: var(--muted); font-size: 14px; }
+
+.guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.tip { border-top: 2px solid var(--ink); padding-top: 14px; display: grid; gap: 8px; align-content: start; }
+.tip h3 { font-size: 20px; }
+.tip p, .tip li { margin: 0; color: var(--muted); font-size: 14px; }
+.tip ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.tip dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13.5px; }
+.tip dt { color: var(--muted); }
+.tip dd { margin: 0; font-family: var(--f-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+footer.foot { padding-block: 40px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); color: var(--faint); font-size: 13px; }
+footer.foot .wrap { border-top: 1px solid var(--line); padding-top: 18px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 20px); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity 0.2s, transform 0.2s; z-index: 50; pointer-events: none; max-width: calc(100vw - 32px); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* desktop app: slim scrollbars that match the theme */
+html.desktop ::-webkit-scrollbar { width: 10px; height: 10px; }
+html.desktop ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--faint) 55%, transparent); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+html.desktop ::-webkit-scrollbar-thumb:hover { background-color: var(--faint); }
+html.desktop ::-webkit-scrollbar-track { background: transparent; }
+.toast.has-act { display: flex; align-items: center; gap: 14px; }
+.toast.has-act.show { pointer-events: auto; }
+.toast-act { flex: none; border: 1px solid color-mix(in srgb, var(--paper) 45%, transparent); background: transparent; color: var(--paper); border-radius: 7px; height: 28px; padding: 0 10px; font-size: 13px; font-weight: 600; }
+.toast-act:hover { background: color-mix(in srgb, var(--paper) 14%, transparent); }
+.boot-error { position: absolute; inset: auto 18px 70px 18px; z-index: 3; background: var(--raised); border: 1px solid var(--bad); color: var(--ink); border-radius: 12px; padding: 12px 14px; font-size: 13.5px; }
+</style>
+
+<!-- importmap:begin -->
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/three/addons/",
+  "fflate": "./vendor/fflate/browser.js"
+} }
+</script>
+<!-- importmap:end -->
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#studio" aria-label="Weft studio">
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9l8-6M3 17l14-14M3 23l20-20M9 23l14-14M15 23l8-6"/><path d="M3 3l20 20M3 11l12 12M3 19l4 4M11 3l12 12M19 3l4 4" opacity=".45"/></svg>
+    <b>weft</b>
+    <small>parametric homeware for 3D printing</small>
+  </a>
+  <nav aria-label="Sections">
+    <a href="#studio">Studio</a>
+    <a href="#collection">Collection</a>
+    <a href="#guide">Print guide</a>
+  </nav>
+  <div class="top-actions">
+    <button class="mc-btn" id="mc-toggle" type="button" aria-pressed="false" title="Split every piece into colour bands for AMS, MMU or manual filament changes. Stays on or off while you shuffle and switch designs."><span class="mc-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="mc-lbl">Multicolor</span><span class="mc-state" id="mc-state">Off</span></button>
+    <button class="mc-btn" id="ui-switch" type="button" title="Switch to the Weft 2.0 design. Your design comes with you, and you can switch back any time.">Try Weft 2.0</button>
+    <button class="icon-btn" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5L3 9l4 4"/><path d="M3 9h9a5 5 0 010 10H9"/></svg></button>
+    <button class="icon-btn" id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l4 4-4 4"/><path d="M17 9H8a5 5 0 000 10h3"/></svg></button>
+    <button class="icon-btn" id="theme" title="Switch light or dark" aria-label="Switch light or dark"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5a6.5 6.5 0 000 13z" fill="currentColor"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <section class="studio" id="studio" aria-label="Studio">
+    <div class="stage" id="stage">
+      <canvas id="view" aria-label="3D preview. Drag to rotate, scroll or pinch to zoom." tabindex="0"></canvas>
+      <div class="overlay stage-head">
+        <label class="eyebrow" for="design-name">Design name</label>
+        <div class="name-row">
+          <input class="name-input" id="design-name" value="Atrium" maxlength="28" spellcheck="false">
+          <button class="icon-btn name-dice" id="name-dice" type="button" title="New name" aria-label="Generate a new name"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="3"/><circle cx="7.5" cy="7.5" r=".7" fill="currentColor"/><circle cx="12.5" cy="12.5" r=".7" fill="currentColor"/><circle cx="12.5" cy="7.5" r=".7" fill="currentColor"/><circle cx="7.5" cy="12.5" r=".7" fill="currentColor"/></svg></button>
+        </div>
+        <span class="kind" id="kind">Pendant lamp · Lattice openwork</span>
+      </div>
+      <div class="overlay stage-views">
+        <div class="seg" role="group" aria-label="View">
+          <button id="view-studio" aria-pressed="true">Studio</button>
+          <button id="view-print" aria-pressed="false">Print check</button>
+        </div>
+        <div class="toggles">
+          <button class="pill-btn" id="t-glow" aria-label="Light" aria-pressed="false" title="Light inside the piece"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 13a5 5 0 116 0v2H7z"/><path d="M8 18h4"/></svg><span class="lbl">Light</span></button>
+          <button class="pill-btn" id="t-xray" aria-label="See-through" aria-pressed="false" title="See through the walls"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="10" height="10" rx="2"/><rect x="7" y="7" width="10" height="10" rx="2" stroke-dasharray="2 1.6"/></svg><span class="lbl">See-through</span></button>
+          <button class="pill-btn" id="t-handles" aria-label="Drag shape" aria-pressed="true" title="Turn the drag points on the model on or off"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 17c3-3 3-11 0-14"/><circle cx="6" cy="3" r="1.8" fill="currentColor"/><circle cx="8.3" cy="10" r="1.8" fill="currentColor"/><circle cx="6" cy="17" r="1.8" fill="currentColor"/><path d="M12 10h5M15 8l2 2-2 2"/></svg><span class="lbl">Drag shape</span></button>
+          <button class="pill-btn" id="t-explode" aria-label="Lift lid" aria-pressed="false" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h12M5 11h10l-1 6H6z"/><path d="M10 2v3"/></svg><span class="lbl">Lift lid</span></button>
+          <button class="pill-btn" id="t-dims" aria-label="Dimensions" aria-pressed="false" title="Dimensions on the model, in millimetres"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v14M17 3v14"/><path d="M3 10h14M6 7.5L3 10l3 2.5M14 7.5l3 2.5-3 2.5"/></svg><span class="lbl">Dimensions</span></button>
+          <button class="pill-btn" id="t-ref" aria-label="Size reference" aria-pressed="false" title="Put an everyday object beside the piece for scale"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="6" height="10" rx="1.5"/><path d="M4 7c0-1.5.8-2 2-2s2 .5 2 2"/><path d="M12 17V4l5 2.5-5 2.5"/></svg><span class="lbl">Size ref</span></button>
+          <button class="pill-btn" id="t-cut" aria-label="Cutaway" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2v16"/><path d="M10 4a6 6 0 000 12" stroke-dasharray="2 2"/><path d="M10 4a6 6 0 010 12"/></svg><span class="lbl">Cutaway</span></button>
+          <button class="pill-btn on" id="t-spin" aria-label="Turntable" aria-pressed="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M16 10a6 6 0 11-2-4.5"/><path d="M14 2v3.5h-3.5"/></svg><span class="lbl">Turntable</span></button>
+        </div>
+        <div class="ref-pick" id="ref-pick" role="group" aria-label="Size reference object" hidden></div>
+      </div>
+      <div class="dims" id="dims" aria-hidden="true"></div>
+      <div class="overlay busy" id="busy" aria-live="polite"><i></i><span>Building mesh</span></div>
+      <div class="overlay legend" id="legend" aria-live="polite"><span id="lg-over"><i class="hazard"></i><span id="lg-over-text">Overhang past 46°</span></span><span id="lg-bridge"><i style="background:#e8a41c"></i>Short bridge</span><span id="lg-ref" hidden><i class="ref"></i><span id="lg-ref-text"></span></span></div>
+      <div class="drag-tip" id="drag-tip" hidden></div>
+      <div class="hint" id="hint">Drag to rotate · scroll to zoom</div>
+      <div class="overlay stage-foot">
+        <div class="readout" id="readout" aria-live="polite"></div>
+        <div class="stage-btns">
+          <div class="split-btn">
+            <button class="pill-btn" id="shuffle" title="Random variation that stays printable"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="3"/><circle cx="7.5" cy="7.5" r=".6" fill="currentColor"/><circle cx="12.5" cy="12.5" r=".6" fill="currentColor"/><circle cx="12.5" cy="7.5" r=".6" fill="currentColor"/><circle cx="7.5" cy="12.5" r=".6" fill="currentColor"/></svg><span id="shuffle-label">Shuffle</span></button>
+            <button class="pill-btn caret" id="shuffle-opts" type="button" aria-label="Choose what Shuffle changes" aria-haspopup="true" aria-expanded="false" aria-controls="shuffle-menu" title="Choose what Shuffle changes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12l4-4 4 4"/></svg></button>
+            <div class="shuffle-menu" id="shuffle-menu" hidden></div>
+          </div>
+          <button class="pill-btn" id="reset-view" title="Frame the object"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 7V3h4M17 7V3h-4M3 13v4h4M17 13v4h-4"/></svg>Frame</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="rail" aria-label="Design controls">
+      <div class="steps" role="tablist" aria-label="Design steps">
+        <button role="tab" id="tab-object" aria-controls="pane-object" aria-selected="true"><span>01</span><b>Object</b></button>
+        <button role="tab" id="tab-form" aria-controls="pane-form" aria-selected="false"><span>02</span><b>Form</b></button>
+        <button role="tab" id="tab-surface" aria-controls="pane-surface" aria-selected="false"><span>03</span><b>Surface</b></button>
+        <button role="tab" id="tab-finish" aria-controls="pane-finish" aria-selected="false"><span>04</span><b>Finish</b></button>
+        <button role="tab" id="tab-export" aria-controls="pane-export" aria-selected="false"><span>05</span><b>Export</b></button>
+      </div>
+      <div class="panes" id="panes">
+        <div class="pane" id="pane-object" role="tabpanel" aria-labelledby="tab-object"></div>
+        <div class="pane" id="pane-form" role="tabpanel" aria-labelledby="tab-form" hidden></div>
+        <div class="pane" id="pane-surface" role="tabpanel" aria-labelledby="tab-surface" hidden></div>
+        <div class="pane" id="pane-finish" role="tabpanel" aria-labelledby="tab-finish" hidden></div>
+        <div class="pane" id="pane-export" role="tabpanel" aria-labelledby="tab-export" hidden></div>
+      </div>
+      <div class="status" id="status"><button id="status-btn"><span class="dot"></span><span id="status-text"><b>Checking</b></span></button><span class="mono" id="status-weight"></span></div>
+    </aside>
+  </section>
+
+  <section class="section" id="collection" aria-labelledby="collection-title">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2 id="collection-title">Collection</h2>
+        <p>Forty-four starting points across every object type. Each one opens in the studio with its full settings, so you can make it your own: change the silhouette, swap the surface, and export a new variant.</p>
+      </div>
+      <div class="grid" id="collection-grid"></div>
+      <div class="sec-head" style="margin-top:24px">
+        <h2 style="font-size:clamp(24px,3vw,34px)">Saved designs</h2>
+        <p>Designs you save from the Export step stay in this browser.</p>
+      </div>
+      <div class="grid" id="saved-grid"></div>
+    </div>
+  </section>
+
+  <section class="section" id="guide" aria-labelledby="guide-title">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2 id="guide-title">Print guide</h2>
+        <p>Every model leaves the studio already oriented for printing. Openwork pieces print with zero infill in the walls because the walls are solid lines. These settings are tuned for a 0.4 mm nozzle and matte PLA.</p>
+      </div>
+      <div class="guide">
+        <article class="tip">
+          <h3>Openwork: lattice, voronoi, honeycomb</h3>
+          <dl>
+            <dt>Layer height</dt><dd>0.20 mm</dd>
+            <dt>Wall loops</dt><dd>wall ÷ 0.45 mm</dd>
+            <dt>Infill</dt><dd>15% (floor only)</dd>
+            <dt>Supports</dt><dd>off</dd>
+            <dt>Seam</dt><dd>aligned, back</dd>
+            <dt>Outer wall speed</dt><dd>≤ 120 mm/s</dd>
+          </dl>
+          <p>Band edges follow the pattern, so every opening ends in a point or a short bridge rather than a long flat roof.</p>
+        </article>
+        <article class="tip">
+          <h3>Relief and vase mode</h3>
+          <dl>
+            <dt>Spiral vase</dt><dd>on, for solid-body vases</dd>
+            <dt>Line width</dt><dd>0.6 mm in vase mode</dd>
+            <dt>Bottom layers</dt><dd>5</dd>
+            <dt>Layer height</dt><dd>0.16–0.24 mm</dd>
+          </dl>
+          <p>Relief starts at full depth on the bed, and every underside of a texture is held at 45° or less, so relief never needs supports, even 8 mm spikes, fins and blocks on a twisted piece. A 45° base chamfer gives every piece a clean shadow line. Walls default to 3 mm for sturdy prints.</p>
+        </article>
+        <article class="tip">
+          <h3>Lids, sleeves and lamps</h3>
+          <ul>
+            <li>Lids print top-down. Glue the knob peg with a drop of CA, or press it in.</li>
+            <li>Sleeves print upright and nest the pot with the clearance you set.</li>
+            <li>Pendants print crown-down. Use LED bulbs of 10 W or less and keep 3 cm between bulb and shade.</li>
+            <li>Table lamps: the base prints top-down with the socket hole on the plate; the shade stands in its groove.</li>
+            <li>Self-watering planters: print the insert in any colour, thread a cotton wick through its floor, and fill the reservoir down the side channel.</li>
+            <li>Hanging planters: thread cord or macramé up to Ø 4 mm through the teardrop holes under the rim.</li>
+            <li>Wall planters print upright on their D shape. Hook the keyhole in the flat back over a screw with its head 4 mm out of the wall.</li>
+            <li>Lanterns are for LED tealights only, never a real flame.</li>
+          </ul>
+        </article>
+        <article class="tip">
+          <h3>Multicolour</h3>
+          <ul>
+            <li>Switch on Multicolor in the top bar. It stays on as you shuffle and open other designs.</li>
+            <li>Bands are cut on layer lines, so each layer is one colour and the printer swaps only at the band heights.</li>
+            <li>Bambu Studio and OrcaSlicer: open the main 3MF; each colour arrives as a part on its own filament. PrusaSlicer has its own 3MF.</li>
+            <li>No AMS: print the single STL and add a filament change at the heights listed in print-settings.txt.</li>
+          </ul>
+        </article>
+        <article class="tip">
+          <h3>Listing on MakerWorld</h3>
+          <ul>
+            <li>Upload the 3MF: parts arrive laid out and oriented.</li>
+            <li>Save a 4:3 cover image in the shade you print, plus a second one with Dimensions and a size reference switched on.</li>
+            <li>Publish 2–3 sizes or surfaces as separate plates in one listing.</li>
+            <li>Paste the listing text from the Export step and adjust it.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+  <footer class="foot"><div class="wrap"><span>Weft studio. Geometry is generated in your browser; nothing is uploaded.</span><span class="mono">mm · PLA 1.24 g/cm³</span></div></footer>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

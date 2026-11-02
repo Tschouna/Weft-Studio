@@ -76,7 +76,15 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => {
     if (pendingOpen) { openDesignFile(pendingOpen); pendingOpen = null; }
   });
-  win.loadURL(`${ORIGIN}/index.html`);
+  win.loadURL(pageURL());
+}
+// Weft 2.0 is index.html; the 1.x design stays available as classic.html
+const pageURL = () => `${ORIGIN}/${settings.ui === 'classic' ? 'classic.html' : 'index.html'}`;
+function setUI(ui) {
+  settings.ui = ui === 'classic' ? 'classic' : 'v2';
+  saveSettings();
+  buildMenu();
+  if (win && !win.isDestroyed()) win.loadURL(pageURL());
 }
 
 function send(action, arg) {
@@ -151,6 +159,7 @@ ipcMain.handle('open-in-slicer', async (_e, { filename, data }) => {
 
 ipcMain.handle('show-in-folder', (_e, file) => { if (typeof file === 'string' && fs.existsSync(file)) shell.showItemInFolder(file); });
 ipcMain.handle('open-design', () => chooseDesignFile());
+ipcMain.handle('set-ui', (_e, ui) => setUI(ui));
 ipcMain.handle('set-title', (_e, name) => { if (win) win.setTitle(name ? `${name} · Weft Studio` : 'Weft Studio'); });
 ipcMain.handle('app-info', () => ({ version: app.getVersion(), platform: process.platform, exportDir: exportDir(), updates: !!pkg.weft?.updateRepo }));
 
@@ -218,6 +227,16 @@ function buildMenu() {
         { label: 'Turntable', click: () => send('toggle', 'spin') },
         { label: 'Light or Dark', click: () => send('theme') },
         { type: 'separator' },
+        { label: 'Collection', click: () => send('collection') },
+        { label: 'Print Guide', click: () => send('guide') },
+        {
+          label: 'Design',
+          submenu: [
+            { label: 'Weft 2.0', type: 'radio', checked: settings.ui !== 'classic', click: () => send('ui', 'v2') },
+            { label: 'Classic', type: 'radio', checked: settings.ui === 'classic', click: () => send('ui', 'classic') },
+          ],
+        },
+        { type: 'separator' },
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
@@ -235,7 +254,7 @@ function buildMenu() {
           label: 'About Weft Studio',
           click: () => dialog.showMessageBox(win, {
             type: 'info', title: 'About Weft Studio', message: `Weft Studio ${app.getVersion()}`,
-            detail: 'Parametric homeware for 3D printing: planters, vases, bowls, boxes, cups and lamps, exported ready for your slicer.\n\nElectron ' + process.versions.electron,
+            detail: 'Parametric homeware for 3D printing: planters, vases, bowls, trays, boxes, lamps, lanterns and more, exported ready for your slicer.\n\nElectron ' + process.versions.electron,
           }),
         },
       ],

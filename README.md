@@ -6,6 +6,12 @@ Every piece is built as a watertight mesh, oriented for printing, with overhangs
 
 ## Using the app
 
+- **Two designs:**
+  - Weft 2.0 is the default.
+  - The 1.x layout is still there: click **Classic** in the top bar, or use **View → Design**.
+  - **Try Weft 2.0** switches back.
+  - The design on the stage comes along, and the app remembers the choice.
+
 - **Install:** run `Weft-Studio-Setup-x.y.z.exe`. The installer isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC". Click **More info**, then **Run anyway**.
 - **Designs:** **File → Save Design As… (Ctrl+S)** writes a `.weft` file. Double-click a `.weft` file, or use **File → Open Design… (Ctrl+O)**, to keep working on it.
 - **Print files:** **File → Export Print Files… (Ctrl+E)** saves a .zip with the 3MF, STLs and print notes.
@@ -44,6 +50,8 @@ Requirements: Node.js 22 and npm.
 | Path | What it is |
 |---|---|
 | `app/` | The studio itself, plain HTML and JavaScript modules. It is the same code in the desktop app and the browser. |
+| `app/index.html` | The Weft 2.0 page: layout and styles. |
+| `app/classic.html` | The classic (1.x) page. Both pages use the same element ids, so one `app.js` drives either. |
 | `app/engine.js` | The geometry engine: silhouettes, cross-sections (including the flat-backed D for wall planters), the 35 textures and swirl, the mesher, cord holes and keyholes, lids, saucers, sleeves, self-watering inserts, lamp bases, multicolour bands and overhang checks. Runs in a Web Worker. |
 | `app/presets.js` | Defaults, silhouettes and the starter collection. |
 | `app/app.js` | UI, 3D preview, drag handles, dimensions, size references, export (3MF, STL, PNG). |
@@ -54,6 +62,7 @@ Requirements: Node.js 22 and npm.
 | `build/` | The icon (`icon.svg` is the source). |
 | `test/engine.mjs` | Engine checks. |
 | `test/ui-objects.cjs` | Clicks through objects in the browser build and screenshots them (`npm run web` first). |
+| `test/ui-switch.cjs` | Checks the switch between Weft 2.0 and Classic, the collection filters and folding sections (`npm run web` first). |
 | `.github/workflows/build.yml` | Builds the installer on GitHub. |
 
 ### Engine checks

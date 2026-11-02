@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.0
+
+A new design for the whole studio. Every feature from 1.2 is still here; only the layout and the look changed.
+
+**Don't like it?** Click **Classic** in the top bar (or use View → Design → Classic in the menu) to get the 1.x layout back. Your design comes with you, and Weft Studio remembers your choice. Classic has a **Try Weft 2.0** button to switch back.
+
+- **Studio layout:**
+  - The five steps sit in a rail down the left, with their controls in an inspector beside them.
+  - The piece gets the rest of the window.
+- **Tool dock:**
+  - Light, see-through, cutaway, dimensions, size reference, drag shape and turntable float on a dock under the piece.
+  - Frame and Shuffle sit on the same dock.
+- **Status bar:** size, weight, parts, triangles and the print check run along the bottom. Click the check to open Export.
+- **Top bar:**
+  - Studio, Collection and Print guide are views of their own instead of one long page.
+  - A primary **Export** button is always one click away.
+- **Collection:**
+  - A full-width gallery with filters: Planters, Vases, Bowls and trays, Boxes and cups, Lighting and Rings.
+- **Inspector:**
+  - Every section folds away from its heading and stays folded.
+  - Each step has a header that says what it covers.
+  - The controls are more compact and precise.
+- **Polish:**
+  - A photo-studio backdrop for the piece.
+  - Refined light and dark themes.
+  - Phone layout: the steps become tabs, and the dock wraps onto two rows.
+
 ## 1.2.1
 
 - **Updates follow the repository's new home:**

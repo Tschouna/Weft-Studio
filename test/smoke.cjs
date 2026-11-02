@@ -50,6 +50,16 @@ const step = (m) => console.log(new Date().toISOString().slice(11, 19), m);
     step('loaded design file: ' + (await win.inputValue('#design-name')) + ' | title ' + (await win.title()));
   }
   await win.screenshot({ path: path.join(OUT, 'app-loaded.png') });
+  // the design switch: Classic through the View menu, then back to Weft 2.0, keeping the design
+  const ui = async (to) => {
+    await app.evaluate(({ BrowserWindow }, t) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'ui', t), to);
+    await win.waitForFunction((t) => document.querySelector('meta[name="weft-ui"]')?.content === t && !!document.querySelector('#readout strong'), to, { timeout: 120000 });
+    await idle();
+    step(`design ${to}: ${await win.inputValue('#design-name')} | ${win.url()}`);
+  };
+  await ui('classic');
+  await win.screenshot({ path: path.join(OUT, 'app-classic.png') });
+  await ui('v2');
   console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no errors');
   await app.close();
 })().catch((e) => { console.error(e); process.exit(1); });

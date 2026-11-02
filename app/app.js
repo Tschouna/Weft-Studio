@@ -260,6 +260,8 @@ const store = {
 let toastTimer = 0;
 // The desktop app (Electron) exposes window.weftDesktop; in a browser it is undefined.
 const desktop = window.weftDesktop || null;
+// Which design this page is: 'v2' (Weft 2.0) or 'classic' (the 1.x layout, kept so it can be switched back).
+const UI = document.querySelector('meta[name="weft-ui"]')?.content || 'classic';
 function toast(msg, action) {
   const t = $('#toast');
   t.replaceChildren(msg);
@@ -1579,6 +1581,7 @@ function renderChecks() {
 // ============================================================ panes
 function setTab(tab) {
   state.tab = tab;
+  document.body.dataset.tab = tab;
   for (const t of ['object', 'form', 'surface', 'finish', 'export']) {
     $(`#tab-${t}`).setAttribute('aria-selected', t === tab);
     $(`#pane-${t}`).hidden = t !== tab;
@@ -1663,8 +1666,28 @@ function switchCtl(id, label, get, set, opts = {}) {
   return h('div', { class: 'row-ctl' }, h('label', { for: id }, label), h('span', { class: 'switch' }, input, h('i')));
 }
 // a group whose head carries one action on the right
-const groupAct = (title, sub, act, ...kids) => h('div', { class: 'group' }, h('div', { class: 'group-head act' }, h('h3', {}, title), act, sub ? h('p', {}, sub) : null), ...kids);
-const group = (title, sub, ...kids) => h('div', { class: 'group' }, h('div', { class: 'group-head' }, h('h3', {}, title), sub ? h('p', {}, sub) : null), ...kids);
+const groupAct = (title, sub, act, ...kids) => foldable(h('div', { class: 'group' }, h('div', { class: 'group-head act' }, h('h3', {}, title), act, sub ? h('p', {}, sub) : null), ...kids), title);
+const group = (title, sub, ...kids) => foldable(h('div', { class: 'group' }, h('div', { class: 'group-head' }, h('h3', {}, title), sub ? h('p', {}, sub) : null), ...kids), title);
+// In 2.0 every section of the inspector folds away from its heading, and stays folded.
+const folded = new Set(store.get('weft.folded', []));
+function foldable(el, title) {
+  if (UI !== 'v2' || typeof title !== 'string') return el;
+  const head = el.querySelector('.group-head h3');
+  const set = (on) => { el.classList.toggle('collapsed', on); head.setAttribute('aria-expanded', !on); };
+  head.tabIndex = 0;
+  head.setAttribute('role', 'button');
+  head.title = 'Fold or unfold this section';
+  set(folded.has(title));
+  const flip = () => {
+    const on = !el.classList.contains('collapsed');
+    set(on);
+    if (on) folded.add(title); else folded.delete(title);
+    store.set('weft.folded', [...folded]);
+  };
+  head.addEventListener('click', flip);
+  head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
+  return el;
+}
 
 // ---------- 01 object
 function renderObject() {
@@ -1672,7 +1695,7 @@ function renderObject() {
   const pane = $('#pane-object');
   const cards = h('div', { class: 'objects', role: 'group', 'aria-label': 'Object type' });
   for (const [k, o] of Object.entries(OBJECTS)) {
-    cards.append(h('button', { class: 'obj', type: 'button', 'aria-pressed': d.object === k, onclick: () => switchObject(k) },
+    cards.append(h('button', { class: 'obj', type: 'button', 'aria-pressed': d.object === k, title: o.blurb, onclick: () => switchObject(k) },
       h('svg', { viewBox: '0 0 40 40', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', html: ICONS[k] }),
       h('b', {}, o.label), h('small', {}, o.blurb)));
   }
@@ -2591,16 +2614,55 @@ function openDesign(d) {
   renderAll();
   rebuild(true);
   commitHistory();
-  $('#studio').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  showView('studio');
 }
+// 2.0 shows the studio, the collection and the guide one at a time; the classic page scrolls between them.
+const VIEWS = ['studio', 'collection', 'guide'];
+function showView(v, fromHash) {
+  if (!VIEWS.includes(v)) v = 'studio';
+  if (UI !== 'v2') { $(`#${v}`).scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); return; }
+  const was = document.body.dataset.view;
+  document.body.dataset.view = v;
+  document.querySelectorAll('.views a[data-view]').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  if (!fromHash && location.hash.slice(1) !== v) { try { window.history.replaceState(null, '', v === 'studio' ? location.pathname + location.search : `#${v}`); } catch { /* sandboxed */ } }
+  if (v === 'studio' && was !== 'studio') { resize(); invalidate(); }
+  if (v !== 'studio') { const page = $(`#${v}`); if (page && was !== v) page.scrollTop = 0; if (thumbQueue.length) setTimeout(pumpThumbs, 30); }
+}
+// The collection, grouped by what each piece is for
+const COLLECTION_GROUPS = [
+  ['all', 'All', () => true],
+  ['plants', 'Planters', (d) => ['planter', 'hanging', 'wall', 'orchid'].includes(d.object)],
+  ['vases', 'Vases', (d) => d.object === 'vase'],
+  ['bowls', 'Bowls and trays', (d) => d.object === 'bowl' || d.object === 'tray'],
+  ['storage', 'Boxes and cups', (d) => d.object === 'box' || d.object === 'cup'],
+  ['light', 'Lighting', (d) => ['pendant', 'lamp', 'lantern'].includes(d.object)],
+  ['rings', 'Rings', (d) => d.object === 'ring'],
+];
+let collectionFilter = store.get('weft.collFilter', 'all');
 function renderCollection() {
   const grid = $('#collection-grid');
   grid.replaceChildren();
+  const cards = [];
   for (const d of COLLECTION) {
     const { card, img } = designCard(d, () => openDesign(d));
     grid.append(card);
+    cards.push({ d, card });
     thumbQueue.push({ d, img });
   }
+  const count = $('#coll-count');
+  if (count) count.textContent = COLLECTION.length;
+  const bar = $('#collection-filters');
+  if (!bar) return;
+  const apply = () => {
+    const [, , test] = COLLECTION_GROUPS.find(([k]) => k === collectionFilter) || COLLECTION_GROUPS[0];
+    for (const { d, card } of cards) card.hidden = !test(d);
+    bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.f === collectionFilter));
+  };
+  bar.replaceChildren(...COLLECTION_GROUPS.map(([k, label, test]) => {
+    const n = COLLECTION.filter(test).length;
+    return n ? h('button', { class: 'chip', type: 'button', 'data-f': k, onclick: () => { collectionFilter = k; store.set('weft.collFilter', k); apply(); } }, label, h('span', {}, `${n}`)) : null;
+  }));
+  apply();
 }
 function renderSaved() {
   const grid = $('#saved-grid');
@@ -2845,14 +2907,30 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#shu
 $('#undo').addEventListener('click', () => travel(-1));
 $('#redo').addEventListener('click', () => travel(1));
 $('#status-btn').addEventListener('click', () => setTab('export'));
+$('#go-export')?.addEventListener('click', () => { setTab('export'); showView('studio'); });
+document.querySelectorAll('.views a[data-view], .brand').forEach((a) => a.addEventListener('click', (e) => {
+  if (UI !== 'v2') return;
+  e.preventDefault();
+  showView(a.dataset.view || 'studio');
+}));
+if (UI === 'v2') window.addEventListener('hashchange', () => showView(location.hash.slice(1), true));
+// Switching designs reloads the page into the other one; the design on the stage comes along.
+function switchUI() {
+  const to = UI === 'v2' ? 'classic' : 'v2';
+  try { sessionStorage.setItem('weft.carry', JSON.stringify({ design: state.design, tab: state.tab })); } catch { /* the design starts fresh */ }
+  store.set('weft.ui', to);
+  if (desktop?.setUI) { desktop.setUI(to); return; }
+  location.href = new URL(to === 'classic' ? 'classic.html' : './', location.href).href;
+}
+$('#ui-switch')?.addEventListener('click', switchUI);
 $('#design-name').addEventListener('input', (e) => { state.design.name = e.target.value || 'Untitled'; fitName(); refreshListing(); syncTitle(); });
 $('#design-name').addEventListener('change', commitHistory);
 for (const t of ['object', 'form', 'surface', 'finish', 'export']) $(`#tab-${t}`).addEventListener('click', () => setTab(t));
 $('.steps').addEventListener('keydown', (e) => {
   const tabs = ['object', 'form', 'surface', 'finish', 'export'];
   const i = tabs.indexOf(state.tab);
-  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-    const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+  if (['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) {
+    const n = tabs[(i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : tabs.length - 1)) % tabs.length];
     setTab(n); $(`#tab-${n}`).focus(); e.preventDefault();
   }
 });
@@ -2884,7 +2962,7 @@ if (desktop) {
       case 'open': desktop.openDesign(); break;
       case 'load-design': loadCode(arg.text); break;
       case 'save': saveDesignFile(); break;
-      case 'export': setTab('export'); exportFiles(); break;
+      case 'export': setTab('export'); showView('studio'); exportFiles(); break;
       case 'slicer': sendToSlicer(); break;
       case 'cover': saveCover(); break;
       case 'undo': travel(-1); break;
@@ -2895,7 +2973,10 @@ if (desktop) {
       case 'frame': $('#reset-view').click(); break;
       case 'toggle': if (toggles[arg] && !$(toggles[arg]).hidden) $(toggles[arg]).click(); break;
       case 'theme': $('#theme').click(); break;
-      case 'guide': $('#guide').scrollIntoView({ behavior: 'smooth' }); break;
+      case 'guide': showView('guide'); break;
+      case 'collection': showView('collection'); break;
+      case 'studio-view': showView('studio'); break;
+      case 'ui': if (arg !== UI) switchUI(); break;
       default: break;
     }
   });
@@ -2906,6 +2987,16 @@ if (desktop) {
 }
 
 // ============================================================ boot
+try {
+  const carry = JSON.parse(sessionStorage.getItem('weft.carry') || 'null');
+  sessionStorage.removeItem('weft.carry');
+  if (carry && carry.design && OBJECTS[carry.design.object]) {
+    state.design = carry.design;
+    history.stack = [JSON.stringify(state.design)]; history.at = 0;
+    if (carry.tab) state.tab = carry.tab;
+  }
+} catch { /* nothing to carry */ }
+document.body.dataset.tab = state.tab;
 if (state.multicolor) distinctSlots(state.design);
 refreshAccent();
 renderShuffleMenu();
@@ -2914,4 +3005,6 @@ syncToggles();
 renderCollection();
 renderSaved();
 resize();
+if (state.tab !== 'object') setTab(state.tab);
+if (UI === 'v2' && location.hash) showView(location.hash.slice(1), true);
 rebuild(true);

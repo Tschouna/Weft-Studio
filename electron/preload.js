@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('weftDesktop', {
   showInFolder: (file) => ipcRenderer.invoke('show-in-folder', file),
   openDesign: () => ipcRenderer.invoke('open-design'),
   setTitle: (name) => ipcRenderer.invoke('set-title', name),
+  setUI: (ui) => ipcRenderer.invoke('set-ui', ui),
   info: () => ipcRenderer.invoke('app-info'),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, action, arg) => cb(action, arg)),
 });
