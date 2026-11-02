@@ -128,16 +128,17 @@ for (const [name, d] of [
 // ---------------------------------------------------------------- 4
 if (run(4)) {
 console.log('4. random designs');
-const objects = ['planter', 'vase', 'bowl', 'box', 'cup', 'pendant', 'lamp'];
+const objects = ['planter', 'vase', 'bowl', 'box', 'cup', 'pendant', 'lamp', 'hanging', 'wall', 'orchid', 'lantern', 'tray', 'ring'];
 const patterns = ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'ribs', 'chevron', 'reeds', 'waves', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles',
   'hammered', 'carved', 'rings', 'dunes', 'bark', 'gouge', 'cubes', 'knurl', 'seigaiha', 'herringbone', 'blocks', 'spikes', 'shards', 'fins', 'hobnail', 'smooth'];
-for (let k = 0; k < 32; k++) {
+for (let k = 0; k < 48; k++) {
   const obj = any(objects), pat = any(patterns);
+  const low = obj === 'tray' || obj === 'ring';
   const d = design({
     object: obj,
-    form: { height: 60 + rand() * 160, diameter: 70 + rand() * 160, base: 0.6 + rand() * 0.5, top: 0.7 + rand() * 0.5, section: any(['round', 'round', 'polygon', 'lobed']), twist: any([0, 0, 40]), rimEdge: any(['flat', 'round', 'bevel']) },
-    surface: { pattern: pat, mode: obj === 'pendant' || obj === 'lamp' ? 'cut' : any(['relief', 'relief', 'cut']), count: 8 + Math.floor(rand() * 30), depth: 0.8 + rand() * rand() * 8, swirl: any([0, 0, 90, -150]) },
-    extras: { base: obj === 'planter' ? any(['none', 'saucer', 'sleeve', 'insert']) : 'none', baseH: 40 + rand() * 50 },
+    form: { height: low ? 25 + rand() * 30 : 60 + rand() * 160, diameter: (obj === 'ring' ? 40 : 70) + rand() * (obj === 'ring' ? 40 : 160), base: 0.6 + rand() * 0.5, top: 0.7 + rand() * 0.5, section: any(['round', 'round', 'polygon', 'lobed']), twist: any([0, 0, 40]), rimEdge: any(['flat', 'round', 'bevel']) },
+    surface: { pattern: pat, mode: obj === 'pendant' || obj === 'lamp' || obj === 'lantern' ? 'cut' : any(['relief', 'relief', 'cut']), bandBottom: low ? 2 : 6, bandTop: low ? 2 : 4, count: 8 + Math.floor(rand() * 30), depth: 0.8 + rand() * rand() * 8, swirl: any([0, 0, 90, -150]) },
+    extras: { base: obj === 'planter' ? any(['none', 'saucer', 'sleeve', 'insert']) : obj === 'orchid' ? any(['none', 'saucer']) : 'none', baseH: 40 + rand() * 50, hangers: any([3, 4]), back: rand() * 0.6, drain: any([0, 10]) },
   });
   const r = generate(d, 0.7);
   for (const p of r.parts) { const bad = openEdges(p); if (bad) fail(`random #${k} ${obj}/${pat} ${p.key}: ${bad} open edges`); }

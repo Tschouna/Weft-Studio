@@ -15,7 +15,7 @@ export const BASE = {
   },
   extras: {
     drain: 0, base: 'none', sleeveH: 0.38, sleeveTilt: 18, gap: 1.0, lid: true, knob: 'ball', knobSize: 26, lidOverhang: 0.6,
-    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 30, baseH: 55, cord: true,
+    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 30, baseH: 55, cord: true, hangers: 3, back: 0.3,
   },
   finish: {
     color: '#22211f', color2: '#eeebe4', color3: '#22211f', material: 'matte',
@@ -33,6 +33,12 @@ export const OBJECTS = {
   cup: { label: 'Cup & holder', blurb: 'Pen cups, utensil holders, sleeves' },
   pendant: { label: 'Pendant lamp', blurb: 'Shade for an E27 or E14 socket', lamp: true },
   lamp: { label: 'Table lamp', blurb: 'Shade on a base for an E27 lamp kit', lamp: true },
+  hanging: { label: 'Hanging planter', blurb: 'Watertight pot with holes for hanging cords', watertight: true },
+  wall: { label: 'Wall planter', blurb: 'Flat back with a keyhole for one screw', watertight: true },
+  orchid: { label: 'Orchid pot', blurb: 'Open sides let the roots breathe' },
+  lantern: { label: 'Tealight lantern', blurb: 'Openwork glow around an LED tealight', lamp: true, candle: true },
+  tray: { label: 'Tray', blurb: 'Low dish for keys, rings and jewellery' },
+  ring: { label: 'Napkin ring', blurb: 'Open band: napkin rings, bangles, sleeves' },
 };
 
 // Silhouettes as ratios; the size sliders stay where they are.

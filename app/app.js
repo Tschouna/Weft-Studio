@@ -148,6 +148,12 @@ const OBJECT_DEFAULTS = {
   bowl: { form: { height: 80, diameter: 240, base: 0.62, top: 0.97, belly: 0.7, fullness: 0.45, lip: 0, lipH: 12, inset: 1.2, wall: 3, floor: 3 }, extras: {} },
   vase: { form: { height: 180, diameter: 110, base: 0.85, top: 0.8, belly: 0.4, fullness: 0.5, lip: 4, lipH: 20, inset: 1.2, wall: 3, floor: 3 }, extras: {} },
   cup: { form: { height: 105, diameter: 90, base: 0.93, top: 1.03, belly: 0.5, fullness: 0.2, lip: 0, lipH: 12, inset: 1, wall: 3, floor: 3 }, extras: {} },
+  hanging: { form: { height: 120, diameter: 160, base: 0.62, top: 0.96, belly: 0.56, fullness: 0.6, lip: 0, lipH: 12, inset: 1.2, wall: 3, floor: 3 }, extras: { drain: 0, hangers: 3 } },
+  wall: { form: { height: 150, diameter: 150, base: 0.8, top: 1, belly: 0.5, fullness: 0.3, lip: 0, lipH: 12, inset: 0, wall: 3, floor: 3, twist: 0 }, extras: { drain: 0, back: 0.3 } },
+  orchid: { form: { height: 140, diameter: 130, base: 0.8, top: 1, belly: 0.5, fullness: 0.1, lip: 0, lipH: 12, inset: 1.2, wall: 3, floor: 3 }, extras: { drain: 14, base: 'saucer' } },
+  lantern: { form: { height: 120, diameter: 95, base: 1, top: 0.92, belly: 0.5, fullness: 0.35, lip: 0, lipH: 12, inset: 0.8, wall: 3, floor: 3 }, extras: {} },
+  tray: { form: { height: 32, diameter: 180, base: 0.84, top: 1, belly: 0.6, fullness: 0.25, lip: 0, lipH: 12, inset: 1, wall: 3, floor: 3 }, extras: {}, surface: { bandBottom: 0, bandTop: 2 } },
+  ring: { form: { height: 36, diameter: 52, base: 1, top: 1, belly: 0.5, fullness: 0.15, lip: 0, lipH: 12, inset: 0, wall: 3, floor: 3 }, extras: {}, surface: { bandBottom: 2, bandTop: 2 } },
 };
 
 const FILAMENTS = [
@@ -176,6 +182,12 @@ const ICONS = {
   pendant: '<path d="M20 3v9"/><path d="M15 12h10l7 14c1 3-1 5-4 5H12c-3 0-5-2-4-5z"/><path d="M15 16l12 15M25 16L13 31M11 22l18 9M29 22l-18 9" stroke-width="1" opacity=".6"/>',
   bowl: '<path d="M5 18h30c0 7-6 13-15 13S5 25 5 18z"/><path d="M14 31h12"/><path d="M8 22l8 8M14 19l11 11M20 18l10 10M26 18l7 7M32 21l-9 9M26 19l-11 11M20 18L10 28" stroke-width="1" opacity=".6"/>',
   vase: '<path d="M15 4h10M16 4c0 4-6 7-6 15 0 7 3 13 5 15h10c2-2 5-8 5-15 0-8-6-11-6-15"/><path d="M16 15v18M20 13v21M24 15v18" stroke-width="1" opacity=".6"/>',
+  hanging: '<path d="M20 3v4"/><path d="M20 7L9.5 18M20 7l10.5 11M20 7v11" stroke-width="1.1"/><path d="M8 18h24c0 8-5 15-12 15S8 26 8 18z"/>',
+  wall: '<path d="M33 4v32"/><path d="M33 9H10c0 12 5 21 14 22h9"/><path d="M14 9c0-3 3-5 6-5M20 9c1-3 4-4 7-3" stroke-width="1.1"/>',
+  orchid: '<path d="M10 17h20l-2 15a2.6 2.6 0 01-2.6 2.2H14.6A2.6 2.6 0 0112 32z"/><path d="M15 21v9M20 21v10M25 21v9" stroke-width="1"/><path d="M20 17c0-6 2-10 7-12"/><circle cx="28" cy="5.5" r="2.2"/><circle cx="24" cy="9.6" r="1.7"/>',
+  lantern: '<path d="M12 9h16v25H12z"/><path d="M14 9l2-4h8l2 4"/><path d="M20 29c-2.2-1.8-2.2-4.2 0-7 2.2 2.8 2.2 5.2 0 7z"/><path d="M15 14l2 2M23 14l2 2M15 18l2 2M23 18l2 2" stroke-width="1"/>',
+  tray: '<path d="M4 21h32l-2.6 6a3 3 0 01-2.8 1.8H9.4A3 3 0 016.6 27z"/><circle cx="15" cy="17.8" r="2.4"/><path d="M21.5 18.4h8M27 18.4v2" stroke-width="1.2"/>',
+  ring: '<ellipse cx="20" cy="13" rx="11" ry="4"/><path d="M9 13v13c0 2.2 4.9 4 11 4s11-1.8 11-4V13"/><path d="M12 19l2.7 4 2.7-4 2.6 4 2.7-4 2.6 4 2.7-4" stroke-width="1" opacity=".6"/>',
   cup: '<path d="M10 15h20l-1.6 16.2a3 3 0 01-3 2.8h-10.8a3 3 0 01-3-2.8z"/><path d="M15 15l-3-11 3.2-.8 3 11.8M23 15l3.5-9.5-2.8-1-3.9 10.5"/><path d="M13 20l3 4 3-4 3 4 3-4 3 4" stroke-width="1" opacity=".6"/>',
 };
 
@@ -190,6 +202,12 @@ const NAMES = {
   cup: ['Quill', 'Nib', 'Spool', 'Thimble', 'Bobbin', 'Tally', 'Cairn', 'Pocket', 'Nook', 'Inkwell', 'Easel', 'Sketch'],
   pendant: ['Lumen', 'Halo', 'Aurora', 'Corona', 'Nimbus', 'Vesper', 'Lucia', 'Ember', 'Beacon', 'Solstice', 'Comet', 'Lyra', 'Stella', 'Orion'],
   lamp: ['Strala', 'Glow', 'Lantern', 'Hearth', 'Candela', 'Lux', 'Dusk', 'Ember', 'Firefly', 'Nocturne'],
+  hanging: ['Swing', 'Hammock', 'Orbit', 'Cradle', 'Trailing', 'Ivy', 'Wisteria', 'Pothos', 'Tendril', 'Liana'],
+  wall: ['Ledge', 'Niche', 'Alcove', 'Perch', 'Balcony', 'Terrace', 'Espalier', 'Loggia', 'Sill', 'Corbel'],
+  orchid: ['Vanda', 'Cattleya', 'Aerial', 'Epiphyte', 'Breeze', 'Orchis', 'Oncidium', 'Miltonia'],
+  lantern: ['Glimmer', 'Votive', 'Vigil', 'Flicker', 'Luminaria', 'Wick', 'Taper', 'Lucerna', 'Fanal'],
+  tray: ['Valet', 'Catchall', 'Salver', 'Platter', 'Tablet', 'Plinth', 'Trinket', 'Coin'],
+  ring: ['Loop', 'Band', 'Bangle', 'Cuff', 'Hoop', 'Torus', 'Ringlet', 'Coil'],
   lattice: ['Trellis', 'Lattice', 'Arbor'], prism: ['Prisma', 'Facet', 'Spectra'], ogee: ['Riad', 'Medina', 'Souk', 'Kasbah'],
   arches: ['Nave', 'Cloister', 'Vault', 'Abbey'], voronoi: ['Cellula', 'Coral', 'Sponge'], honeycomb: ['Hive', 'Comb', 'Apis'],
   dots: ['Pip', 'Polka', 'Dew'], wicker: ['Rattan', 'Cane', 'Wicker'], ribs: ['Pleat', 'Flute', 'Fold'], chevron: ['Zigzag', 'Herring', 'Arrow'],
@@ -655,6 +673,47 @@ function buildDisplay(res, d, opts) {
     bulb.position.z = plate + 34 + 32;
     bulb.scale.set(1, 1, 1.15);
     lightZ = plate + 66; power = 30;
+  }
+  if (d.object === 'lantern') {
+    // an LED tealight on the floor: a white cup with a small flame
+    const floorZ = d.form.floor + (res.info.lift || 0);
+    const cupMat = new THREE.MeshStandardMaterial({ color: 0xf4f2ee, roughness: 0.5 });
+    const tea = new THREE.Mesh(new THREE.CylinderGeometry(19, 19, 15, 40), cupMat);
+    tea.rotation.x = Math.PI / 2; tea.position.z = floorZ + 7.5;
+    tea.castShadow = true; tea.userData.noFrame = true;
+    root.add(tea);
+    bulb = new THREE.Mesh(new THREE.SphereGeometry(4, 20, 14), opts.glow ? glowMat() : new THREE.MeshStandardMaterial({ color: 0xfff1d6, roughness: 0.4 }));
+    bulb.scale.set(1, 1, 1.9);
+    bulb.position.z = floorZ + 22;
+    lightZ = floorZ + 24; power = 6;
+  }
+  if (d.object === 'hanging' && res.info.hangers) {
+    // cords from each hole up to a ring above the pot, then one cord on to the ceiling
+    const cordMat = new THREE.MeshStandardMaterial({ color: 0xcbb89a, roughness: 0.9 });
+    const top = d.form.height + Math.max(120, d.form.diameter * 0.9), lift0 = res.info.lift || 0;
+    for (const hole of res.info.hangers) {
+      const a = new THREE.Vector3(hole.x, hole.y, hole.z + lift0), b = new THREE.Vector3(0, 0, top);
+      const len = a.distanceTo(b);
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, len, 8), cordMat);
+      c.position.copy(a).add(b).multiplyScalar(0.5);
+      c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      c.userData.noFrame = true; c.castShadow = true;
+      root.add(c);
+    }
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(7, 1.8, 10, 28), new THREE.MeshStandardMaterial({ color: 0x9a8f80, roughness: 0.4, metalness: 0.6 }));
+    ring.position.z = top + 6; ring.rotation.x = Math.PI / 2;
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 3000, 8), cordMat);
+    up.rotation.x = Math.PI / 2; up.position.z = top + 12 + 1500;
+    for (const o of [ring, up]) { o.userData.noFrame = true; root.add(o); }
+  }
+  if (d.object === 'wall' && res.info.wallY != null) {
+    // the wall it hangs on, just behind the flat back
+    // (one-sided, facing the planter, so it disappears when the view turns round behind it)
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(700, 600), new THREE.MeshStandardMaterial({ color: 0xd9d3c8, roughness: 0.95 }));
+    wall.rotation.x = Math.PI / 2;
+    wall.position.set(0, res.info.wallY + 0.4, 300);
+    wall.receiveShadow = true; wall.userData.noFrame = true; wall.userData.wall = true;
+    root.add(wall);
   }
   if (bulb) {
     bulb.userData.noFrame = true;
@@ -1657,8 +1716,27 @@ function renderObject() {
     opts.push(switchCtl('x-vasemode', 'Solid body for spiral vase mode', () => X.vaseMode, (v) => { X.vaseMode = v; }, { structural: true }));
     opts.push(h('p', { class: 'note' }, 'A solid body lets the slicer print one continuous spiral wall: fast, seamless, and very light. Turn it off to print real walls and a floor.'));
   }
+  if (d.object === 'hanging') {
+    opts.push(chipsCtl('Cords', [{ value: 3, label: '3 cords' }, { value: 4, label: '4 cords' }], () => X.hangers ?? 3, (v) => { X.hangers = v; }));
+    opts.push(sliderCtl('x-hdrain', 'Drainage hole', { min: 0, max: 20, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
+    opts.push(h('p', { class: 'note' }, 'Teardrop holes under the rim take cords, chains or macramé up to Ø 4 mm; they print without support. Without a drainage hole it never drips, so water sparingly.'));
+  }
+  if (d.object === 'wall') {
+    opts.push(sliderCtl('x-back', 'Depth from the wall', { min: 0.1, max: 0.6, step: 0.01, fmt: (v) => `${Math.round((d.form.diameter / 2) * (1 + v))} mm` }, () => X.back ?? 0.3, (v) => { X.back = v; }));
+    opts.push(sliderCtl('x-wdrain', 'Drainage hole', { min: 0, max: 20, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
+    opts.push(h('p', { class: 'note' }, 'The back is flat and plain, with a keyhole for one screw (head up to 8 mm). The cross-section is always the D shape, and it does not twist.'));
+  }
+  if (d.object === 'orchid') {
+    opts.push(sliderCtl('x-odrain', 'Drainage hole', { min: 0, max: 30, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
+    opts.push(chipsCtl('Base', [{ value: 'none', label: 'None' }, { value: 'saucer', label: 'Saucer' }], () => (X.base === 'saucer' ? 'saucer' : 'none'), (v) => { X.base = v; }, { structural: true }));
+    if (X.base === 'saucer') opts.push(sliderCtl('x-ogap', 'Clearance around the pot', { min: 0.4, max: 4, step: 0.1, fmt: mm1 }, () => X.gap, (v) => { X.gap = v; }));
+    opts.push(h('p', { class: 'note' }, 'Orchids grow in bark and like air at their roots, so the walls can be cut right through. Keep a plain band at the bottom so the bark stays in.'));
+  }
+  if (d.object === 'lantern') opts.push(h('p', { class: 'note' }, 'A cover for an LED tealight: openwork lets the light out, and the light switch above shows the glow. Never use a real flame in a printed lantern.'));
+  if (d.object === 'tray') opts.push(h('p', { class: 'note' }, 'A low dish for keys, rings, coins or a soap bar. Bold textures look great on the low wall.'));
+  if (d.object === 'ring') opts.push(h('p', { class: 'note' }, 'Open at both ends: napkin rings (Ø 45–55 mm), bangles (Ø 65–75 mm inside), candle sleeves or a cover for a glass. It prints upright with no floor.'));
   if (d.object === 'cup') opts.push(h('p', { class: 'note' }, 'Cups and holders can be cut right through: pen cups, utensil holders, plant-pot covers and tealight sleeves (use LED tealights).'));
-  if (OBJECTS[d.object].watertight) opts.push(h('p', { class: 'lock-note', html: `${LOCK_SVG}<span>${OBJECTS[d.object].label}s hold soil and water, so surfaces are raised from a solid wall. Openwork is available for bowls, boxes, cups and lamps.</span>` }));
+  if (OBJECTS[d.object].watertight) opts.push(h('p', { class: 'lock-note', html: `${LOCK_SVG}<span>${OBJECTS[d.object].label}s hold soil and water, so surfaces are raised from a solid wall. Openwork is available for bowls, trays, boxes, cups, rings, orchid pots, lanterns and lamps.</span>` }));
   if (d.object === 'bowl') opts.push(h('p', { class: 'note' }, 'Bowls print upright. Keep the widest point above two thirds of the height for a gentle flare.'));
   pane.replaceChildren(group('What are you making?', null, cards), group(`${OBJECTS[d.object].label} options`, null, ...opts));
 }
@@ -1670,8 +1748,16 @@ function switchObject(k) {
   d.object = k;
   Object.assign(d.form, OBJECT_DEFAULTS[k].form);
   Object.assign(d.extras, OBJECT_DEFAULTS[k].extras);
+  // low pieces need slim plain bands, or the pattern has no room
+  if (OBJECT_DEFAULTS[k].surface) Object.assign(d.surface, OBJECT_DEFAULTS[k].surface);
   rescaleCount(oldD, d.form.diameter);
   if (OBJECTS[k].lamp && d.surface.mode === 'relief' && d.surface.pattern !== 'smooth' && PATTERNS[d.surface.pattern].modes.includes('cut')) d.surface.mode = 'cut';
+  // a light needs openings: a relief-only texture becomes perforation
+  if (OBJECTS[k].lamp && !PATTERNS[d.surface.pattern].modes.includes('cut') && d.surface.pattern !== 'smooth') {
+    const S = d.surface, P = PATTERNS.perforated;
+    Object.assign(S, P.def, { pattern: 'perforated', mode: 'cut', swirl: 0, bandBottom: Math.max(S.bandBottom, 6), bandTop: Math.max(S.bandTop, 4) });
+    S.count = clamp(Math.round((Math.PI * d.form.diameter) / P.cellMM), 4, 110);
+  }
   keepWatertight();
   rename();
   lastObjectKey = '';
@@ -1717,8 +1803,10 @@ function renderForm() {
     const on = Math.abs(F.base - s.base) < 0.015 && Math.abs(F.top - s.top) < 0.015 && Math.abs(F.belly - s.belly) < 0.015 && Math.abs(F.fullness - s.fullness) < 0.02 && Math.abs((F.lip || 0) - (s.lip || 0)) < 0.5;
     sil.append(h('button', { class: 'chip', type: 'button', 'aria-pressed': on, onclick: () => { Object.assign(F, { base: s.base, top: s.top, belly: s.belly, fullness: s.fullness, lip: s.lip || 0, lipH: s.lipH || F.lipH }); onEdit(true, true); } }, s.label));
   }
-  const sec = F.section || 'round';
-  const secKids = [chipsCtl('', [{ value: 'round', label: 'Round' }, { value: 'polygon', label: 'Polygon' }, { value: 'lobed', label: 'Lobed' }], () => sec, (v) => { F.section = v; }, { structural: true })];
+  const wallObj = d.object === 'wall';
+  const sec = wallObj ? 'flatback' : F.section || 'round';
+  const secKids = wallObj ? [h('p', { class: 'note' }, 'A D shape with a flat back against the wall. Set its depth under Object.')]
+    : [chipsCtl('', [{ value: 'round', label: 'Round' }, { value: 'polygon', label: 'Polygon' }, { value: 'lobed', label: 'Lobed' }], () => sec, (v) => { F.section = v; }, { structural: true })];
   if (sec === 'polygon') {
     secKids.push(sliderCtl('f-sides', 'Sides', { min: 3, max: 12, step: 1, fmt: (v) => `${v}` }, () => F.sides ?? 6, (v) => { F.sides = v; }));
     secKids.push(sliderCtl('f-corner', 'Corner rounding', { min: 0.03, max: 0.6, step: 0.01, fmt: pct }, () => F.corner ?? 0.18, (v) => { F.corner = v; }));
@@ -1728,7 +1816,7 @@ function renderForm() {
     secKids.push(sliderCtl('f-lobeDepth', 'Lobe depth', { min: 0.02, max: 0.3, step: 0.01, fmt: pct }, () => F.lobeDepth ?? 0.1, (v) => { F.lobeDepth = v; }));
     secKids.push(chipsCtl('Lobe shape', [{ value: 'scallop', label: 'Scallop' }, { value: 'wave', label: 'Wave' }], () => F.lobeStyle || 'scallop', (v) => { F.lobeStyle = v; }));
   }
-  secKids.push(sliderCtl('f-twist', 'Twist over the height', { min: -180, max: 180, step: 1, fmt: (v) => (v ? `${v}°` : 'none') }, () => F.twist || 0, (v) => { F.twist = v; }));
+  if (!wallObj) secKids.push(sliderCtl('f-twist', 'Twist over the height', { min: -180, max: 180, step: 1, fmt: (v) => (v ? `${v}°` : 'none') }, () => F.twist || 0, (v) => { F.twist = v; }));
   const sz = { min: 40, max: 320, step: 1, fmt: (v) => `${v} mm` };
   pane.replaceChildren(
     groupAct('Silhouette', pend ? 'Shown hanging; printed crown-down' : null, diceBtn('shape', 'Shape'), sil,
@@ -1736,8 +1824,8 @@ function renderForm() {
       h('p', { class: 'note' }, 'Drag the rim, widest point, curve and base right on the 3D view. Works on every object.')),
     group('Cross-section', 'The outline seen from above', ...secKids),
     group('Size', null,
-      sliderCtl('f-height', 'Height', { ...sz, min: 30 }, () => F.height, (v) => { F.height = v; }),
-      sliderCtl('f-diam', 'Widest diameter', sz, () => F.diameter, (v) => { rescaleCount(F.diameter, v); F.diameter = v; })),
+      sliderCtl('f-height', 'Height', { ...sz, min: d.object === 'ring' || d.object === 'tray' ? 12 : 30 }, () => F.height, (v) => { F.height = v; }),
+      sliderCtl('f-diam', wallObj ? 'Widest width' : 'Widest diameter', { ...sz, min: d.object === 'ring' ? 30 : 40 }, () => F.diameter, (v) => { rescaleCount(F.diameter, v); F.diameter = v; })),
     group('Shape', null,
       sliderCtl('f-base', pend ? 'Crown width' : 'Base width', { min: 0.3, max: 1.6, step: 0.01, fmt: pct }, () => F.base, (v) => { F.base = v; }),
       sliderCtl('f-top', pend ? 'Opening width' : 'Rim width', { min: 0.3, max: 1.6, step: 0.01, fmt: pct }, () => F.top, (v) => { F.top = v; }),
@@ -1896,11 +1984,11 @@ function renderFinish() {
     ...groups,
     multiGroup(d),
     group('Material', 'Preview only', chipsCtl('', Object.entries(MATERIALS).map(([k, m]) => ({ value: k, label: m.label })), () => F.material, (v) => { F.material = v; }, { local: true, after: () => { refreshMaterials(); commitHistory(); } })),
-    !OBJECTS[d.object].lamp ? null : group('Light', 'A bulb in the socket, shining through the shade',
+    !OBJECTS[d.object].lamp ? null : group('Light', OBJECTS[d.object].candle ? 'An LED tealight glowing inside' : 'A bulb in the socket, shining through the shade',
       switchCtl('l-on', 'Light on', () => state.light.on, (v) => setLight(v), { local: true }),
       sliderCtl('l-bright', 'Brightness', { min: 0.2, max: 2.5, step: 0.05, fmt: pct }, () => state.light.bright, (v) => { state.light.bright = v; }, { local: true, after: lightAfter }),
       chipsCtl('Colour temperature', [{ value: 'candle', label: 'Candle' }, { value: 'warm', label: 'Warm' }, { value: 'neutral', label: 'Neutral' }, { value: 'daylight', label: 'Daylight' }], () => state.light.warm, (v) => { state.light.warm = v; }, { local: true, after: lightAfter }),
-      switchCtl('l-bulb', 'Show the bulb', () => state.light.bulb !== false, (v) => { state.light.bulb = v; }, { local: true, after: lightAfter }),
+      switchCtl('l-bulb', OBJECTS[d.object].candle ? 'Show the tealight' : 'Show the bulb', () => state.light.bulb !== false, (v) => { state.light.bulb = v; }, { local: true, after: lightAfter }),
       h('p', { class: 'note' }, 'The light stays on while you keep designing, and this browser remembers it.')),
   ].filter(Boolean));
 }
@@ -2068,8 +2156,12 @@ function refreshListing() {
     d.object === 'planter' && d.extras.base === 'insert' ? '• Self-watering: print the insert too. Thread a cotton wick through its floor and fill the reservoir through the side channel.' : null,
     d.object === 'planter' && d.extras.drain && d.extras.base !== 'insert' ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
     d.object === 'planter' && d.extras.base === 'sleeve' ? '• Print the sleeve in a second colour for a two-tone look.' : null,
+    d.object === 'hanging' ? `• Hangs from ${d.extras.hangers || 3} cords through teardrop holes under the rim (cord up to Ø 4 mm).${d.extras.drain ? ` Ø ${d.extras.drain} mm drainage hole.` : ' No drainage hole, so it never drips.'}` : null,
+    d.object === 'wall' ? '• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports.' : null,
+    d.object === 'orchid' ? `• Open walls for air at the roots${d.extras.drain ? `, Ø ${d.extras.drain} mm drainage hole` : ''}${d.extras.base === 'saucer' ? ', saucer included' : ''}.` : null,
+    d.object === 'lantern' ? '• For LED tealights only. Never use a real flame.' : null,
     '',
-    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', 'no supports', d.object === 'pendant' ? 'lamp shade' : null, d.object === 'planter' ? 'plant pot' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
+    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', 'no supports', d.object === 'pendant' ? 'lamp shade' : null, ['planter', 'hanging', 'wall', 'orchid'].includes(d.object) ? 'plant pot' : null, d.object === 'hanging' ? 'hanging planter' : null, d.object === 'wall' ? 'wall planter' : null, d.object === 'orchid' ? 'orchid' : null, d.object === 'lantern' ? 'tealight holder' : null, d.object === 'lantern' ? 'lantern' : null, d.object === 'ring' ? 'napkin ring' : null, d.object === 'tray' ? 'trinket tray' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
   ];
   ta.value = lines.filter((l) => l !== null).join('\n');
 }
@@ -2562,6 +2654,8 @@ function shuffleShape(d) {
     planter: ['cylinder', 'taper', 'barrel', 'tulip', 'urn', 'funnel', 'orb', 'orb'], box: ['barrel', 'cylinder', 'ovoid', 'lantern'], pendant: ['bell', 'ovoid', 'tulip', 'globe'],
     lamp: ['cylinder', 'taper', 'barrel', 'lantern', 'waist', 'ovoid'],
     bowl: ['bowl'], vase: ['tulip', 'ovoid', 'taper', 'barrel', 'waist', 'amphora', 'urn', 'lantern', 'cone'], cup: ['cylinder', 'taper', 'barrel', 'waist', 'funnel'],
+    hanging: ['bowl', 'orb', 'orb', 'barrel', 'tulip'], wall: ['cylinder', 'taper', 'barrel', 'tulip', 'funnel'], orchid: ['cylinder', 'taper', 'barrel', 'tulip'],
+    lantern: ['cylinder', 'barrel', 'lantern', 'taper', 'ovoid', 'waist'], tray: ['bowl', 'taper', 'cylinder'], ring: ['cylinder', 'barrel', 'waist', 'cylinder'],
   }[obj];
   const s = SILHOUETTES[pick(sils)];
   Object.assign(F, { base: s.base + rnd(-0.05, 0.05), top: s.top + rnd(-0.05, 0.05), belly: clamp(s.belly + rnd(-0.06, 0.06), 0.2, 0.8), fullness: clamp(s.fullness + rnd(-0.12, 0.12), -0.3, 1), lip: s.lip || 0, lipH: s.lipH || F.lipH });
@@ -2577,8 +2671,11 @@ function shuffleShape(d) {
   F.twist = shape === 'round' ? 0 : pick([0, 0, Math.round(rnd(-1, 1) * (shape === 'lobed' ? 30 : 55))]);
   // a third of rims get a shaped edge or line
   F.rimEdge = pick(['flat', 'flat', 'round', 'bevel', 'rolled']);
+  if (obj === 'wall') { F.section = 'round'; F.twist = 0; X.back = +rnd(0.15, 0.45).toFixed(2); }
+  if (obj === 'hanging') { X.hangers = pick([3, 3, 4]); }
+  if (obj === 'orchid') X.base = pick(['none', 'saucer', 'saucer']);
   if (obj === 'planter') X.base = pick(['none', 'saucer', 'sleeve', 'sleeve', 'insert', 'insert']);
-  F.rimShape = obj === 'box' || (obj === 'planter' && X.base === 'insert') ? 'level' : pick(['level', 'level', 'level', 'wavy', 'slant']);
+  F.rimShape = obj === 'box' || obj === 'hanging' || (obj === 'planter' && X.base === 'insert') ? 'level' : pick(['level', 'level', 'level', 'wavy', 'slant']);
   F.rimWaves = Math.round(rnd(4, 10)); F.rimDepth = Math.round(rnd(4, 14));
   // table lamps look best with a turned square or polygon
   if (obj === 'lamp' && Math.random() < 0.6) { F.section = 'polygon'; F.sides = pick([4, 4, 5, 6]); F.corner = +rnd(0.25, 0.45).toFixed(2); F.twist = Math.round(rnd(30, 90)) * pick([1, -1]); }
@@ -2605,7 +2702,9 @@ function shuffleSurface(d) {
   S.mode = lampObj ? 'cut' : tight ? 'relief' : pick(P.modes);
   // ribs and knurls look good turned; other patterns now and then
   S.swirl = S.mode === 'cut' ? 0 : pid === 'ribs' || pid === 'knurl' ? pick([0, 60, 90, 120, -90]) : pick([0, 0, 0, 0, 45, -45]);
-  if (P.cellMM) S.count = clamp(Math.round(((Math.PI * F.diameter) / P.cellMM) * rnd(0.8, 1.25)), 4, 110);
+  // a low wall (trays, rings) gets smaller cells, so whole cells fit its height
+  const low = clamp(F.height / 90, 0.4, 1);
+  if (P.cellMM) S.count = clamp(Math.round(((Math.PI * F.diameter) / (P.cellMM * low)) * rnd(0.8, 1.25)), 4, 110);
   if (pid === 'lattice' || pid === 'quilt' || pid === 'prism') S.angle = Math.round(rnd(50, 66));
   if (pid === 'ribs') S.angle = S.mode === 'cut' ? Math.round(rnd(-30, 30)) : pick([0, 0, Math.round(rnd(-45, 45))]);
   if (pid === 'ribs' && S.mode === 'relief') { S.wave = pick([0, 0, rnd(0.2, 0.7)]); S.waveFreq = pick([1, 1.5, 2, 3]); S.profile = pick(['round', 'sharp', 'soft']); }
@@ -2618,9 +2717,12 @@ function shuffleSurface(d) {
     // relief comes out bold: each pattern has its own range, and the sculptural ones really stand out.
     // Small pieces get a little less so the texture keeps its scale.
     const [lo, hi] = BOLD_DEPTH[pid] || [P.def.depth * 0.9, P.def.depth * 1.35];
-    S.depth = +(rnd(lo, hi) * clamp(F.diameter / 150, 0.65, 1.1)).toFixed(1);
+    S.depth = +(rnd(lo, hi) * clamp(F.diameter / 150, 0.65, 1.1) * Math.max(0.6, low)).toFixed(1);
     S.bandBottom = pick([0, 0, 3]); S.bandTop = pick([0, 3, 5]);
   }
+  if (obj === 'ring' || obj === 'tray') { S.bandBottom = Math.min(S.bandBottom, 2); S.bandTop = Math.min(S.bandTop, 2); }
+  // orchid bark needs a solid band at the bottom to stay in
+  if (obj === 'orchid' && S.mode === 'cut') S.bandBottom = Math.round(rnd(14, 22));
   if (pid === 'fins' && S.mode === 'relief') { S.fill = +rnd(0.35, 0.6).toFixed(2); S.profile = pick(['flat', 'flat', 'sharp', 'round']); S.swirl = pick([0, 0, 60, 90, -90, 120]); }
   if (pid === 'spikes' || pid === 'shards' || pid === 'blocks' || pid === 'cubes') S.swirl = 0;
 }

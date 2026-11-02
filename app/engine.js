@@ -102,8 +102,8 @@ export function easeProfile(rFn, H, maxDeg = 46) {
 const SECTION_SAMPLES = 2048;
 const sectionCache = new Map();
 export function makeSection(F = {}) {
-  const kind = F.section === 'polygon' || F.section === 'lobed' ? F.section : 'round';
-  const key = kind === 'polygon' ? `p${F.sides}|${F.corner}` : kind === 'lobed' ? `l${F.lobes}|${F.lobeDepth}|${F.lobeStyle}` : 'round';
+  const kind = F.section === 'polygon' || F.section === 'lobed' || F.section === 'flatback' ? F.section : 'round';
+  const key = kind === 'polygon' ? `p${F.sides}|${F.corner}` : kind === 'lobed' ? `l${F.lobes}|${F.lobeDepth}|${F.lobeStyle}` : kind === 'flatback' ? `f${F.back}` : 'round';
   if (sectionCache.has(key)) return sectionCache.get(key);
   const pts = [];
   if (kind === 'polygon') {
@@ -131,6 +131,18 @@ export function makeSection(F = {}) {
       const rho = 1 - A * (1 - w);
       pts.push([rho * Math.cos(th), rho * Math.sin(th)]);
     }
+  } else if (kind === 'flatback') {
+    // a D for wall planters: the circle cut by a straight back at y = b (towards +y), with rounded
+    // corners; it runs anticlockwise from the middle of the front
+    const b = clamp(F.back ?? 0.3, 0, 0.7), c = 0.16, yc = b - c, xc = Math.sqrt(Math.max(1e-6, (1 - c) ** 2 - yc ** 2));
+    // (with the back behind the centre, the corner centres dip below the x axis: keep thL past pi)
+    const thR = Math.atan2(yc, xc), thL = Math.atan2(yc, -xc) + (yc < 0 ? TAU : 0);
+    const arc = (cx, cy, rad, a0, a1, n) => { for (let q = 0; q < n; q++) { const a = a0 + ((a1 - a0) * q) / n; pts.push([cx + rad * Math.cos(a), cy + rad * Math.sin(a)]); } };
+    arc(0, 0, 1, -Math.PI / 2, thR, 600);
+    arc(xc, yc, c, thR, Math.PI / 2, 80);
+    for (let q = 0; q < 200; q++) pts.push([xc - (2 * xc * q) / 200, b]);
+    arc(-xc, yc, c, Math.PI / 2, thL, 80);
+    arc(0, 0, 1, thL, (3 * Math.PI) / 2, 600);
   } else {
     for (let q = 0; q < 1024; q++) { const th = (TAU * q) / 1024; pts.push([Math.cos(th), Math.sin(th)]); }
   }
@@ -1494,7 +1506,50 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
       if (w > 1e-4) for (let j = 0; j < rows.n; j++) { D[j * NU + i] -= w; Din[j * NU + i] -= w; }
     }
   }
+  // a flat back (wall planters): no texture where it meets the wall
+  let backW = null;
+  if (extra.flatBack) {
+    const cols = sectionColumns(sec, NU), nyArc = Math.max(0, extra.flatBack.nyArc);
+    backW = new Float32Array(NU);
+    for (let i = 0; i < NU; i++) backW[i] = cols.NY[i] > 0 ? smoothstep(nyArc, 1, cols.NY[i]) : 0;
+    // the texture fades out round the sides, before the corners that turn onto the back
+    const fa = extra.flatBack.nyArc;
+    if (D) for (let i = 0; i < NU; i++) { const k = 1 - smoothstep(fa - 0.3, fa - 0.02, cols.NY[i]); if (k < 1) for (let j = 0; j < rows.n; j++) D[j * NU + i] *= k; }
+  }
   if (D) processRelief(D, rows, NU, { sec, perim, mode, twist: extra.twist || 0, H, fillBelow: extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 1 : 0 });
+  if (backW) {
+    // ...and it stands upright on one plane, whatever the silhouette does: the back is pushed out to
+    // the plane at the widest point, inside and out, fading through the rounded corners
+    let rTop = 0;
+    for (let j = 0; j < rows.n; j++) rTop = Math.max(rTop, rows.r[j]);
+    const b = extra.flatBack.b;
+    D = D || new Float32Array(rows.n * NU); Din = Din || new Float32Array(rows.n * NU);
+    for (let i = 0; i < NU; i++) {
+      if (!(backW[i] > 0)) continue;
+      for (let j = 0; j < rows.n; j++) { const push = backW[i] * b * (rTop - rows.r[j]); D[j * NU + i] += push; Din[j * NU + i] += push; }
+    }
+  }
+  // holes through the wall: teardrops for hanging cords, keyholes for a screw
+  if (extra.holes && extra.holes.length) {
+    const cols = sectionColumns(sec, NU), du = sec.L / NU;
+    for (const hole of extra.holes) {
+      let ic = 0, best = Infinity;
+      for (let i = 0; i < NU; i++) { const da = Math.abs(Math.atan2(Math.sin(cols.A[i] - hole.angle), Math.cos(cols.A[i] - hole.angle))); if (da < best) { best = da; ic = i; } }
+      const reach = hole.r * 2 + (hole.slot || 0) + 3, kN = cols.CX[ic] * cols.NX[ic] + cols.CY[ic] * cols.NY[ic];
+      for (let j = 0; j < rows.n; j++) {
+        const dy = rows.z[j] - hole.z;
+        if (dy < -reach || dy > reach) continue;
+        const rr = rows.r[j] + (rows.off ? rows.off[j] : 0);
+        for (let di = -NU / 2; di < NU / 2; di++) {
+          const sArc = di * du * rr;
+          if (Math.abs(sArc) > reach) continue;
+          // a twist turns each row a little further round: follow it, so the hole stays upright
+          const i = (ic + di + NU) % NU, g = holeField(hole, sArc + (rr * kN * (extra.twist || 0) * dy) / H, dy), id = j * NU + i;
+          if (g < F[id]) F[id] = Math.abs(g) < 1e-4 ? (g < 0 ? -1e-4 : 1e-4) : g;
+        }
+      }
+    }
+  }
   const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1 };
   if (!cuts.length) {
     const mesh = buildShell(rows, NU, F, D, P.form.wall, { ...floor, band: bandB }, top, shellOpts);
@@ -1523,6 +1578,20 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   return { mesh: merged.mesh, rows, NU, cell, rMax, rMin, perim, regions, cuts };
 }
 
+// Signed distance (mm, > 0 = wall) to a hole at arc offset s and height offset dy from its centre.
+// Every top is a 50° point, so the holes print without bridging.
+function holeField(hole, s, dy) {
+  const ax = Math.abs(s), R = hole.r;
+  const drop = (rad, y) => Math.min(Math.hypot(ax, y) - rad, Math.max(0.766 * ax + 0.643 * y - rad, rad * 0.643 - y));
+  let d = drop(R, dy);
+  if (hole.slot) {
+    // keyhole: a narrow slot rising from the round opening; the screw shaft rests at its pointed top
+    const w = hole.w || 2.3, L = hole.slot;
+    d = Math.min(d, Math.max(ax - w, -dy, Math.min(dy - L, 0.766 * ax + 0.643 * (dy - L) - 0.766 * w)));
+  }
+  return d;
+}
+
 function maxRelief(S) {
   if (S.pattern === 'smooth') return 0;
   if (S.mode === 'relief') return (S.depth || 0) * (1 + Math.abs(S.gradient || 0));
@@ -1531,7 +1600,7 @@ function maxRelief(S) {
 }
 
 // Pieces that hold soil or water never get cut-through patterns.
-export const WATERTIGHT = new Set(['planter', 'vase']);
+export const WATERTIGHT = new Set(['planter', 'vase', 'hanging', 'wall']);
 
 export function generate(P, quality = 1) {
   const F = P.form, X = P.extras;
@@ -1554,12 +1623,20 @@ export function generate(P, quality = 1) {
   let rMinAll = Infinity;
   for (let k = 0; k <= 200; k++) rMinAll = Math.min(rMinAll, rFn((H * k) / 200));
   let secF = F;
-  if (F.section === 'polygon') {
+  // wall planters always have the flat back; their outline cannot twist away from the wall
+  const wallObj = P.object === 'wall';
+  // (the back stays far enough behind the centre for the floor and the inner wall)
+  if (wallObj) {
+    let rLo = Infinity;
+    for (let k = 0; k <= 100; k++) rLo = Math.min(rLo, rFn((H * k) / 100));
+    secF = { ...F, section: 'flatback', back: clamp(Math.max(X.back ?? 0.3, (F.wall + 3) / Math.max(10, rLo)), 0.1, 0.6), twist: 0 };
+  }
+  if (secF.section === 'polygon') {
     const need = (F.wall + relief + 1) / Math.max(5, rMinAll);
     if ((F.corner ?? 0.2) < need) { secF = { ...F, corner: Math.min(0.85, need) }; warnings.push({ level: 'ok', text: 'Corners were rounded a little more so the inner wall stays clean.' }); }
   }
   const sec = makeSection(secF);
-  const twist = ((F.twist || 0) * Math.PI) / 180;
+  const twist = wallObj ? 0 : ((F.twist || 0) * Math.PI) / 180;
   // accessories follow the outline unless a twist would stop the pot from sliding in
   const accSec = sec.round || twist === 0 ? sec : ROUND();
 
@@ -1569,12 +1646,15 @@ export function generate(P, quality = 1) {
   let minTopBand = 0;
   const insert = obj === 'planter' && X.base === 'insert';
   const lamp = obj === 'lamp';
+  const pot = obj === 'planter' || obj === 'hanging' || obj === 'wall' || obj === 'orchid';
+  // the pot's base accessory: planters have them all, orchid pots a saucer
+  const potBase = obj === 'planter' ? X.base || 'none' : obj === 'orchid' && X.base === 'saucer' ? 'saucer' : 'none';
   // a self-watering pot keeps its water: no drain hole in the outer pot
-  if (obj === 'planter' && X.drain > 0 && !insert) floor = { type: 'hole', thick: F.floor, holeR: X.drain / 2 };
+  if (pot && X.drain > 0 && !insert) floor = { type: 'hole', thick: F.floor, holeR: X.drain / 2 };
   if (obj === 'pendant') floor = { type: 'hole', thick: F.floor, holeR: X.socket / 2 };
-  // a table-lamp shade is open at both ends and stands in a groove in the base
+  // a table-lamp shade is open at both ends and stands in a groove in the base; so is a napkin ring
   const GROOVE = 3;
-  if (lamp) floor = { type: 'open' };
+  if (lamp || obj === 'ring') floor = { type: 'open' };
   if (obj === 'vase' && X.vaseMode && mode !== 'cut') top = 'cap';
   const lidOn = obj === 'box' && X.lid;
   if (lidOn) minTopBand = X.plugDepth + 2;
@@ -1591,18 +1671,34 @@ export function generate(P, quality = 1) {
   const rimShape = top === 'rim' && !lidOn && !insert ? F.rimShape || 'level' : 'level';
   const rimDrop = clamp(F.rimDepth || 0, 0, H * 0.35);
   const shaped = rimShape !== 'level' && rimDrop > 0.5;
-  const extraMain = { minTopBand, sec, twist, freezeChamfer: !lamp, minBottomBand: lamp ? GROOVE + 3 : 0 };
+  const extraMain = { minTopBand, sec, twist, freezeChamfer: floor.type !== 'open', minBottomBand: lamp ? GROOVE + 3 : 0 };
+  // hanging planter: teardrop holes for the cords in a plain collar under the rim
+  const holes = [];
+  const rimZone = rimEdge !== 'flat' ? (rimProfile(rimEdge, F.wall)?.zone || 0) + 1.5 : 0;
+  if (obj === 'hanging') {
+    const n = clamp(Math.round(X.hangers || 3), 2, 6), r = 2.6, zc = H - (shaped ? rimDrop : 0) - rimZone - 8;
+    for (let k = 0; k < n; k++) holes.push({ angle: -Math.PI / 2 + (TAU * k) / n, z: zc, r });
+    extraMain.minTopBand = Math.max(extraMain.minTopBand, H - zc + r + 2.5);
+  }
+  // wall planter: a keyhole in the flat back for a screw (head up to 8 mm)
+  if (wallObj) {
+    const zc = H - (shaped ? rimDrop : 0) - rimZone - 22;
+    holes.push({ angle: Math.PI / 2, z: zc, r: 4.6, slot: 9, w: 2.3 });
+    const b = secF.back, c = 0.16;
+    extraMain.flatBack = { b, nyArc: (b - c) / (1 - c) };
+  }
+  if (holes.length) extraMain.holes = holes;
   const mc = P.multicolor && P.multicolor.cuts && P.multicolor.cuts.length ? P.multicolor : null;
   if (mc) extraMain.bands = mc;
   if (rimEdge !== 'flat' || shaped) extraMain.rim = { edge: rimEdge, shape: shaped ? rimShape : 'level', drop: rimDrop, waves: clamp(Math.round(F.rimWaves || 6), 2, 24) };
   const shell = makePatternedShell(rFn, H, P, quality, floor, top, extraMain);
-  const mainKey = { planter: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', bowl: 'bowl', vase: 'vase', cup: 'cup' }[obj];
-  const mainLabel = { planter: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', bowl: 'Bowl', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup' }[obj];
+  const mainKey = { planter: 'pot', hanging: 'pot', wall: 'pot', orchid: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', lantern: 'lantern', bowl: 'bowl', tray: 'tray', vase: 'vase', cup: 'cup', ring: 'ring' }[obj];
+  const mainLabel = { planter: 'Pot', hanging: 'Pot', wall: 'Pot', orchid: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', lantern: 'Lantern', bowl: 'Bowl', tray: 'Tray', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup', ring: 'Ring' }[obj];
 
   let mainLift = 0;
 
   // ---- planter accessories
-  if (obj === 'planter' && X.base === 'sleeve') {
+  if (potBase === 'sleeve') {
     const fS = 2.0, gap = X.gap, ts = 2.0;
     const Hs = Math.max(20, H * X.sleeveH);
     // inner clearance, monotone so the pot can drop in from above
@@ -1628,7 +1724,7 @@ export function generate(P, quality = 1) {
     add('sleeve', 'Sleeve', sl.mesh, { z: 0, color: 1 });
     if (Hs >= H - 5) warnings.push({ level: 'warn', text: 'The sleeve almost covers the pot. Lower the sleeve height.' });
   }
-  if (obj === 'planter' && X.base === 'saucer') {
+  if (potBase === 'saucer') {
     const r0 = rFn(0);
     const gap = relief + Math.max(3, X.gap + 2), t = 2, tf = 2, hs = 14, c = 1.2, fl = 2.5;
     const poly = [[0, 0, 0, true], [r0, 0, gap + t - c], [r0, c, gap + t], [r0, hs, gap + t + fl], [r0, hs, gap + fl], [r0, tf, gap], [0, tf, 0, true]];
@@ -1774,6 +1870,9 @@ export function generate(P, quality = 1) {
     else checks.push({ level: 'ok', text: 'Opening tops are short bridges or self-supporting.' });
   }
   if (eased > 0.5) checks.push({ level: 'ok', text: `Silhouette eased by up to ${eased.toFixed(1)} mm to keep walls under 44°.` });
+  if (obj === 'hanging') checks.push({ level: 'ok', text: `Hangs from ${holes.length} cords through teardrop holes under the rim (up to Ø 4 mm cord).${floor.type === 'hole' ? ' Water drips from the drainage hole.' : ' No drainage hole: water sparingly.'}` });
+  if (wallObj) checks.push({ level: 'ok', text: 'The flat back has a keyhole for a screw with a head up to 8 mm. Leave the head 4 mm out of the wall and hook the planter over it.' });
+  if (obj === 'lantern') checks.push({ level: 'ok', text: 'For LED tealights only, never a real flame: PLA and PETG soften from about 60 °C.' });
   if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert. Fill it through the channel at the rim, and thread a cotton wick through the hole in the insert's floor.` });
   if (lamp) {
     let rMinIn = Infinity;
@@ -1792,7 +1891,22 @@ export function generate(P, quality = 1) {
 
   // spiral vase mode prints one body, so colours become filament changes at these heights instead
   const colorChanges = mc && top === 'cap' ? mc.cuts.map((z) => Math.round(clamp(z, 3, H - 3) / 0.2) * 0.2) : shell.cuts || [];
-  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges } };
+  // where the wall is, for the preview: the plane of a wall planter's flat back
+  let wallY = null;
+  if (wallObj) { let rTop = 0; for (let j = 0; j < shell.rows.n; j++) rTop = Math.max(rTop, shell.rows.r[j]); wallY = secF.back * rTop; }
+  // and where the hanging cords leave the holes (just outside the wall, after any twist)
+  let hangers = null;
+  if (obj === 'hanging') {
+    const cols = sectionColumns(sec, 720);
+    hangers = holes.map((hl) => {
+      let ic = 0, best = Infinity;
+      for (let i = 0; i < 720; i++) { const da = Math.abs(Math.atan2(Math.sin(cols.A[i] - hl.angle), Math.cos(cols.A[i] - hl.angle))); if (da < best) { best = da; ic = i; } }
+      const r = rFn(hl.z), phi = (twist * hl.z) / H;
+      const x0 = r * cols.CX[ic] + 1.5 * cols.NX[ic], y0 = r * cols.CY[ic] + 1.5 * cols.NY[ic];
+      return { x: x0 * Math.cos(phi) - y0 * Math.sin(phi), y: x0 * Math.sin(phi) + y0 * Math.cos(phi), z: hl.z };
+    });
+  }
+  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers } };
 }
 
 // ---------------------------------------------------------------- pattern swatches
