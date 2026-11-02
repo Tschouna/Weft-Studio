@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
-import { generate, swatch, makeProfile, easeProfile } from './engine.js';
+import { generate, swatch, makeProfile, easeProfile, makeSection } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 
 // ============================================================ catalogue
@@ -634,7 +634,11 @@ function buildDisplay(res, d, opts) {
     mesh.castShadow = !opts.xray; mesh.receiveShadow = true;
     if (p.place.flip) { mesh.rotation.x = Math.PI; mesh.position.z = H + hang; }
     else if (p.place.flipZ) { mesh.rotation.x = Math.PI; mesh.position.z = p.place.z + (p.place.lidLift ? lift : 0); }
-    else mesh.position.z = p.place.z || 0;
+    else if (p.place.rot) {
+      // flat-printed parts (the stand) stand up in place
+      mesh.rotation.order = 'ZYX'; mesh.rotation.set(...p.place.rot);
+      mesh.position.set(...(p.place.pos || [0, 0, 0]));
+    } else mesh.position.z = p.place.z || 0;
     if (opts.overhangs !== false) { const over = hazardOverlay(geo, p, opts); if (over) mesh.add(over); }
     root.add(mesh); meshes.push(mesh);
   }
@@ -1510,6 +1514,7 @@ function assembledSize(res, d) {
   let w = 0, hgt = 0;
   for (const p of res.parts) {
     const b = p.stats.bbox;
+    if (p.place.rot) { w = Math.max(w, p.place.span || 0); hgt = Math.max(hgt, p.place.height || 0); continue; }
     w = Math.max(w, b[3] - b[0], b[4] - b[1]);
     hgt = Math.max(hgt, b[5] - b[2] + (p.place.z && !p.place.flipZ && !p.place.flip ? p.place.z : 0));
   }
@@ -1704,8 +1709,9 @@ function renderObject() {
     if (X.base !== 'insert') opts.push(sliderCtl('x-drain', 'Drainage hole', { min: 0, max: 30, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
     opts.push(chipsCtl('Base', [{ value: 'none', label: 'None' }, { value: 'saucer', label: 'Saucer' }, { value: 'sleeve', label: 'Two-tone sleeve' }, { value: 'insert', label: 'Self-watering' }], () => X.base, (v) => { X.base = v; }, { structural: true }));
     if (X.base === 'insert') {
-      opts.push(sliderCtl('x-res', 'Water reservoir height', { min: 12, max: 60, step: 1, fmt: mm }, () => X.reservoir ?? 30, (v) => { X.reservoir = v; }));
-      opts.push(h('p', { class: 'note' }, 'An inner pot hangs from the rim over a water reservoir. Pour water down the channel at the side, and thread a cotton wick through the hole in the insert. The outer pot has no drainage hole.'));
+      opts.push(sliderCtl('x-res', 'Water reservoir height', { min: 6, max: 60, step: 1, fmt: mm }, () => X.reservoir ?? 14, (v) => { X.reservoir = v; }));
+      opts.push(switchCtl('x-slots', 'Water slots in the insert', () => X.slots !== false, (v) => { X.slots = v; }));
+      opts.push(h('p', { class: 'note' }, 'An inner pot hangs from the rim and reaches down into a water reservoir. Pour water down the channel at the side: slots round the insert\'s foot let it drain down and let the soil drink it back up. A cotton wick through the floor hole works too. The outer pot has no drainage hole.'));
     }
     if (X.base === 'sleeve') {
       opts.push(sliderCtl('x-sleeveH', 'Sleeve height', { min: 0.2, max: 0.7, step: 0.01, fmt: pct }, () => X.sleeveH, (v) => { X.sleeveH = v; }));
@@ -1738,6 +1744,17 @@ function renderObject() {
   if (d.object === 'vase') {
     opts.push(switchCtl('x-vasemode', 'Solid body for spiral vase mode', () => X.vaseMode, (v) => { X.vaseMode = v; }, { structural: true }));
     opts.push(h('p', { class: 'note' }, 'A solid body lets the slicer print one continuous spiral wall: fast, seamless, and very light. Turn it off to print real walls and a floor.'));
+  }
+  // a plant stand: planters, orchid pots and vases
+  if (d.object === 'planter' || d.object === 'orchid' || d.object === 'vase') {
+    const st = X.stand || 'none';
+    opts.push(chipsCtl('Stand', [{ value: 'none', label: 'None' }, { value: 'mid', label: 'Mid-century' }, { value: 'upright', label: 'Upright' }, { value: 'wide', label: 'Wide' }], () => st, (v) => { X.stand = v; }, { structural: true }));
+    if (st !== 'none') {
+      opts.push(sliderCtl('x-standLift', 'Height under the pot', { min: 30, max: 250, step: 1, fmt: mm }, () => X.standLift ?? 70, (v) => { X.standLift = v; }));
+      opts.push(sliderCtl('x-standHug', 'Legs up the side', { min: 0.1, max: 0.7, step: 0.01, fmt: pct }, () => X.standHug ?? 0.35, (v) => { X.standHug = v; }));
+      opts.push(sliderCtl('x-standLeg', 'Leg thickness', { min: 8, max: 24, step: 0.5, fmt: mm1 }, () => X.standLeg ?? 12, (v) => { X.standLeg = v; }));
+      opts.push(h('p', { class: 'note' }, 'Two flat pieces that print lying down, with no supports, and slot together into a cross. The pot rests on the crossbars and the legs rise up its sides. Print them in a second colour.'));
+    }
   }
   if (d.object === 'hanging') {
     opts.push(chipsCtl('Cords', [{ value: 3, label: '3 cords' }, { value: 4, label: '4 cords' }], () => X.hangers ?? 3, (v) => { X.hangers = v; }));
@@ -2183,8 +2200,9 @@ function refreshListing() {
     d.object === 'wall' ? '• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports.' : null,
     d.object === 'orchid' ? `• Open walls for air at the roots${d.extras.drain ? `, Ø ${d.extras.drain} mm drainage hole` : ''}${d.extras.base === 'saucer' ? ', saucer included' : ''}.` : null,
     d.object === 'lantern' ? '• For LED tealights only. Never use a real flame.' : null,
+    res.info.stand ? `• Plant stand: two flat pieces, printed lying down with no supports, that slot together into a cross. The pot sits ${Math.round(res.info.stand.lift)} mm up.` : null,
     '',
-    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', 'no supports', d.object === 'pendant' ? 'lamp shade' : null, ['planter', 'hanging', 'wall', 'orchid'].includes(d.object) ? 'plant pot' : null, d.object === 'hanging' ? 'hanging planter' : null, d.object === 'wall' ? 'wall planter' : null, d.object === 'orchid' ? 'orchid' : null, d.object === 'lantern' ? 'tealight holder' : null, d.object === 'lantern' ? 'lantern' : null, d.object === 'ring' ? 'napkin ring' : null, d.object === 'tray' ? 'trinket tray' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
+    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', 'no supports', d.object === 'pendant' ? 'lamp shade' : null, ['planter', 'hanging', 'wall', 'orchid'].includes(d.object) ? 'plant pot' : null, d.object === 'hanging' ? 'hanging planter' : null, d.object === 'wall' ? 'wall planter' : null, d.object === 'orchid' ? 'orchid' : null, d.object === 'lantern' ? 'tealight holder' : null, d.object === 'lantern' ? 'lantern' : null, d.object === 'ring' ? 'napkin ring' : null, d.object === 'tray' ? 'trinket tray' : null, res.info.stand ? 'plant stand' : null, res.info.stand ? 'mid century' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
   ];
   ta.value = lines.filter((l) => l !== null).join('\n');
 }
@@ -2710,6 +2728,27 @@ function loadCode(text) {
 // Three independent parts, so a shuffle can change the shape and keep the pattern, or the other way round.
 const SHUFFLE_PARTS = [['shape', 'Shape'], ['surface', 'Surface'], ['colour', 'Colours']];
 state.shuffleParts = { shape: true, surface: true, colour: true, ...store.get('weft.shuffleParts', {}) };
+// How steep the eased silhouette gets anywhere, in degrees from upright
+function maxLean(F) {
+  const H = F.height, fn = easeProfile(makeProfile(F), H, 44).fn;
+  let m = 0;
+  for (let k = 0; k < 60; k++) { const z0 = (H * k) / 60, z1 = (H * (k + 1)) / 60; m = Math.max(m, Math.abs(fn(z1) - fn(z0)) / (z1 - z0)); }
+  return (Math.atan(m) * 180) / Math.PI;
+}
+// The most twist this shape takes and still prints: twisting swings the flanks of a shaped outline
+// outward by r x twist rate x the flank's slant, on top of the silhouette's own lean.
+function safeTwist(F) {
+  if ((F.section || 'round') === 'round') return 0;
+  const H = F.height, fn = easeProfile(makeProfile(F), H, 44).fn, sec = makeSection(F);
+  let kT = 0;
+  for (let q = 0; q < sec.M; q += 4) kT = Math.max(kT, Math.abs(sec.y[q] * sec.nx[q] - sec.x[q] * sec.ny[q]));
+  let rate = Infinity;
+  for (let k = 0; k < 40; k++) {
+    const z0 = (H * k) / 40, z1 = (H * (k + 1)) / 40, lean = Math.abs(fn(z1) - fn(z0)) / (z1 - z0), r = Math.max(fn(z0), fn(z1));
+    rate = Math.min(rate, Math.max(0, 0.85 - lean) / Math.max(1e-6, r * kT));
+  }
+  return Math.floor((rate * H * 180) / Math.PI);
+}
 function shuffleShape(d) {
   const F = d.form, X = d.extras, obj = d.object;
   const sils = {
@@ -2736,11 +2775,18 @@ function shuffleShape(d) {
   if (obj === 'wall') { F.section = 'round'; F.twist = 0; X.back = +rnd(0.15, 0.45).toFixed(2); }
   if (obj === 'hanging') { X.hangers = pick([3, 3, 4]); }
   if (obj === 'orchid') X.base = pick(['none', 'saucer', 'saucer']);
+  // planters, orchid pots and vases now and then stand on legs
+  if (obj === 'planter' || obj === 'orchid' || obj === 'vase') {
+    X.stand = pick(['none', 'none', 'none', 'mid', 'mid', 'upright', 'wide']);
+    if (X.stand !== 'none') { X.standLift = Math.round(rnd(45, obj === 'vase' ? 140 : 110)); X.standHug = +rnd(0.28, 0.45).toFixed(2); X.standLeg = Math.round(rnd(10, 15)); }
+  }
   if (obj === 'planter') X.base = pick(['none', 'saucer', 'sleeve', 'sleeve', 'insert', 'insert']);
   F.rimShape = obj === 'box' || obj === 'hanging' || (obj === 'planter' && X.base === 'insert') ? 'level' : pick(['level', 'level', 'level', 'wavy', 'slant']);
   F.rimWaves = Math.round(rnd(4, 10)); F.rimDepth = Math.round(rnd(4, 14));
   // table lamps look best with a turned square or polygon
   if (obj === 'lamp' && Math.random() < 0.6) { F.section = 'polygon'; F.sides = pick([4, 4, 5, 6]); F.corner = +rnd(0.25, 0.45).toFixed(2); F.twist = Math.round(rnd(30, 90)) * pick([1, -1]); }
+  // no more twist than this shape can take without overhangs (short or flared pieces take little or none)
+  if (F.twist) { const cap = safeTwist(F); F.twist = cap < 10 ? 0 : Math.sign(F.twist) * Math.min(Math.abs(F.twist), cap); }
 }
 // Relief depth ranges for shuffles, in mm at a 150 mm diameter
 const BOLD_DEPTH = {
@@ -2757,7 +2803,9 @@ function shuffleSurface(d) {
     : ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'wicker', 'ribs', 'chevron', 'reeds', 'waves', 'topo', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles', 'hammered', 'carved', 'rings', 'dunes', 'bark',
       'gouge', 'cubes', 'cubes', 'knurl', 'knurl', 'seigaiha', 'herringbone', 'blocks', 'blocks', 'spikes', 'spikes', 'shards', 'shards', 'fins', 'fins', 'hobnail', 'hobnail'];
   const tight = !!OBJECTS[obj].watertight;
-  const pid = pick(tight ? pats.filter((k) => PATTERNS[k].modes.includes('relief')) : pats);
+  // wicker's strands bridge flat; on a curved wall they would hang out instead
+  const curved = maxLean(F) > 12;
+  const pid = pick((tight ? pats.filter((k) => PATTERNS[k].modes.includes('relief')) : pats).filter((k) => !(curved && k === 'wicker')));
   S.pattern = pid;
   const P = PATTERNS[pid];
   Object.assign(S, P.def);
@@ -2801,11 +2849,37 @@ function shuffleColours(d) {
     M.slots = [0, 1, 2].map(() => pal.splice(Math.floor(Math.random() * pal.length), 1)[0]);
   }
 }
-function shuffle(parts = state.shuffleParts) {
-  const d = state.design;
-  if (parts.shape) shuffleShape(d);
-  if (parts.surface) shuffleSurface(d);
-  if (parts.colour) shuffleColours(d);
+// Shuffle tries a few candidates and keeps the first that prints without supports (a quick, coarse
+// build of each in the background); if none does, it keeps the one with the least overhang.
+let shuffling = false;
+async function shuffle(parts = state.shuffleParts) {
+  if (shuffling) return;
+  shuffling = true;
+  $('#busy').classList.add('show');
+  const base = clone(state.design);
+  let best = null, bestScore = Infinity;
+  try {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const d = clone(base);
+      if (parts.shape) shuffleShape(d);
+      if (parts.surface) shuffleSurface(d);
+      if (parts.colour) shuffleColours(d);
+      // colours never change printability, so there is nothing to check
+      if (!parts.shape && !parts.surface) { best = d; break; }
+      let score = Infinity;
+      try {
+        const res = await engine.run(engineParams(d), 0.7);
+        const over = res.parts.reduce((a, p) => a + p.stats.overhang, 0);
+        score = over + (res.checks.some((c) => c.level === 'bad') ? 1e6 : 0);
+      } catch { /* a combination that does not build is never kept */ }
+      if (score < bestScore) { best = d; bestScore = score; }
+      if (score <= 40) break;
+    }
+  } finally {
+    shuffling = false;
+  }
+  if (!best) { $('#busy').classList.remove('show'); return; }
+  state.design = best;
   rename();
   onEdit(true, true);
 }

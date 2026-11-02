@@ -182,6 +182,7 @@ function sectionColumns(sec, count) {
 }
 const ROUND = () => makeSection({ section: 'round' });
 
+const NORMAL_SPAN = 2.5;
 // Resample the meridian at even arc-length steps.
 // fineTop: { zone (mm of arc under the rim), count } adds dense rows there for shaped rim edges
 // cutZ: heights that must land exactly on a row (colour band boundaries)
@@ -218,8 +219,15 @@ function sampleRows(rFn, H, step, zFrom = 0, fineTop = null, cutZ = null) {
     rows.r[j] = dr[k] + (dr[k + 1] - dr[k]) * w;
     rows.z[j] = dzA[k] + (dzA[k + 1] - dzA[k]) * w;
     rows.l[j] = target;
-    const ka = Math.max(0, k - 1), kb = Math.min(nd - 1, k + 2);
-    const tr = dr[kb] - dr[ka], tz = dzA[kb] - dzA[ka], tl = Math.sqrt(tr * tr + tz * tz) || 1;
+    // the wall's direction, averaged over 5 mm of the profile: where an eased silhouette meets its natural
+    // curve the profile has a corner, and a normal that turned there abruptly would fold the inner wall
+    const at = (sl) => {
+      let q = 0; while (q < nd - 2 && dl[q + 1] < sl) q++;
+      const u = clamp((sl - dl[q]) / (dl[q + 1] - dl[q] || 1), 0, 1);
+      return [dr[q] + (dr[q + 1] - dr[q]) * u, dzA[q] + (dzA[q + 1] - dzA[q]) * u];
+    };
+    const [ra, za] = at(Math.max(0, target - NORMAL_SPAN)), [rb, zb] = at(Math.min(L, target + NORMAL_SPAN));
+    const tr = rb - ra, tz = zb - za, tl = Math.sqrt(tr * tr + tz * tz) || 1;
     rows.nr[j] = tz / tl; rows.nz[j] = -tr / tl;
   }
   rows.z[0] = zFrom; rows.z[n - 1] = H;
@@ -253,10 +261,47 @@ function makeVoronoi(S, N, rowsY, jitter) {
   return { h, k0, k1, sx, sy };
 }
 
-const C_X = new Float64Array(32), C_Y = new Float64Array(32);
+const C_X = new Float64Array(32), C_Y = new Float64Array(32), C_I = new Int32Array(32);
 let V_SX = 0, V_SY = 0, V_ID = 0; // offset from the sample to the owning seed (cell units), and its id
 
 // Physical distance from (X, Y) to the nearest edge of its Voronoi cell.
+// The highest point of each cell's opening, the cell shrunk by the strip half-width, relative to its seed in
+// units where the cell's shape is true (x = X, y = Y * stretch; multiply by the row's cell size for mm).
+// A cell is convex, so a 50° roof from this point leaves no flatter ceiling anywhere in the opening.
+function voronoiTops(V, N, stretch, halfWAt) {
+  const n = V.sx.length, tx = new Float64Array(n), ty = new Float64Array(n), ex = [], ey = [], eb = [];
+  for (let k = V.k0; k <= V.k1; k++) {
+    for (let m = 0; m < N; m++) {
+      const id = (k - V.k0) * N + m, sx = V.sx[id], sy = V.sy[id], hw = halfWAt(sy);
+      ex.length = ey.length = eb.length = 0;
+      for (let kk = k - 2; kk <= k + 2; kk++) {
+        if (kk < V.k0 || kk > V.k1) continue;
+        for (let mm = m - 3; mm <= m + 3; mm++) {
+          const nid = (kk - V.k0) * N + (((mm % N) + N) % N);
+          if (nid === id) continue;
+          let dx = V.sx[nid] - sx; if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
+          const dy = (V.sy[nid] - sy) * stretch, L = Math.hypot(dx, dy);
+          if (L < 1e-9) continue;
+          // half-plane: p . e <= |e|^2 / 2 - hw |e|   (inside the cell, at least hw from its edge)
+          ex.push(dx); ey.push(dy); eb.push((L * L) / 2 - hw * L);
+        }
+      }
+      let bx = 0, by = -Infinity;
+      for (let a = 0; a < ex.length; a++) for (let b = a + 1; b < ex.length; b++) {
+        const det = ex[a] * ey[b] - ey[a] * ex[b];
+        if (Math.abs(det) < 1e-12) continue;
+        const x = (eb[a] * ey[b] - ey[a] * eb[b]) / det, y = (ex[a] * eb[b] - eb[a] * ex[b]) / det;
+        if (y <= by) continue;
+        let ok = true;
+        for (let c = 0; c < ex.length && ok; c++) if (ex[c] * x + ey[c] * y > eb[c] + 1e-9) ok = false;
+        if (ok) { bx = x; by = y; }
+      }
+      tx[id] = bx; ty[id] = by; // -Infinity: the strips swallow the whole cell
+    }
+  }
+  return { tx, ty };
+}
+
 function evalVoronoi(V, N, X, Y, stretch, scale, kR) {
   const kc = Math.round(Y / V.h);
   let nc = 0;
@@ -268,13 +313,13 @@ function evalVoronoi(V, N, X, Y, stretch, scale, kR) {
       const id = base + mm;
       let dx = V.sx[id] - X;
       if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
-      C_X[nc] = dx; C_Y[nc] = V.sy[id] - Y; nc++;
+      C_X[nc] = dx; C_Y[nc] = V.sy[id] - Y; C_I[nc] = id; nc++;
     }
   }
   let best = 0, bd = Infinity;
   for (let c = 0; c < nc; c++) { const d = C_X[c] * C_X[c] + C_Y[c] * C_Y[c]; if (d < bd) { bd = d; best = c; } }
   const bx = C_X[best], by = C_Y[best];
-  V_SX = bx; V_SY = by;
+  V_SX = bx; V_SY = by; V_ID = C_I[best];
   let D = Infinity;
   const s2 = stretch * stretch;
   for (let c = 0; c < nc; c++) {
@@ -375,6 +420,16 @@ function buildSurface(rows, NU, S, mode, opts) {
   const archH = archSpan / archRows;
   let V = null;
   if (pid === 'voronoi' || pid === 'honeycomb') V = makeVoronoi(S, N, tauMax / stretch, pid === 'honeycomb' ? 0 : S.jitter);
+  // the top of every opening, for pointed roofs that really cover it: strip half-width in cell units at
+  // the seed's height (cells scale with the radius, the strips do not)
+  let vTops = null;
+  if (pid === 'voronoi' && mode === 'cut' && S.arch) {
+    vTops = voronoiTops(V, N, stretch, (sy) => {
+      const t = sy * stretch;
+      let j = 0; while (j < n - 1 && tau[j + 1] < t) j++;
+      return Math.max(0.3, ((S.width || 2) / 2) / ((TAU * rows.r[j] * perim) / N));
+    });
+  }
   if (pid === 'dots') V = makeVoronoi(S, N, tauMax / stretch, S.jitter || 0);
   if (pid === 'hammered' || pid === 'rings') V = makeVoronoi(S, N, tauMax / stretch, pid === 'rings' ? 0.95 : S.jitter ?? 0.85);
   if (pid === 'gouge') V = makeVoronoi(S, N, tauMax / stretch, S.jitter ?? 0.8);
@@ -514,9 +569,15 @@ function buildSurface(rows, NU, S, mode, opts) {
           g = halfW - d;
           h = crest(d / halfW, prof);
           if (mode === 'cut' && S.arch) {
-            // 50° pointed roof over each opening so it prints without bridging
-            const apex = (V_SY + 0.48) * stretch * Sc;
-            g = Math.max(g, halfW - (apex - 1.2 * Math.abs(V_SX) * Sc));
+            // 50° pointed roof over each opening so it prints without bridging, from the top of the
+            // actual opening (cells are irregular, so it is worked out per cell)
+            if (vTops) {
+              const px = -V_SX, py = -V_SY * stretch, ty = vTops.ty[V_ID];
+              g = ty === -Infinity ? Math.max(g, 1) : Math.max(g, ((py - ty + 1.2 * Math.abs(px - vTops.tx[V_ID])) * Sc) / 1.562);
+            } else {
+              const apex = (V_SY + 0.48) * stretch * Sc;
+              g = Math.max(g, halfW - (apex - 1.2 * Math.abs(V_SX) * Sc));
+            }
           }
           break;
         }
@@ -912,8 +973,12 @@ function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg 
       const raw = (rows.z[j + 1] - rows.z[j]) * T - dR;
       const allow = rows.l[j + 1] <= fillBelow ? raw : Math.max(0, raw);
       const need = D[(j + 1) * NU + i] - allow;
-      if (!twist) { const a = j * NU + i; if (D[a] < need) D[a] = need; continue; }
-      const s = i - dphi[j] * kN * colsPerRad, f = Math.floor(s), w = s - f;
+      if (!twist && sec.round) { const a = j * NU + i; if (D[a] < need) D[a] = need; continue; }
+      // the point straight under this one: a twist turns the row round, and on the flank of a shaped
+      // outline a widening (or narrowing) wall slides sideways as well, by the radius change times the
+      // outline's tangential component (in columns: that distance over the row's column spacing)
+      const kT = CY[i] * NX[i] - CX[i] * NY[i], rj = Math.max(1e-3, rows.r[j]);
+      const s = i + (-dphi[j] * kN + ((rows.r[j + 1] - rows.r[j]) * kT) / rj) * colsPerRad, f = Math.floor(s), w = s - f;
       const i0 = ((f % NU) + NU) % NU, i1 = i0 + 1 === NU ? 0 : i0 + 1;
       fillBetween(D, j * NU + i0, j * NU + i1, w, need);
     }
@@ -990,10 +1055,25 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     for (let j = 1; j < NR; j++) {
       const dr = rows.r[j] - rows.r[j - 1];
       const dRin = dr * (dr >= 0 ? kHi : kLo) + offIn[j] - offIn[j - 1];
-      zIn[j] = Math.max(zIn[j], zIn[j - 1] + Math.max(dRin * 1.1, 1e-3));
+      // (at 45°: the outside is eased to 44°, so an even wall never trips this; a stricter limit here
+      // pushed a bowl's inside up row after row until the rows piled up into folds under the rim)
+      zIn[j] = Math.max(zIn[j], zIn[j - 1] + Math.max(dRin, 1e-3));
     }
   }
   if (top === 'rim' || top === 'cap') zIn[NR - 1] = rows.z[NR - 1];
+  // A wall that flares out at the rim has its inside higher than its outside, so the inner surface would
+  // pass the rim: it ends where it meets the rim plane, and the rows beyond collapse onto that line
+  // (instead of folding back over it, which left a strip of downward-facing faces around the rim).
+  if (top === 'rim') {
+    const zTop = rows.z[NR - 1];
+    let b = NR - 1;
+    while (b > 1 && zIn[b - 1] >= zTop) b--;
+    if (b < NR - 1) {
+      const a = b - 1, f = clamp((zTop - zIn[a]) / Math.max(1e-9, zIn[b] - zIn[a]), 0, 1);
+      const rc = rows.r[a] + (rows.r[b] - rows.r[a]) * f, oc = offIn[a] + (offIn[b] - offIn[a]) * f;
+      for (let j = b; j < NR; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = zTop; }
+    }
+  }
   // keep the inner wall monotone so a flared rim or floor never folds over itself
   for (let j = NR - 2; j >= 0; j--) if (zIn[j] > zIn[j + 1] - 1e-3) zIn[j] = zIn[j + 1] - 1e-3;
   for (let j = 1; j < NR; j++) if (zIn[j] < zIn[j - 1] + 1e-3) zIn[j] = zIn[j - 1] + 1e-3;
@@ -1496,6 +1576,26 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   // openings must keep their printable orientation, so a twisted outline does not drag them round
   const unswirl = mode === 'cut' ? ((extra.twist || 0) / TAU) * (H / Math.max(1e-6, rows.z[rows.n - 1])) : 0;
   let { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, freezeL, unswirl });
+  // In the valleys of a shaped outline the inside of the wall is wider than the outside, so an opening is
+  // stretched sideways on its way through and its pointed top flattens. Where that stretch passes 12%
+  // the wall stays solid; openings there end in upright sides instead.
+  if (mode === 'cut' && !sec.round) {
+    const cols = sectionColumns(sec, NU), ds = sec.L / NU, kap = new Float64Array(NU);
+    for (let i = 0; i < NU; i++) {
+      const a = (i + NU - 1) % NU, b = (i + 1) % NU;
+      const turn = Math.atan2(cols.NX[a] * cols.NY[b] - cols.NY[a] * cols.NX[b], cols.NX[a] * cols.NX[b] + cols.NY[a] * cols.NY[b]);
+      kap[i] = turn / (2 * ds); // curvature of the unit outline: > 0 where it bulges, < 0 in a valley
+    }
+    const t = P.form.wall;
+    for (let j = 0; j < rows.n; j++) {
+      const rr = Math.max(1e-3, rows.r[j]), tn = t * (rows.nr[j] ?? 1);
+      for (let i = 0; i < NU; i++) {
+        if (kap[i] >= 0) continue;
+        const stretch = 1 - (tn * kap[i]) / rr;
+        if (stretch > 1.1) { const id = j * NU + i; F[id] = Math.max(F[id], (stretch - 1.12) * 30); }
+      }
+    }
+  }
   // a vertical channel pressed into the whole wall (outside in, inside out by the same amount)
   if (extra.channel) {
     const { angle, width, depth } = extra.channel, ang = sectionColumns(sec, NU).A, half = width / 2, edgeW = Math.min(6, half * 0.6);
@@ -1578,6 +1678,61 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   return { mesh: merged.mesh, rows, NU, cell, rMax, rMin, perim, regions, cuts };
 }
 
+// A flat part: a simple polygon (anticlockwise, in x/y) extruded t mm up. It prints lying as it is.
+function extrudePolygon(pts, t) {
+  const n = pts.length, mesh = new Mesh();
+  const bot = pts.map(([x, y], i) => mesh.v(x, y, 0, i)), top = pts.map(([x, y], i) => mesh.v(x, y, t, n + i));
+  // ear clipping
+  const idx = pts.map((_, i) => i), area2 = (a, b, c) => (pts[b][0] - pts[a][0]) * (pts[c][1] - pts[a][1]) - (pts[c][0] - pts[a][0]) * (pts[b][1] - pts[a][1]);
+  const inside = (p, a, b, c) => area2(a, b, p) >= 0 && area2(b, c, p) >= 0 && area2(c, a, p) >= 0;
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 10000) {
+    let cut = false;
+    for (let k = 0; k < idx.length; k++) {
+      const a = idx[(k + idx.length - 1) % idx.length], b = idx[k], c = idx[(k + 1) % idx.length];
+      if (area2(a, b, c) <= 1e-9) continue;
+      if (idx.some((p) => p !== a && p !== b && p !== c && inside(p, a, b, c))) continue;
+      mesh.tri(top[a], top[b], top[c]); mesh.tri(bot[a], bot[c], bot[b]);
+      idx.splice(k, 1); cut = true; break;
+    }
+    if (!cut) break;
+  }
+  if (idx.length === 3) { const [a, b, c] = idx; mesh.tri(top[a], top[b], top[c]); mesh.tri(bot[a], bot[c], bot[b]); }
+  for (let i = 0; i < n; i++) { const j = (i + 1) % n; mesh.tri(bot[i], bot[j], top[j]); mesh.tri(bot[i], top[j], top[i]); }
+  return mesh;
+}
+
+// A plant stand in two flat pieces that slot together into a cross: each is a pair of legs joined by a
+// crossbar the pot rests on, with a half-lap notch in the middle (one cut from the top, one from the
+// bottom). ext(h) is how far the pot reaches out at height h above its base, in the piece's plane.
+// style: splay (degrees), taper (foot width / top width).
+function standOutline({ lift, hug, leg, bar, ext, splay, taper, notch }) {
+  const yTop = lift + hug, tn = Math.tan((splay * Math.PI) / 180), clr = 1.2;
+  // the legs' inner edges are straight lines that clear the pot all the way up
+  let xTop = 0;
+  for (let k = 0; k <= 40; k++) { const y = lift + (hug * k) / 40; xTop = Math.max(xTop, ext(y - lift) + clr - (yTop - y) * tn); }
+  const xin = (y) => xTop + (yTop - y) * tn;
+  const wTop = leg, wBot = leg * taper;
+  const xout = (y) => xin(y) + wBot + ((wTop - wBot) * y) / yTop;
+  const c = Math.min(2, leg * 0.18); // softened top corners
+  const nw = (notch.w) / 2, nd = bar / 2, yb = lift - bar;
+  const right = [];
+  // right leg, from the floor round to the bar top
+  right.push([xin(0), 0], [xout(0), 0], [xout(yTop - c), yTop - c], [xout(yTop) - c, yTop], [xin(yTop) + c, yTop], [xin(yTop), yTop - c], [xin(lift), lift]);
+  const pts = [];
+  // bottom edge of the left leg, then up its inner edge to the underside of the bar
+  pts.push([-xout(0), 0], [-xin(0), 0], [-xin(yb), yb]);
+  // underside of the bar (with the notch for the piece that sits on top)
+  if (notch.from === 'bottom') pts.push([-nw, yb], [-nw, yb + nd], [nw, yb + nd], [nw, yb]);
+  pts.push([xin(yb), yb]);
+  pts.push(...right);
+  // top of the bar, right to left (with the notch for the piece underneath)
+  if (notch.from === 'top') pts.push([nw, lift], [nw, lift - nd], [-nw, lift - nd], [-nw, lift]);
+  // up the left leg's inner edge, over its top, down its outer edge
+  pts.push([-xin(lift), lift], [-xin(yTop), yTop - c], [-xin(yTop) - c, yTop], [-xout(yTop) + c, yTop], [-xout(yTop - c), yTop - c]);
+  return { pts, span: 2 * xout(0), height: yTop };
+}
+
 // Signed distance (mm, > 0 = wall) to a hole at arc offset s and height offset dy from its centre.
 // Every top is a 50° point, so the holes print without bridging.
 function holeField(hole, s, dy) {
@@ -1649,6 +1804,9 @@ export function generate(P, quality = 1) {
   const pot = obj === 'planter' || obj === 'hanging' || obj === 'wall' || obj === 'orchid';
   // the pot's base accessory: planters have them all, orchid pots a saucer
   const potBase = obj === 'planter' ? X.base || 'none' : obj === 'orchid' && X.base === 'saucer' ? 'saucer' : 'none';
+  // a plant stand under planters, orchid pots and vases
+  const standOn = (obj === 'planter' || obj === 'orchid' || obj === 'vase') && X.stand && X.stand !== 'none';
+  let standInfo = null;
   // a self-watering pot keeps its water: no drain hole in the outer pot
   if (pot && X.drain > 0 && !insert) floor = { type: 'hole', thick: F.floor, holeR: X.drain / 2 };
   if (obj === 'pendant') floor = { type: 'hole', thick: F.floor, holeR: X.socket / 2 };
@@ -1677,7 +1835,10 @@ export function generate(P, quality = 1) {
   const rimZone = rimEdge !== 'flat' ? (rimProfile(rimEdge, F.wall)?.zone || 0) + 1.5 : 0;
   if (obj === 'hanging') {
     const n = clamp(Math.round(X.hangers || 3), 2, 6), r = 2.6, zc = H - (shaped ? rimDrop : 0) - rimZone - 8;
-    for (let k = 0; k < n; k++) holes.push({ angle: -Math.PI / 2 + (TAU * k) / n, z: zc, r });
+    // on a shaped outline each hole goes on the nearest lobe crest or flat face, where the wall is even
+    const lobes = secF.section === 'lobed' ? clamp(Math.round(F.lobes || 8), 2, 24) : secF.section === 'polygon' ? clamp(Math.round(F.sides || 6), 3, 12) : 0;
+    const snap = (a) => (lobes ? Math.round((a * lobes) / TAU) * (TAU / lobes) : a);
+    for (let k = 0; k < n; k++) holes.push({ angle: snap(-Math.PI / 2 + (TAU * k) / n), z: zc, r });
     extraMain.minTopBand = Math.max(extraMain.minTopBand, H - zc + r + 2.5);
   }
   // wall planter: a keyhole in the flat back for a screw (head up to 8 mm)
@@ -1757,7 +1918,7 @@ export function generate(P, quality = 1) {
   // floor. Water goes in through a channel down one side, which also leaves a pour gap in the flare.
   let reservoirMl = 0;
   if (insert) {
-    const gap = clamp(X.gap ?? 1.5, 0.8, 4), tI = clamp(F.wall, 1.6, 3), zr = clamp(X.reservoir || 30, F.floor + 10, H * 0.45);
+    const gap = clamp(X.gap ?? 1.5, 0.8, 4), tI = clamp(F.wall, 1.6, 3), zr = clamp(X.reservoir ?? 14, F.floor + 6, H * 0.45);
     const fH = F.wall + gap + 1.5, Hi = H - zr + fH;
     // the insert has to drop in from above: at each height it may be no wider than the narrowest part of
     // the pot above it (a round insert in a twisted outline keeps to the circle inside that outline)
@@ -1767,8 +1928,20 @@ export function generate(P, quality = 1) {
     const fit = (z) => { const x = clamp((z / H) * steps, 0, steps), k = Math.min(steps - 1, Math.floor(x)); return sufMin[k] + (sufMin[k + 1] - sufMin[k]) * (x - k); };
     const iFn = (z) => fit(Math.min(H, z + zr)) + Math.max(0, z - (H - zr));
     const PI2 = { ...P, form: { ...F, wall: tI, floor: tI, height: Hi }, surface: { ...S, pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0, swirl: 0 } };
+    // water slots round the bottom of the insert: water poured in drains straight down, and the soil
+    // drinks back up through them. Each has a round foot and a pointed top, so it prints; none sits in
+    // the pour channel.
+    const slots = [];
+    if (X.slots !== false) {
+      const w = 1.6, zc = tI + 3 + w, L = clamp((Hi - fH) * 0.22, 8, 22), rLow = Math.max(10, iFn(zc) - (F.wall + gap));
+      const n = clamp(Math.round((TAU * rLow * (accSec.L / TAU)) / 14), 6, 40), keepOut = (13 + 7) / rLow;
+      for (let k = 0; k < n; k++) {
+        const a = -0.6 + (TAU * (k + 0.5)) / n, da = Math.abs(Math.atan2(Math.sin(a + 0.6), Math.cos(a + 0.6)));
+        if (da > keepOut) slots.push({ angle: a, z: zc, r: w, slot: L, w });
+      }
+    }
     const ins = makePatternedShell(iFn, Hi, PI2, quality, { type: 'hole', thick: tI, holeR: 7 }, 'rim', {
-      cell: 1.6 / quality, sec: accSec, offset: -(F.wall + gap), channel: { angle: -0.6, width: 26, depth: 7 },
+      cell: 1.6 / quality, sec: accSec, offset: -(F.wall + gap), channel: { angle: -0.6, width: 26, depth: 7 }, holes: slots,
     });
     add('insert', 'Self-watering insert', ins.mesh, { z: zr, color: 1 });
     // water below the insert: the inner outline's area times the depth
@@ -1835,6 +2008,32 @@ export function generate(P, quality = 1) {
     if (plugInner < 10) warnings.push({ level: 'bad', text: 'The opening is too narrow for a lid.' });
   }
 
+  // ---- plant stand: two flat interlocking pieces; the pot and its accessories sit on the crossbars
+  if (standOn) {
+    const style = { mid: { splay: 8, taper: 0.7 }, upright: { splay: 0, taper: 1 }, wide: { splay: 15, taper: 0.62 } }[X.stand] || { splay: 8, taper: 0.7 };
+    const leg = clamp(X.standLeg ?? 12, 8, 24), bar = clamp(leg * 1.15, 10, 26), lift = clamp(X.standLift ?? 70, bar + 6, 300);
+    const hug = clamp((X.standHug ?? 0.35) * H, 8, H * 0.9);
+    // how far the piece (with its sleeve or saucer) reaches out at each height, along each bar's direction
+    const secPts = makeSection(secF), far = (ax) => { let m = 0; for (let q = 0; q < secPts.M; q += 2) m = Math.max(m, Math.abs(secPts.x[q] * Math.cos(ax) + secPts.y[q] * Math.sin(ax))); return m; };
+    const extFor = (ax) => {
+      const k = far(ax);
+      return (h) => {
+        let e = rFn(clamp(h - mainLift, 0, H)) * k + relief;
+        if (potBase === 'sleeve') e = Math.max(e, rFn(0) * k + relief + X.gap + 4.5);
+        if (potBase === 'saucer' && h < 16) e = Math.max(e, rFn(0) * k + relief + Math.max(3, X.gap + 2) + 4.5);
+        return e;
+      };
+    };
+    const T = leg;
+    const a = standOutline({ lift, hug: hug + mainLift, leg, bar, ext: extFor(0), ...style, notch: { from: 'top', w: T + 0.35 } });
+    const b = standOutline({ lift, hug: hug + mainLift, leg, bar, ext: extFor(Math.PI / 2), ...style, notch: { from: 'bottom', w: T + 0.35 } });
+    for (const p of parts) p.place.z = (p.place.z || 0) + lift;
+    mainLift += lift;
+    add('standA', 'Stand, piece A', extrudePolygon(a.pts, T), { z: 0, rot: [Math.PI / 2, 0, 0], pos: [0, T / 2, 0], span: a.span, height: a.height, color: 1 });
+    add('standB', 'Stand, piece B', extrudePolygon(b.pts, T), { z: 0, rot: [Math.PI / 2, 0, Math.PI / 2], pos: [-T / 2, 0, 0], span: b.span, height: b.height, color: 1 });
+    standInfo = { lift, leg: T, span: Math.max(a.span, b.span), height: Math.max(a.height, b.height) };
+  }
+
   // ---- checks
   const checks = [];
   const cellW = (TAU * shell.rMax * shell.perim) / Math.max(1, S.count);
@@ -1872,8 +2071,9 @@ export function generate(P, quality = 1) {
   if (eased > 0.5) checks.push({ level: 'ok', text: `Silhouette eased by up to ${eased.toFixed(1)} mm to keep walls under 44°.` });
   if (obj === 'hanging') checks.push({ level: 'ok', text: `Hangs from ${holes.length} cords through teardrop holes under the rim (up to Ø 4 mm cord).${floor.type === 'hole' ? ' Water drips from the drainage hole.' : ' No drainage hole: water sparingly.'}` });
   if (wallObj) checks.push({ level: 'ok', text: 'The flat back has a keyhole for a screw with a head up to 8 mm. Leave the head 4 mm out of the wall and hook the planter over it.' });
+  if (standInfo) checks.push({ level: 'ok', text: `Stand: two flat pieces that slot together into a cross; the pot sits ${Math.round(standInfo.lift)} mm up on the crossbars. Both print flat with no supports.` });
   if (obj === 'lantern') checks.push({ level: 'ok', text: 'For LED tealights only, never a real flame: PLA and PETG soften from about 60 °C.' });
-  if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert. Fill it through the channel at the rim, and thread a cotton wick through the hole in the insert's floor.` });
+  if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert${X.slots !== false ? ', and the slots round its foot let the soil drink from it' : ''}. Fill it through the channel at the rim${X.slots !== false ? '' : ", and thread a cotton wick through the hole in the insert's floor"}.` });
   if (lamp) {
     let rMinIn = Infinity;
     for (let j = 0; j < shell.rows.n; j++) if (shell.rows.z[j] > 25 && shell.rows.z[j] < 140) rMinIn = Math.min(rMinIn, shell.rows.r[j] * sec.minR - F.wall);
@@ -1906,7 +2106,7 @@ export function generate(P, quality = 1) {
       return { x: x0 * Math.cos(phi) - y0 * Math.sin(phi), y: x0 * Math.sin(phi) + y0 * Math.cos(phi), z: hl.z };
     });
   }
-  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers } };
+  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers, stand: standInfo } };
 }
 
 // ---------------------------------------------------------------- pattern swatches

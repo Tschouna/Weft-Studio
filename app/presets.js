@@ -15,7 +15,7 @@ export const BASE = {
   },
   extras: {
     drain: 0, base: 'none', sleeveH: 0.38, sleeveTilt: 18, gap: 1.0, lid: true, knob: 'ball', knobSize: 26, lidOverhang: 0.6,
-    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 30, baseH: 55, cord: true, hangers: 3, back: 0.3,
+    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 14, slots: true, stand: 'none', standLift: 70, standHug: 0.35, standLeg: 12, baseH: 55, cord: true, hangers: 3, back: 0.3,
   },
   finish: {
     color: '#22211f', color2: '#eeebe4', color3: '#22211f', material: 'matte',
@@ -206,14 +206,14 @@ export const COLLECTION = [
     name: 'Pinecone', object: 'planter',
     form: { height: 130, diameter: 190, base: 0.58, top: 0.8, belly: 0.46, fullness: 0.95, inset: 1.5, wall: 3, floor: 3 },
     surface: { pattern: 'knurl', mode: 'relief', count: 64, angle: 58, depth: 2.2, fill: 1, profile: 'sharp', bandBottom: 0, bandTop: 4 },
-    extras: { base: 'insert', reservoir: 28, gap: 1.5 },
+    extras: { base: 'insert', reservoir: 14, gap: 1.5 },
     finish: { color: '#3a3b3d', color2: '#8d8f8e' },
   }),
   design({
     name: 'Torsion', object: 'planter',
     form: { height: 120, diameter: 170, base: 0.6, top: 0.8, belly: 0.46, fullness: 0.9, inset: 1.5, wall: 3, floor: 3 },
     surface: { pattern: 'ribs', mode: 'relief', count: 72, angle: 0, depth: 2.4, fill: 0.92, profile: 'round', swirl: 110, bandBottom: 0, bandTop: 4 },
-    extras: { base: 'insert', reservoir: 26, gap: 1.5 },
+    extras: { base: 'insert', reservoir: 14, gap: 1.5 },
     finish: { color: '#5b4a3a', color2: '#8d8f8e', material: 'satin' },
   }),
   design({
@@ -276,7 +276,7 @@ export const COLLECTION = [
     name: 'Turbine', object: 'planter',
     form: { height: 160, diameter: 160, base: 0.84, top: 1, belly: 0.5, fullness: 0.25, inset: 1.5, wall: 3, floor: 3 },
     surface: { pattern: 'fins', mode: 'relief', count: 24, angle: 0, fill: 0.48, depth: 8, profile: 'flat', swirl: 90, bandBottom: 0, bandTop: 4 },
-    extras: { drain: 8, base: 'insert', reservoir: 34 },
+    extras: { drain: 8, base: 'insert', reservoir: 14 },
     finish: { color: '#eeebe4', color2: '#22211f', material: 'satin' },
   }),
   design({
@@ -362,5 +362,42 @@ export const COLLECTION = [
     surface: { pattern: 'blocks', mode: 'relief', count: 18, stretch: 1.3, width: 1.2, jitter: 0.75, depth: 4, profile: 'sharp', round: 0, bandBottom: 0, bandTop: 0, seed: 12 },
     extras: { lid: true, knob: 'disc', knobSize: 32 },
     finish: { color: '#eeebe4', color3: '#3a3b3d', material: 'matte' },
+  }),
+
+  // ---- 2.1: on stands
+  design({
+    name: 'Perch', object: 'planter',
+    form: { height: 125, diameter: 160, base: 0.62, top: 0.92, belly: 0.55, fullness: 0.55, inset: 1.2, wall: 3, floor: 3 },
+    surface: { pattern: 'quilt', mode: 'relief', count: 16, angle: 72, fill: 1, depth: 3, profile: 'soft', bandBottom: 0, bandTop: 3 },
+    extras: { drain: 0, base: 'insert', reservoir: 14, stand: 'mid', standLift: 70, standHug: 0.35, standLeg: 13 },
+    finish: { color: '#eeebe4', color2: '#22211f', material: 'matte' },
+  }),
+  design({
+    name: 'Stilt', object: 'vase',
+    form: { height: 200, diameter: 120, base: 0.8, top: 1.05, belly: 0.5, fullness: 0.1, inset: 1.2, wall: 3, floor: 3 },
+    surface: { pattern: 'quilt', mode: 'relief', count: 12, angle: 74, fill: 1, depth: 3, profile: 'soft', bandBottom: 0, bandTop: 3 },
+    extras: { stand: 'upright', standLift: 110, standHug: 0.3, standLeg: 12 },
+    finish: { color: '#eeebe4', color2: '#22211f', material: 'matte' },
+  }),
+  design({
+    name: 'Squat', object: 'planter',
+    form: { height: 110, diameter: 150, base: 0.75, top: 1, belly: 0.5, fullness: 0.3, inset: 1.2, wall: 3, floor: 3 },
+    surface: { pattern: 'quilt', mode: 'relief', count: 14, angle: 70, fill: 1, depth: 3, profile: 'soft', bandBottom: 0, bandTop: 3 },
+    extras: { drain: 8, base: 'none', stand: 'wide', standLift: 55, standHug: 0.4, standLeg: 14 },
+    finish: { color: '#eeebe4', color2: '#22211f', material: 'matte' },
+  }),
+  design({
+    name: 'Terrace', object: 'planter',
+    form: { height: 115, diameter: 150, base: 0.75, top: 1, belly: 0.5, fullness: 0.3, inset: 1.2, wall: 3, floor: 3 },
+    surface: { pattern: 'ribs', mode: 'relief', count: 40, angle: 0, fill: 1, depth: 2.5, profile: 'round', swirl: 60, bandBottom: 0, bandTop: 0 },
+    extras: { drain: 8, base: 'none', stand: 'mid', standLift: 60, standHug: 0.4, standLeg: 14 },
+    finish: { color: '#a34f31', color2: '#22211f', material: 'matte' },
+  }),
+  design({
+    name: 'Atelier', object: 'orchid',
+    form: { height: 140, diameter: 125, base: 0.82, top: 1, belly: 0.5, fullness: 0.1, inset: 1.2, wall: 3, floor: 3 },
+    surface: { pattern: 'arches', mode: 'cut', count: 12, stretch: 1.3, width: 2.6, round: 0.8, alt: true, bandBottom: 22, bandTop: 10 },
+    extras: { drain: 14, base: 'saucer', stand: 'upright', standLift: 80, standHug: 0.3, standLeg: 12 },
+    finish: { color: '#6f7d6b', color2: '#c9b8a3', material: 'satin' },
   }),
 ];

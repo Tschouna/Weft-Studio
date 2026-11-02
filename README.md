@@ -1,6 +1,6 @@
 # Weft Studio
 
-A desktop studio for designing 3D-printable homeware: planters (including self-watering, hanging and wall planters), orchid pots, vases, bowls, trays, storage boxes with lids, cups and holders, napkin rings, tealight lanterns, pendant lamps and table lamps. Shape the silhouette, pick one of 35 surface textures or openwork patterns (and swirl them around the piece), choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
+A desktop studio for designing 3D-printable homeware: planters (including self-watering, hanging and wall planters, and plant stands), orchid pots, vases, bowls, trays, storage boxes with lids, cups and holders, napkin rings, tealight lanterns, pendant lamps and table lamps. Shape the silhouette, pick one of 35 surface textures or openwork patterns (and swirl them around the piece), choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
 
 Every piece is built as a watertight mesh, oriented for printing, with overhangs held at 45° or less so it prints without supports. Walls default to 3 mm.
 
@@ -67,7 +67,7 @@ Requirements: Node.js 22 and npm.
 
 ### Engine checks
 
-`npm test` checks six things:
+`npm test` checks seven things:
 
 1. Every collection piece is a closed solid, and relief textures have no overhang.
 2. Multicolour bands are each closed and add no overhang.
@@ -75,6 +75,7 @@ Requirements: Node.js 22 and npm.
 4. A batch of random designs, across every object, all build closed.
 5. Self-watering inserts drop into their pots, with clearance at every height.
 6. Bold, deep relief keeps its undersides printable on bellied, twisted and flared shapes.
+7. Shuffled designs print without supports. It uses the studio's own shuffle code, read out of `app/app.js` by `test/shuffle-lib.mjs`.
 
 `ONLY=3,5 npm test` runs just those sections.
 

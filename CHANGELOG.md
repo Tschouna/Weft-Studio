@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.1.0
+
+- **Plant stands:**
+  - Planters, orchid pots and vases can stand on legs, in three styles:
+    - **Mid-century:** splayed, tapered legs.
+    - **Upright:** straight legs.
+    - **Wide:** a low, broad stance.
+  - Each stand is two flat pieces that print lying down, with no supports, and slot together into a cross.
+  - The pot rests on the crossbars and the legs rise up its sides.
+  - Sliders set the height, how far the legs climb the pot, and the leg thickness.
+  - Shuffle sometimes adds a stand.
+- **Self-watering inserts:**
+  - The insert now reaches much deeper into the pot: the reservoir under it defaults to 14 mm and can go down to about 9 mm.
+  - A ring of water slots around its foot lets poured water drain straight down and lets the soil drink it back up.
+  - The slots have pointed tops, so they print, and they stay clear of the pour channel.
+- **Shuffle prints without supports:**
+  - Fixed the causes of most shuffled overhangs:
+    - Textures on lobed and polygon pieces that flare out.
+    - Voronoi openwork.
+    - Openwork in the valleys of lobed shapes.
+    - Bowls whose inside wall folded under the rim.
+    - Twist on short or flared pieces.
+  - In a test of 260 shuffles, overhang warnings went from 21% to 4%, and none are serious.
+  - Shuffle also checks each candidate and keeps one that prints without supports.
+- **Collection:** 5 new pieces on stands, 49 in all: Perch, Stilt, Squat, Terrace and Atelier.
+
 ## 2.0.0
 
 A new design for the whole studio. Every feature from 1.2 is still here; only the layout and the look changed.

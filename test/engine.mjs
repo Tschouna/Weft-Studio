@@ -5,6 +5,7 @@
 //  4. a batch of random designs all build closed
 //  5. self-watering inserts drop into their pots
 //  6. bold, deep relief keeps its undersides printable on bellied, twisted and flared shapes
+//  7. shuffled designs print without supports
 import { generate, makeProfile, easeProfile, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
@@ -138,10 +139,11 @@ for (let k = 0; k < 48; k++) {
     object: obj,
     form: { height: low ? 25 + rand() * 30 : 60 + rand() * 160, diameter: (obj === 'ring' ? 40 : 70) + rand() * (obj === 'ring' ? 40 : 160), base: 0.6 + rand() * 0.5, top: 0.7 + rand() * 0.5, section: any(['round', 'round', 'polygon', 'lobed']), twist: any([0, 0, 40]), rimEdge: any(['flat', 'round', 'bevel']) },
     surface: { pattern: pat, mode: obj === 'pendant' || obj === 'lamp' || obj === 'lantern' ? 'cut' : any(['relief', 'relief', 'cut']), bandBottom: low ? 2 : 6, bandTop: low ? 2 : 4, count: 8 + Math.floor(rand() * 30), depth: 0.8 + rand() * rand() * 8, swirl: any([0, 0, 90, -150]) },
-    extras: { base: obj === 'planter' ? any(['none', 'saucer', 'sleeve', 'insert']) : obj === 'orchid' ? any(['none', 'saucer']) : 'none', baseH: 40 + rand() * 50, hangers: any([3, 4]), back: rand() * 0.6, drain: any([0, 10]) },
+    extras: { base: obj === 'planter' ? any(['none', 'saucer', 'sleeve', 'insert']) : obj === 'orchid' ? any(['none', 'saucer']) : 'none', baseH: 40 + rand() * 50, hangers: any([3, 4]), back: rand() * 0.6, drain: any([0, 10]), stand: any(['none', 'none', 'mid', 'upright', 'wide']), standLift: 40 + rand() * 120, standHug: 0.2 + rand() * 0.4 },
   });
   const r = generate(d, 0.7);
   for (const p of r.parts) { const bad = openEdges(p); if (bad) fail(`random #${k} ${obj}/${pat} ${p.key}: ${bad} open edges`); }
+  for (const p of r.parts.filter((q) => q.key.startsWith('stand'))) if (p.stats.overhang > 0) fail(`random #${k} ${p.key}: stand overhang ${p.stats.overhang.toFixed(0)} mm²`);
 }
 console.log('  done');
 }
@@ -177,7 +179,7 @@ function insertGap(r, d) {
 }
 const inserts = [...COLLECTION.filter((d) => d.extras.base === 'insert')];
 for (let k = 0; k < 10; k++) {
-  inserts.push(design({ name: `random insert ${k}`, object: 'planter', extras: { base: 'insert', reservoir: 20 + rand() * 30 },
+  inserts.push(design({ name: `random insert ${k}`, object: 'planter', extras: { base: 'insert', reservoir: 8 + rand() * 30 },
     form: { height: 90 + rand() * 120, diameter: 110 + rand() * 120, base: 0.5 + rand() * 0.5, top: 0.6 + rand() * 0.5, belly: 0.25 + rand() * 0.5, fullness: rand(),
       section: any(['round', 'round', 'polygon', 'lobed']), twist: any([0, 0, 45, -60]) },
     surface: { pattern: any(['knurl', 'ribs', 'smooth', 'hammered']), mode: 'relief', count: 20 + Math.floor(rand() * 40) } }));
@@ -220,6 +222,26 @@ for (const [pat, sv] of bold) {
   }
   console.log(`  ${pat.padEnd(8)} ${row.join('  ')} mm²`);
 }
+}
+
+// ---------------------------------------------------------------- 7
+if (run(7)) {
+// Shuffle on its own (before the studio's own retry) should almost always land on a design that prints
+// without supports. The shuffle code is the studio's own, read out of app/app.js.
+console.log('7. shuffled designs print without supports');
+const { makeShuffler } = await import('./shuffle-lib.mjs');
+const { OBJECTS } = await import('../app/presets.js');
+const S = makeShuffler(11), objs = Object.keys(OBJECTS), n = objs.length * 6;
+let warn = 0, bad = 0;
+for (let k = 0; k < n; k++) {
+  const d = S.shuffled(objs[k % objs.length]);
+  const r = generate(d, 0.7), over = r.parts.reduce((a, p) => a + p.stats.overhang, 0);
+  if (r.checks.some((c) => c.level === 'bad')) { bad++; console.log(`  bad: ${d.object} ${d.surface.pattern}/${d.surface.mode} ${d.form.section} twist ${d.form.twist}: ${r.checks.filter((c) => c.level === 'bad').map((c) => c.text).join(' ')}`); }
+  else if (over > 60) warn++;
+}
+console.log(`  ${n} shuffles: ${bad} unprintable, ${warn} with small overhangs`);
+if (bad) fail(`${bad} shuffled designs need supports`);
+if (warn > n * 0.08) fail(`${warn} of ${n} shuffled designs have small overhangs (more than 8%)`);
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
