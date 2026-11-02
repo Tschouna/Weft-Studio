@@ -1,8 +1,8 @@
 # Weft Studio
 
-A desktop studio for designing 3D-printable homeware: planters (including self-watering ones), vases, bowls, storage boxes with lids, cups and holders, pendant lamps and table lamps. Shape the silhouette, pick one of 31 surface textures or openwork patterns (and swirl them around the piece), choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
+A desktop studio for designing 3D-printable homeware: planters (including self-watering, hanging and wall planters), orchid pots, vases, bowls, trays, storage boxes with lids, cups and holders, napkin rings, tealight lanterns, pendant lamps and table lamps. Shape the silhouette, pick one of 35 surface textures or openwork patterns (and swirl them around the piece), choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
 
-Every piece is built as a watertight mesh, oriented for printing, with overhangs held at 45° or less so it prints without supports.
+Every piece is built as a watertight mesh, oriented for printing, with overhangs held at 45° or less so it prints without supports. Walls default to 3 mm.
 
 ## Using the app
 
@@ -44,7 +44,7 @@ Requirements: Node.js 22 and npm.
 | Path | What it is |
 |---|---|
 | `app/` | The studio itself, plain HTML and JavaScript modules. It is the same code in the desktop app and the browser. |
-| `app/engine.js` | The geometry engine: silhouettes, cross-sections, the 31 textures and swirl, the mesher, lids, saucers, sleeves, self-watering inserts, lamp bases, multicolour bands and overhang checks. Runs in a Web Worker. |
+| `app/engine.js` | The geometry engine: silhouettes, cross-sections (including the flat-backed D for wall planters), the 35 textures and swirl, the mesher, cord holes and keyholes, lids, saucers, sleeves, self-watering inserts, lamp bases, multicolour bands and overhang checks. Runs in a Web Worker. |
 | `app/presets.js` | Defaults, silhouettes and the starter collection. |
 | `app/app.js` | UI, 3D preview, drag handles, dimensions, size references, export (3MF, STL, PNG). |
 | `app/fonts/` | The bundled fonts, so the app works offline. |
@@ -53,16 +53,21 @@ Requirements: Node.js 22 and npm.
 | `electron/preload.js` | The small, safe bridge (`window.weftDesktop`) between the page and the desktop. |
 | `build/` | The icon (`icon.svg` is the source). |
 | `test/engine.mjs` | Engine checks. |
+| `test/ui-objects.cjs` | Clicks through objects in the browser build and screenshots them (`npm run web` first). |
 | `.github/workflows/build.yml` | Builds the installer on GitHub. |
 
 ### Engine checks
 
-`npm test` checks four things:
+`npm test` checks six things:
 
 1. Every collection piece is a closed solid, and relief textures have no overhang.
 2. Multicolour bands are each closed and add no overhang.
-3. The relief mesh stays within a few hundredths of a millimetre of the intended surface. This guards against saw-tooth creases coming back.
-4. A batch of random designs all build closed.
+3. The relief mesh stays within a few hundredths of a millimetre of the intended surface, deep textures included. This guards against saw-tooth creases coming back.
+4. A batch of random designs, across every object, all build closed.
+5. Self-watering inserts drop into their pots, with clearance at every height.
+6. Bold, deep relief keeps its undersides printable on bellied, twisted and flared shapes.
+
+`ONLY=3,5 npm test` runs just those sections.
 
 The same checks run on GitHub before every build.
 
