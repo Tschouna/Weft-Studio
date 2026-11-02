@@ -7,36 +7,41 @@ import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 
 // ============================================================ catalogue
 const PATTERNS = {
-  lattice: { label: 'Lattice', modes: ['cut', 'relief'], cellMM: 24, count: 'Diamonds around', def: { angle: 55, width: 2.0, fill: 0.55, depth: 1.6, profile: 'round', round: 0.6, bulge: 0 } },
-  prism: { label: 'Prism', modes: ['cut', 'relief'], cellMM: 28, count: 'Diamonds around', def: { angle: 58, width: 2.0, fill: 0.6, depth: 1.5, profile: 'sharp', round: 0.5, alt: false, bulge: 0 } },
-  ogee: { label: 'Ogee', modes: ['cut', 'relief'], cellMM: 30, count: 'Cells around', def: { wave: 0.34, stretch: 1.2, width: 2.2, fill: 0.7, depth: 1.5, profile: 'round', round: 0.6, bulge: 0 } },
-  arches: { label: 'Arches', modes: ['cut', 'relief'], cellMM: 22, count: 'Arches around', def: { stretch: 1.3, width: 2.4, fill: 0.7, depth: 1.4, profile: 'flat', round: 0.8, alt: false } },
-  voronoi: { label: 'Voronoi', modes: ['cut', 'relief'], cellMM: 26, count: 'Cells around', def: { jitter: 0.75, stretch: 1.35, width: 2.2, round: 1.4, depth: 1.4, profile: 'round', arch: true } },
-  honeycomb: { label: 'Honeycomb', modes: ['cut', 'relief'], cellMM: 26, count: 'Cells around', def: { stretch: 1.8, width: 2.4, round: 1.0, depth: 1.4, profile: 'round', arch: false } },
-  dots: { label: 'Dots', modes: ['cut', 'relief'], cellMM: 12, count: 'Dots around', def: { fill: 0.6, jitter: 0, vary: 0, stretch: 1, arch: true, depth: 1.2, profile: 'soft' } },
-  perforated: { label: 'Perforated', modes: ['cut', 'relief'], cellMM: 7, count: 'Holes around', def: { fill: 0.5, jitter: 0, vary: 0, stretch: 1, arch: true, depth: 0.8, profile: 'soft' } },
+  lattice: { label: 'Lattice', modes: ['cut', 'relief'], cellMM: 24, count: 'Diamonds around', def: { angle: 55, width: 2.0, fill: 0.55, depth: 2.6, profile: 'round', round: 0.6, bulge: 0 } },
+  prism: { label: 'Prism', modes: ['cut', 'relief'], cellMM: 28, count: 'Diamonds around', def: { angle: 58, width: 2.0, fill: 0.6, depth: 3.2, profile: 'sharp', round: 0.5, alt: false, bulge: 0 } },
+  ogee: { label: 'Ogee', modes: ['cut', 'relief'], cellMM: 30, count: 'Cells around', def: { wave: 0.34, stretch: 1.2, width: 2.2, fill: 0.7, depth: 2.4, profile: 'round', round: 0.6, bulge: 0 } },
+  arches: { label: 'Arches', modes: ['cut', 'relief'], cellMM: 22, count: 'Arches around', def: { stretch: 1.3, width: 2.4, fill: 0.7, depth: 2.4, profile: 'flat', round: 0.8, alt: false } },
+  voronoi: { label: 'Voronoi', modes: ['cut', 'relief'], cellMM: 26, count: 'Cells around', def: { jitter: 0.75, stretch: 1.35, width: 2.2, round: 1.4, depth: 2.6, profile: 'round', arch: true } },
+  honeycomb: { label: 'Honeycomb', modes: ['cut', 'relief'], cellMM: 26, count: 'Cells around', def: { stretch: 1.8, width: 2.4, round: 1.0, depth: 2.6, profile: 'round', arch: false } },
+  dots: { label: 'Dots', modes: ['cut', 'relief'], cellMM: 12, count: 'Dots around', def: { fill: 0.6, jitter: 0, vary: 0, stretch: 1, arch: true, depth: 2.2, profile: 'soft' } },
+  perforated: { label: 'Perforated', modes: ['cut', 'relief'], cellMM: 7, count: 'Holes around', def: { fill: 0.5, jitter: 0, vary: 0, stretch: 1, arch: true, depth: 1.2, profile: 'soft' } },
   wicker: { label: 'Wicker', modes: ['cut'], cellMM: 10, count: 'Strands around', def: { stretch: 1, width: 2.4, depth: 0.7, round: 0.4 } },
-  ribs: { label: 'Ribs', modes: ['relief', 'cut'], cellMM: 11, count: 'Ribs around', def: { angle: 0, fill: 1, depth: 2.2, profile: 'round', width: 2.4, wave: 0, waveFreq: 1.5, round: 0.4 } },
-  chevron: { label: 'Chevron', modes: ['relief', 'cut'], cellMM: 12, count: 'Ribs around', def: { angle: 32, stretch: 1, fill: 1, depth: 1.8, profile: 'round', width: 2.4, round: 0.4 } },
-  reeds: { label: 'Reeds', modes: ['relief'], cellMM: 10, count: 'Reeds around', def: { rows: 6, fill: 0.96, depth: 2.0, profile: 'round' } },
-  bark: { label: 'Bark', modes: ['relief'], cellMM: 9, count: 'Ridges around', def: { wave: 0.6, fill: 0.9, depth: 2.0, profile: 'sharp' } },
-  waves: { label: 'Ripples', modes: ['relief'], cellMM: 0, count: 'Waves around', def: { count: 4, rows: 24, wave: 0.4, fill: 1, depth: 1.2, profile: 'soft' } },
-  dunes: { label: 'Dunes', modes: ['relief'], cellMM: 60, count: 'Drift scale', def: { rows: 26, wave: 0.35, depth: 1.1 } },
-  topo: { label: 'Topo', modes: ['relief'], cellMM: 60, count: 'Contours around', def: { rows: 16, width: 1.6, depth: 0.9, profile: 'soft' } },
-  rings: { label: 'Rings', modes: ['relief'], cellMM: 160, count: 'Drops around', def: { width: 5.5, fill: 1, depth: 0.8, profile: 'soft' } },
-  hammered: { label: 'Hammered', modes: ['relief'], cellMM: 30, count: 'Dimples around', def: { jitter: 0.85, stretch: 1.1, depth: 2.0, profile: 'round' } },
-  carved: { label: 'Carved', modes: ['relief'], cellMM: 30, count: 'Cells around', def: { stretch: 1.15, depth: 2.6, profile: 'round' } },
-  gouge: { label: 'Gouge', modes: ['relief'], cellMM: 28, count: 'Scoops around', def: { jitter: 0.8, stretch: 1.25, depth: 2.2 } },
-  cubes: { label: 'Cubes', modes: ['relief'], cellMM: 40, count: 'Cubes around', def: { stretch: 1, depth: 2.4 } },
-  knurl: { label: 'Knurl', modes: ['relief'], cellMM: 9, count: 'Diamonds around', def: { angle: 58, fill: 1, depth: 1.3, profile: 'sharp' } },
-  knit: { label: 'Knit', modes: ['relief'], cellMM: 14, count: 'Stitches around', def: { stretch: 0.8, fill: 1, depth: 1.5, profile: 'soft' } },
-  weave: { label: 'Basket', modes: ['relief'], cellMM: 18, count: 'Strands around', def: { stretch: 1, fill: 0.92, depth: 1.6, profile: 'round' } },
-  petals: { label: 'Shingles', modes: ['relief'], cellMM: 30, count: 'Shingles around', def: { stretch: 0.9, depth: 1.3, profile: 'round' } },
-  seigaiha: { label: 'Seigaiha', modes: ['relief'], cellMM: 36, count: 'Waves around', def: { rows: 4, fill: 0.8, stretch: 1, depth: 1.2, profile: 'round' } },
-  quilt: { label: 'Quilt', modes: ['relief'], cellMM: 30, count: 'Diamonds around', def: { angle: 60, fill: 1, depth: 2.0, profile: 'round' } },
-  facets: { label: 'Facets', modes: ['relief'], cellMM: 34, count: 'Facets around', def: { stretch: 1, jitter: 0.5, depth: 2.2 } },
-  tiles: { label: 'Tiles', modes: ['relief'], cellMM: 34, count: 'Tiles around', def: { stretch: 1, width: 1.6, depth: 1.2, profile: 'sharp', alt: true, round: 0.5 } },
-  herringbone: { label: 'Herringbone', modes: ['relief'], cellMM: 26, count: 'Chevrons around', def: { width: 1.4, depth: 1.2, profile: 'sharp' } },
+  ribs: { label: 'Ribs', modes: ['relief', 'cut'], cellMM: 11, count: 'Ribs around', def: { angle: 0, fill: 1, depth: 3.5, profile: 'round', width: 2.4, wave: 0, waveFreq: 1.5, round: 0.4 } },
+  chevron: { label: 'Chevron', modes: ['relief', 'cut'], cellMM: 12, count: 'Ribs around', def: { angle: 32, stretch: 1, fill: 1, depth: 3.0, profile: 'round', width: 2.4, round: 0.4 } },
+  reeds: { label: 'Reeds', modes: ['relief'], cellMM: 10, count: 'Reeds around', def: { rows: 6, fill: 0.96, depth: 3.0, profile: 'round' } },
+  bark: { label: 'Bark', modes: ['relief'], cellMM: 9, count: 'Ridges around', def: { wave: 0.6, fill: 0.9, depth: 3.8, profile: 'sharp' } },
+  waves: { label: 'Ripples', modes: ['relief'], cellMM: 0, count: 'Waves around', def: { count: 4, rows: 24, wave: 0.4, fill: 1, depth: 2.2, profile: 'soft' } },
+  dunes: { label: 'Dunes', modes: ['relief'], cellMM: 60, count: 'Drift scale', def: { rows: 26, wave: 0.35, depth: 1.8 } },
+  topo: { label: 'Topo', modes: ['relief'], cellMM: 60, count: 'Contours around', def: { rows: 16, width: 1.6, depth: 1.4, profile: 'soft' } },
+  rings: { label: 'Rings', modes: ['relief'], cellMM: 160, count: 'Drops around', def: { width: 5.5, fill: 1, depth: 1.2, profile: 'soft' } },
+  hammered: { label: 'Hammered', modes: ['relief'], cellMM: 30, count: 'Dimples around', def: { jitter: 0.85, stretch: 1.1, depth: 3.2, profile: 'round' } },
+  carved: { label: 'Carved', modes: ['relief'], cellMM: 30, count: 'Cells around', def: { stretch: 1.15, depth: 4.2, profile: 'round' } },
+  gouge: { label: 'Gouge', modes: ['relief'], cellMM: 28, count: 'Scoops around', def: { jitter: 0.8, stretch: 1.25, depth: 3.6 } },
+  cubes: { label: 'Cubes', modes: ['relief'], cellMM: 40, count: 'Cubes around', def: { stretch: 1, depth: 4.5 } },
+  knurl: { label: 'Knurl', modes: ['relief'], cellMM: 9, count: 'Diamonds around', def: { angle: 58, fill: 1, depth: 2.2, profile: 'sharp' } },
+  knit: { label: 'Knit', modes: ['relief'], cellMM: 14, count: 'Stitches around', def: { stretch: 0.8, fill: 1, depth: 2.4, profile: 'soft' } },
+  weave: { label: 'Basket', modes: ['relief'], cellMM: 18, count: 'Strands around', def: { stretch: 1, fill: 0.92, depth: 2.8, profile: 'round' } },
+  petals: { label: 'Shingles', modes: ['relief'], cellMM: 30, count: 'Shingles around', def: { stretch: 0.9, depth: 2.4, profile: 'round' } },
+  seigaiha: { label: 'Seigaiha', modes: ['relief'], cellMM: 36, count: 'Waves around', def: { rows: 4, fill: 0.8, stretch: 1, depth: 2.0, profile: 'round' } },
+  quilt: { label: 'Quilt', modes: ['relief'], cellMM: 30, count: 'Diamonds around', def: { angle: 60, fill: 1, depth: 3.4, profile: 'round' } },
+  facets: { label: 'Facets', modes: ['relief'], cellMM: 34, count: 'Facets around', def: { stretch: 1, jitter: 0.5, depth: 4.5 } },
+  tiles: { label: 'Tiles', modes: ['relief'], cellMM: 34, count: 'Tiles around', def: { stretch: 1, width: 1.6, depth: 2.4, profile: 'sharp', alt: true, round: 0.5 } },
+  herringbone: { label: 'Herringbone', modes: ['relief'], cellMM: 26, count: 'Chevrons around', def: { width: 1.4, depth: 2.2, profile: 'sharp' } },
+  blocks: { label: 'Blocks', modes: ['relief'], cellMM: 32, count: 'Blocks around', def: { stretch: 1.4, width: 1.2, jitter: 0.75, depth: 5, profile: 'sharp', round: 0 } },
+  spikes: { label: 'Spikes', modes: ['relief'], cellMM: 22, count: 'Spikes around', def: { angle: 60, fill: 1, depth: 6, profile: 'sharp' } },
+  shards: { label: 'Shards', modes: ['relief'], cellMM: 18, count: 'Shards around', def: { stretch: 0.7, jitter: 0.85, depth: 7 } },
+  fins: { label: 'Fins', modes: ['relief'], cellMM: 18, count: 'Fins around', def: { angle: 0, fill: 0.5, depth: 7, profile: 'flat', wave: 0, waveFreq: 1.5 } },
+  hobnail: { label: 'Hobnail', modes: ['relief'], cellMM: 18, count: 'Bumps around', def: { fill: 0.85, jitter: 0, vary: 0, stretch: 1, arch: false, depth: 4, profile: 'round' } },
   smooth: { label: 'Smooth', modes: ['none'], cellMM: 0, count: '', def: {} },
 };
 const PATTERN_CONTROLS = {
@@ -70,6 +75,11 @@ const PATTERN_CONTROLS = {
   quilt: { relief: ['count', 'angle', 'fill', 'depth', 'profile', 'invert'] },
   facets: { relief: ['count', 'stretch', 'facetVar', 'depth', 'seed'] },
   tiles: { relief: ['count', 'tileH', 'grout', 'depth', 'profile', 'brick', 'round'] },
+  blocks: { relief: ['count', 'blockH', 'grout', 'depthVar', 'depth', 'invert', 'seed'] },
+  spikes: { relief: ['count', 'angle', 'fill', 'depth', 'profile', 'invert'] },
+  shards: { relief: ['count', 'stretch', 'facetVar', 'depth', 'seed'] },
+  fins: { relief: ['count', 'twist', 'wave', 'waveFreq', 'fill', 'depth', 'profile'] },
+  hobnail: { relief: ['count', 'dotSize', 'rowGap', 'vary', 'depth', 'profile', 'invert'] },
   smooth: { none: [] },
 };
 const mm = (v) => `${(+v).toFixed(Math.abs(v) < 10 && v % 1 ? 1 : 0)} mm`;
@@ -87,7 +97,7 @@ const SURF_SPECS = {
   zigH: { key: 'stretch', label: 'Zigzag height', min: 0.5, max: 3, step: 0.05, fmt: times },
   width: { label: 'Strip width', min: 0.8, max: 6, step: 0.1, fmt: mm1 },
   fill: { label: 'Coverage', min: 0.2, max: 1, step: 0.01, fmt: pct },
-  depth: { label: 'Depth', min: 0.3, max: 4, step: 0.1, fmt: mm1 },
+  depth: { label: 'Depth', min: 0.3, max: 12, step: 0.1, fmt: mm1 },
   jitter: { label: 'Irregularity', min: 0, max: 1, step: 0.01, fmt: pct },
   stretch: { label: 'Cell height', min: 0.5, max: 2.6, step: 0.05, fmt: times },
   cellH: { key: 'stretch', label: 'Cell height', min: 0.9, max: 2.2, step: 0.05, fmt: times },
@@ -103,6 +113,8 @@ const SURF_SPECS = {
   lineW: { key: 'width', label: 'Line width', min: 0.8, max: 4, step: 0.1, fmt: mm1 },
   facetVar: { key: 'jitter', label: 'Randomness', min: 0, max: 1, step: 0.01, fmt: pct },
   tileH: { key: 'stretch', label: 'Tile height', min: 0.5, max: 2.5, step: 0.05, fmt: times },
+  blockH: { key: 'stretch', label: 'Block height', min: 0.6, max: 3, step: 0.05, fmt: times },
+  depthVar: { key: 'jitter', label: 'Depth variation', min: 0, max: 1, step: 0.01, fmt: pct },
   grout: { key: 'width', label: 'Grout width', min: 0.6, max: 4, step: 0.1, fmt: mm1 },
   wander: { key: 'wave', label: 'Wander', min: 0, max: 1.5, step: 0.05, fmt: (v) => v.toFixed(2) },
   ripples: { key: 'rows', label: 'Ripples up the side', min: 8, max: 60, step: 1, fmt: (v) => `${v}` },
@@ -129,13 +141,13 @@ const SURF_SWITCHES = {
 };
 
 const OBJECT_DEFAULTS = {
-  planter: { form: { height: 140, diameter: 150, base: 0.88, top: 1, belly: 0.5, fullness: 0.3, lip: 0, lipH: 12, inset: 1.5, wall: 1.8, floor: 2.4 }, extras: { drain: 8 } },
-  box: { form: { height: 100, diameter: 180, base: 0.86, top: 0.9, belly: 0.5, fullness: 0.75, lip: 0, lipH: 12, inset: 1.2, wall: 1.8, floor: 2 }, extras: { lid: true } },
-  pendant: { form: { height: 190, diameter: 250, base: 0.42, top: 0.93, belly: 0.6, fullness: 0.3, lip: 0, lipH: 12, inset: 0, wall: 1.6, floor: 2.4 }, extras: {} },
-  lamp: { form: { height: 210, diameter: 140, base: 1, top: 1.02, belly: 0.5, fullness: 0.12, lip: 0, lipH: 12, inset: 0, wall: 1.6, floor: 2 }, extras: { socket: 40, baseH: 55, cord: true } },
-  bowl: { form: { height: 80, diameter: 240, base: 0.62, top: 0.97, belly: 0.7, fullness: 0.45, lip: 0, lipH: 12, inset: 1.2, wall: 1.8, floor: 2 }, extras: {} },
-  vase: { form: { height: 180, diameter: 110, base: 0.85, top: 0.8, belly: 0.4, fullness: 0.5, lip: 4, lipH: 20, inset: 1.2, wall: 1.6, floor: 2 }, extras: {} },
-  cup: { form: { height: 105, diameter: 90, base: 0.93, top: 1.03, belly: 0.5, fullness: 0.2, lip: 0, lipH: 12, inset: 1, wall: 1.8, floor: 2 }, extras: {} },
+  planter: { form: { height: 140, diameter: 150, base: 0.88, top: 1, belly: 0.5, fullness: 0.3, lip: 0, lipH: 12, inset: 1.5, wall: 3, floor: 3 }, extras: { drain: 8 } },
+  box: { form: { height: 100, diameter: 180, base: 0.86, top: 0.9, belly: 0.5, fullness: 0.75, lip: 0, lipH: 12, inset: 1.2, wall: 3, floor: 3 }, extras: { lid: true } },
+  pendant: { form: { height: 190, diameter: 250, base: 0.42, top: 0.93, belly: 0.6, fullness: 0.3, lip: 0, lipH: 12, inset: 0, wall: 3, floor: 3 }, extras: {} },
+  lamp: { form: { height: 210, diameter: 140, base: 1, top: 1.02, belly: 0.5, fullness: 0.12, lip: 0, lipH: 12, inset: 0, wall: 3, floor: 3 }, extras: { socket: 40, baseH: 55, cord: true } },
+  bowl: { form: { height: 80, diameter: 240, base: 0.62, top: 0.97, belly: 0.7, fullness: 0.45, lip: 0, lipH: 12, inset: 1.2, wall: 3, floor: 3 }, extras: {} },
+  vase: { form: { height: 180, diameter: 110, base: 0.85, top: 0.8, belly: 0.4, fullness: 0.5, lip: 4, lipH: 20, inset: 1.2, wall: 3, floor: 3 }, extras: {} },
+  cup: { form: { height: 105, diameter: 90, base: 0.93, top: 1.03, belly: 0.5, fullness: 0.2, lip: 0, lipH: 12, inset: 1, wall: 3, floor: 3 }, extras: {} },
 };
 
 const FILAMENTS = [
@@ -186,6 +198,8 @@ const NAMES = {
   tiles: ['Tessera', 'Mosaic', 'Zellige'], perforated: ['Sieve', 'Pore', 'Glimmer'], knurl: ['Pinecone', 'Knurl', 'Rasp'],
   cubes: ['Isomer', 'Cubist', 'Escher'], gouge: ['Chisel', 'Adze', 'Whittle'], seigaiha: ['Seigaiha', 'Nami', 'Kai'], herringbone: ['Parquet', 'Oak', 'Chevron'], hammered: ['Anvil', 'Forge', 'Pewter', 'Tinsmith'], carved: ['Chisel', 'Gouge', 'Burl', 'Comb'],
   rings: ['Ondine', 'Rain', 'Puddle', 'Droplet'], dunes: ['Sirocco', 'Erg', 'Sahel', 'Drift'], bark: ['Cork', 'Timber', 'Bough', 'Cedar'],
+  blocks: ['Ashlar', 'Quarry', 'Masonry', 'Bastion'], spikes: ['Agave', 'Thorn', 'Spire', 'Bristle'], shards: ['Quartz', 'Geode', 'Flint', 'Obsidian'],
+  fins: ['Turbine', 'Radiant', 'Vane', 'Gill'], hobnail: ['Hobnail', 'Bead', 'Pearl', 'Cobble'],
 };
 function makeName(d) {
   const roll = Math.random();
@@ -1672,7 +1686,7 @@ function keepWatertight() {
     // relief settings that read well and stay printable, rather than the openwork ones
     const def = PATTERNS[S.pattern].def;
     S.mode = 'relief';
-    S.depth = Math.min(def.depth ?? 1.4, 1.6);
+    S.depth = Math.min(def.depth ?? 2, 3);
     if (def.fill != null) S.fill = def.fill;
     S.profile = def.profile === 'round' ? 'soft' : def.profile || 'soft';
     S.bandBottom = Math.min(S.bandBottom, 2); S.bandTop = Math.min(S.bandTop, 3);
@@ -1734,8 +1748,8 @@ function renderForm() {
       sliderCtl('f-inset', pend ? 'Crown chamfer' : 'Base chamfer', { min: 0, max: 5, step: 0.1, fmt: (v) => (v ? mm1(v) : 'none') }, () => F.inset, (v) => { F.inset = v; })),
     rimGroup(d),
     group('Walls', null,
-      sliderCtl('f-wall', 'Wall thickness', { min: 0.8, max: 4, step: 0.05, fmt: (v) => `${v.toFixed(2)} mm` }, () => F.wall, (v) => { F.wall = v; }),
-      sliderCtl('f-floor', pend ? 'Crown plate' : 'Floor', { min: 1.2, max: 5, step: 0.1, fmt: mm1 }, () => F.floor, (v) => { F.floor = v; }),
+      sliderCtl('f-wall', 'Wall thickness', { min: 0.8, max: 6, step: 0.05, fmt: (v) => `${v.toFixed(2)} mm` }, () => F.wall, (v) => { F.wall = v; }),
+      sliderCtl('f-floor', pend ? 'Crown plate' : 'Floor', { min: 1.2, max: 6, step: 0.1, fmt: mm1 }, () => F.floor, (v) => { F.floor = v; }),
       switchCtl('f-printable', 'Keep walls under 45° overhang', () => F.printable !== false, (v) => { F.printable = v; }),
       h('p', { class: 'note' }, 'Eases steep curves just enough that the silhouette prints without supports.')),
   );
@@ -2552,6 +2566,8 @@ function shuffleShape(d) {
   const s = SILHOUETTES[pick(sils)];
   Object.assign(F, { base: s.base + rnd(-0.05, 0.05), top: s.top + rnd(-0.05, 0.05), belly: clamp(s.belly + rnd(-0.06, 0.06), 0.2, 0.8), fullness: clamp(s.fullness + rnd(-0.12, 0.12), -0.3, 1), lip: s.lip || 0, lipH: s.lipH || F.lipH });
   F.height = Math.round(F.height * rnd(0.9, 1.1));
+  // shuffled pieces always get sturdy 3 mm walls and floors: thinner prints tend to flex and crack
+  F.wall = 3; F.floor = 3;
   // a third of shuffles get a shaped outline, sometimes twisted
   const shape = pick(['round', 'round', 'polygon', 'lobed']);
   F.section = shape;
@@ -2567,13 +2583,20 @@ function shuffleShape(d) {
   // table lamps look best with a turned square or polygon
   if (obj === 'lamp' && Math.random() < 0.6) { F.section = 'polygon'; F.sides = pick([4, 4, 5, 6]); F.corner = +rnd(0.25, 0.45).toFixed(2); F.twist = Math.round(rnd(30, 90)) * pick([1, -1]); }
 }
+// Relief depth ranges for shuffles, in mm at a 150 mm diameter
+const BOLD_DEPTH = {
+  spikes: [4.5, 8], shards: [5, 9], fins: [4.5, 9], blocks: [3.5, 7], hobnail: [3, 5], facets: [3.5, 7], cubes: [3.5, 7],
+  prism: [2.5, 5], quilt: [2.5, 5], knurl: [1.8, 3.4], carved: [3, 5.5], hammered: [2.4, 4.2], gouge: [2.8, 5], bark: [3, 5.5],
+  ribs: [2.5, 5.5], chevron: [2.2, 4.5], reeds: [2.2, 4], weave: [2, 3.6], tiles: [1.8, 3.6], herringbone: [1.6, 3],
+  topo: [1, 2], rings: [0.9, 1.6], dunes: [1.4, 2.4], perforated: [0.9, 1.6],
+};
 function shuffleSurface(d) {
   const F = d.form, S = d.surface, obj = d.object;
   const lampObj = !!OBJECTS[obj].lamp;
   const pats = lampObj
     ? ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'perforated']
     : ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'wicker', 'ribs', 'chevron', 'reeds', 'waves', 'topo', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles', 'hammered', 'carved', 'rings', 'dunes', 'bark',
-      'gouge', 'cubes', 'knurl', 'knurl', 'seigaiha', 'herringbone'];
+      'gouge', 'cubes', 'cubes', 'knurl', 'knurl', 'seigaiha', 'herringbone', 'blocks', 'blocks', 'spikes', 'spikes', 'shards', 'shards', 'fins', 'fins', 'hobnail', 'hobnail'];
   const tight = !!OBJECTS[obj].watertight;
   const pid = pick(tight ? pats.filter((k) => PATTERNS[k].modes.includes('relief')) : pats);
   S.pattern = pid;
@@ -2587,11 +2610,19 @@ function shuffleSurface(d) {
   if (pid === 'ribs') S.angle = S.mode === 'cut' ? Math.round(rnd(-30, 30)) : pick([0, 0, Math.round(rnd(-45, 45))]);
   if (pid === 'ribs' && S.mode === 'relief') { S.wave = pick([0, 0, rnd(0.2, 0.7)]); S.waveFreq = pick([1, 1.5, 2, 3]); S.profile = pick(['round', 'sharp', 'soft']); }
   if (pid === 'chevron') S.angle = Math.round(rnd(20, S.mode === 'cut' ? 38 : 50));
-  if (['voronoi', 'topo', 'facets', 'reeds', 'hammered', 'rings', 'dunes', 'bark', 'gouge', 'herringbone'].includes(pid)) S.seed = Math.floor(Math.random() * 9999);
+  if (['voronoi', 'topo', 'facets', 'shards', 'blocks', 'reeds', 'hammered', 'rings', 'dunes', 'bark', 'gouge', 'herringbone'].includes(pid)) S.seed = Math.floor(Math.random() * 9999);
   if (pid === 'voronoi') { S.jitter = rnd(0.5, 0.9); S.stretch = rnd(1.2, 1.6); }
   if (pid === 'arches' || pid === 'tiles' || pid === 'prism') S.alt = Math.random() < 0.5;
   if (S.mode === 'cut') { S.width = +rnd(1.8, 2.8).toFixed(1); S.bandBottom = Math.round(rnd(5, 10)); S.bandTop = Math.round(rnd(3, 8)); S.gradient = pick([0, 0, +rnd(-0.3, 0.3).toFixed(2)]); }
-  else { if (!['topo', 'rings', 'dunes', 'hammered', 'carved', 'bark', 'knurl', 'gouge', 'cubes'].includes(pid)) S.depth = +rnd(1.1, 2.2).toFixed(1); S.bandBottom = pick([0, 0, 3]); S.bandTop = pick([0, 3, 5]); }
+  else {
+    // relief comes out bold: each pattern has its own range, and the sculptural ones really stand out.
+    // Small pieces get a little less so the texture keeps its scale.
+    const [lo, hi] = BOLD_DEPTH[pid] || [P.def.depth * 0.9, P.def.depth * 1.35];
+    S.depth = +(rnd(lo, hi) * clamp(F.diameter / 150, 0.65, 1.1)).toFixed(1);
+    S.bandBottom = pick([0, 0, 3]); S.bandTop = pick([0, 3, 5]);
+  }
+  if (pid === 'fins' && S.mode === 'relief') { S.fill = +rnd(0.35, 0.6).toFixed(2); S.profile = pick(['flat', 'flat', 'sharp', 'round']); S.swirl = pick([0, 0, 60, 90, -90, 120]); }
+  if (pid === 'spikes' || pid === 'shards' || pid === 'blocks' || pid === 'cubes') S.swirl = 0;
 }
 function shuffleColours(d) {
   d.finish.color = pick(FILAMENTS)[1];
