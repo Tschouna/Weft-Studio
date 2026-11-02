@@ -73,7 +73,7 @@ The same checks run on GitHub before every build.
 
 ## Releases and automatic updates
 
-The repository is github.com/scherrerjonah-droid/Weft-Studio. Releases and updates point at it through `npm run set-repo`.
+The repository is github.com/Tschouna/Weft-Studio. Releases and updates point at it through `npm run set-repo`.
 
 - **Releasing:** change `"version"` in `package.json` (for example 1.1.1 → 1.2.0), commit and push to `main`. GitHub Actions then:
   1. runs the tests,

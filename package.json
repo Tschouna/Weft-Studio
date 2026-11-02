@@ -1,7 +1,7 @@
 {
   "name": "weft-studio",
   "productName": "Weft Studio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Parametric studio for 3D-printable homeware: planters, vases, bowls, boxes, cups and lamps.",
   "main": "electron/main.js",
   "author": "Jonah Scherrer",
@@ -27,12 +27,12 @@
     "three": "0.160.0"
   },
   "weft": {
-    "updateRepo": "scherrerjonah-droid/Weft-Studio"
+    "updateRepo": "Tschouna/Weft-Studio"
   },
   "build": {
     "appId": "studio.weft.desktop",
     "productName": "Weft Studio",
-    "copyright": "Copyright \u00a9 2026 Jonah Scherrer",
+    "copyright": "Copyright © 2026 Jonah Scherrer",
     "directories": {
       "app": ".",
       "output": "dist",
@@ -79,7 +79,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "scherrerjonah-droid",
+        "owner": "Tschouna",
         "repo": "Weft-Studio",
         "releaseType": "release"
       }
@@ -91,5 +91,5 @@
     ],
     "compression": "maximum"
   },
-  "repository": "github:scherrerjonah-droid/Weft-Studio"
+  "repository": "github:Tschouna/Weft-Studio"
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+- **Updates follow the repository's new home:**
+  - Weft Studio now checks github.com/Tschouna/Weft-Studio for new versions.
+  - The old address only worked through GitHub's redirect.
+- Everything else is the same as 1.2.0.
+
 ## 1.2.0
 
 The big update: bolder textures, six new objects, sturdier walls and 17 new collection pieces.
