@@ -6,7 +6,7 @@
 //  5. random panels, ribs included, build closed
 //  6. elevation files (GeoTIFF of every kind, XYZ, ASCII grid, zip) read back exactly and stitch,
 //     and terrain and diffuser panels build closed
-import { buildPanel, panelDefaults, normalizePanel, planPanel, panelChecks, PANEL_PATTERNS, PANEL_PATTERN_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
+import { buildPanel, panelDefaults, normalizePanel, planPanel, panelChecks, fitTestPanel, PANEL_PATTERNS, PANEL_PATTERN_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
 import { PANEL_PRESETS } from '../app/panels.js';
 import { readDEM, mosaic } from '../app/dem.js';
 import { zlibSync, zipSync, strToU8 } from 'fflate';
@@ -101,13 +101,21 @@ if (run(3)) {
     ['ribs: horizontal, arch, halo', { mode: 'ribs', pattern: 'ripple', shape: 'arch', width: 400, height: 600, depth: 25, base: 6, scale: 70, ribs: { width: 5, gap: 5, angle: 90 }, mount: 'halo' }],
     ['diffuser: frame, two-tone, keys, magnets', { pattern: 'diffuser', width: 600, height: 500, scale: 30, depth: 45, base: 5, vary: 0.8, edge: 'frame', edgeW: 14, groove: 2.5, finish: { twoTone: true, toneAt: 0.6 }, tiles: { joint: 'keys' }, mount: 'magnets' }],
     ['diffuser: arch, dovetail, tilted 45', { pattern: 'diffuser', shape: 'arch', width: 400, height: 600, scale: 26, depth: 40, base: 5, angle: 45, groove: 1.6, tiles: { joint: 'dovetail' } }],
-    ['fit test', { name: 'fit', shape: 'rect', width: 120, height: 64, pattern: 'plain', depth: 0, edge: 'flush', tiles: { cols: 2, rows: 1, joint: 'dovetail', labels: false } }, { res: 0.4, final: true }],
-    ['fit test keys', { name: 'fit', shape: 'rect', width: 120, height: 64, pattern: 'plain', depth: 0, edge: 'flush', tiles: { cols: 2, rows: 1, joint: 'keys', labels: false } }, { res: 0.4, final: true }],
   ];
   for (const [name, over, opts] of cases) {
     const { r, bad, bodies } = checkBuild(name, panelDefaults(over), { res: 1.2, final: true, ...(opts || {}) });
     console.log(`  ${bad ? 'FAIL' : 'ok  '} ${name}: ${r.tiles.length} tiles, ${bodies} bodies, ${r.plan.tabs.length} tabs, ${r.plan.keys.length} keys`);
-    if (name.startsWith('fit test') && (r.plan.tabs.length + r.plan.keys.length) < 1) fail(`${name}: no joint in the fit test`);
+  }
+  // the fit test: one joint, closed, a few grams
+  for (const [joint, tab] of [['dovetail', 1], ['dovetail', 1.6], ['jigsaw', 1], ['jigsaw', 0.6], ['keys', 1]]) {
+    const T = fitTestPanel(panelDefaults({ width: 900, height: 600, depth: 20, tiles: { joint, tab, clearance: 0.2 } }));
+    const r = buildPanel(T, { res: 0.4, bed: [256, 256], final: true });
+    let bad = 0, g = 0;
+    for (const t of r.tiles) for (const b of t.bodies) { if (openEdges(b) || !(b.volume > 0)) bad++; g += b.grams; }
+    for (const p of r.parts) { if (openEdges(p.mesh)) bad++; g += p.mesh.grams * p.count; }
+    const joints = r.plan.tabs.length + r.plan.keys.length, ok = !bad && joints === 1 && r.tiles.length === 2 && g < 10;
+    console.log(`  ${ok ? 'ok  ' : 'FAIL'} fit test, ${joint} at ${tab * 100}%: ${T.width} × ${T.height} × ${T.base} mm, ${joints} joint, about ${g.toFixed(1)} g`);
+    if (!ok) fail(`fit test ${joint} ${tab}`);
   }
 }
 // ---------------------------------------------------------------- 4

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.2
+
+- **A much smaller fit test:**
+  - It's now just the joint: two small 3 mm pieces, each only big enough to hold the tab or key.
+  - About 5 g of filament instead of about 24 g (a dovetail test is 40 × 44 mm in all).
+  - The fit is all in the outline of the joint, so the thin test fits exactly like the full-thickness panel.
+
 ## 2.4.1
 
 - **Terrain stands out properly:**

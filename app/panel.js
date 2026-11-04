@@ -417,7 +417,7 @@ export function normalizePanel(src) {
   const P = panelDefaults(src || {});
   if (!PANEL_PATTERNS[P.pattern]) P.pattern = 'dune';
   if (!PANEL_SHAPES[P.shape]) P.shape = 'rect';
-  P.width = clamp(+P.width || 480, 80, 2400); P.height = clamp(+P.height || 320, 80, 2400);
+  P.width = clamp(+P.width || 480, 30, 2400); P.height = clamp(+P.height || 320, 30, 2400);
   const terrain = !!PANEL_PATTERNS[P.pattern]?.terrain;
   P.base = clamp(+P.base || 5, 2.4, 14); P.depth = clamp(+P.depth, 0, terrain ? 400 : P.mode === 'ribs' ? 60 : 30); P.scale = clamp(+P.scale || 60, 6, 600);
   if (P.mode === 'ribs') {
@@ -643,6 +643,19 @@ function tabSDF(joint, f, lx, ly) {
 }
 const bowtie = (lx, ly) => Math.min(15 - Math.abs(lx), (4 + 0.2 * Math.abs(lx) - Math.abs(ly)) / 1.0198);
 const local = (j, x, y) => (j.dir === 'x' ? [x - j.x, y - j.y] : [y - j.y, j.x - x]);
+
+// The fit test: two small, thin pieces with one joint between them, just big enough to hold it. The fit is
+// all in the outline of the tab or key, so 3 mm prints the same fit as the full panel for a few grams.
+export function fitTestPanel(src) {
+  const P = normalizePanel(src), T = P.tiles, f = T.tab || 1;
+  const joint = T.seams === 'pattern' || T.joint === 'none' ? 'dovetail' : T.joint;
+  const [half, reach] = joint === 'keys' ? [7, 15] : joint === 'jigsaw' ? [TAB.jigsaw.R * f, TAB.jigsaw.L * f] : [(TAB.dovetail.w * f) / 2, TAB.dovetail.L * f];
+  return normalizePanel({
+    ...P, name: `${P.name} fit test`, shape: 'rect', width: Math.ceil(2 * (reach + 8)), height: Math.ceil(2 * half + 22), base: joint === 'keys' ? 3.4 : 3,
+    pattern: 'plain', depth: 0, edge: 'flush', mode: 'relief', fade: 0, morph: 'none', mount: 'tape',
+    tiles: { ...T, joint, cols: 2, rows: 1, seams: 'straight', labels: false, snap: false }, finish: { ...P.finish, twoTone: false },
+  });
+}
 
 // Splits the panel into tiles that fit the bed. Straight seams are spread evenly, or moved onto the
 // pattern's grooves where it has straight ones, so they hide in the relief.

@@ -2,7 +2,7 @@
 // bed, beside the studio in the same app. The geometry lives in panel.js and builds in panel-worker.js.
 import {
   PANEL_PATTERNS, PANEL_PATTERN_ORDER, PANEL_SHAPES, RIB_FIELDS, normalizePanel, panelDefaults, planPanel, buildPanel,
-  previewRes, panelChecks, outlinePath, _compile,
+  previewRes, panelChecks, outlinePath, _compile, fitTestPanel,
 } from './panel.js';
 import { readDEM, mosaic, DEM_EXTENSIONS } from './dem.js';
 import { deflateSync, inflateSync } from 'fflate';
@@ -1271,11 +1271,7 @@ export function initPanels(api) {
   }
   // two small pieces with one joint, to dial in the clearance before printing the panel
   async function fitTest() {
-    const Pn = normalizePanel(P());
-    const T = Pn.tiles, f = T.tab || 1;
-    const hgt = Math.max(64, Math.round((T.joint === 'dovetail' ? 22 : T.joint === 'jigsaw' ? 15 : 14) * f + 40));
-    const test = normalizePanel({ ...Pn, name: `${Pn.name} fit test`, shape: 'rect', width: 120, height: hgt, pattern: 'plain', depth: 0, edge: 'flush', mode: 'relief', fade: 0, morph: 'none', mount: 'tape',
-      tiles: { ...T, cols: 2, rows: 1, seams: 'straight', labels: false }, finish: { ...Pn.finish, twoTone: false } });
+    const Pn = normalizePanel(P()), test = fitTestPanel(Pn), T = test.tiles;
     toast('Building the fit test…');
     try {
       const out = await builder.run(test, { res: 0.3, bed: bed(), final: true });
@@ -1286,7 +1282,8 @@ export function initPanels(api) {
       for (const t of out.tiles) { const m = plateMesh(t.bodies[0], false); files[`stl/${name}-${t.label}.stl`] = stl({ pos: m.pos, idx: m.idx }, `Fit test ${t.label}`); }
       for (const p of out.parts) { const m = plateMesh(p.mesh, false); centreAll([m]); files[`stl/${name}-${p.key}.stl`] = stl({ pos: m.pos, idx: m.idx }, `Fit test ${p.label}`); }
       files['fit-test.txt'] = strToU8([
-        `Fit test for ${Pn.name}: two ${test.base} mm pieces with one ${T.joint === 'keys' ? 'hidden key' : `${T.joint} tab`} at ${T.clearance.toFixed(2)} mm clearance.`,
+        `Fit test for ${Pn.name}: two small ${test.base} mm pieces (${test.width} × ${test.height} mm together) with one ${T.joint === 'keys' ? 'hidden key' : `${T.joint} tab`} at ${T.clearance.toFixed(2)} mm clearance.`,
+        'The fit is all in the outline of the joint, so this thin test fits exactly like the full-thickness panel.',
         '', 'Print it with the same filament and settings as the panel, then join the pieces on a flat table.',
         '• Too tight to press together: raise Clearance by 0.05 to 0.1 mm.',
         '• Loose or rattling: lower Clearance by 0.05 mm.',
