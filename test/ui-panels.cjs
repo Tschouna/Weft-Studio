@@ -62,8 +62,31 @@ function closed(xml) {
   // fit test
   await page.evaluate(() => { const b = [...document.querySelectorAll('#pn-pane-tiles button')].find((x) => /fit test/.test(x.textContent)); b?.click(); });
   const fit = await page.waitForEvent('download', { timeout: 120000 }).catch(() => null);
-  if (fit) { const z = unzipSync(fs.readFileSync(await fit.path())); const c = closed(strFromU8(z['3D/3dmodel.model'])); check(c.meshes >= 2 && !c.bad, `fit test: ${c.meshes} meshes, ${c.bad} open edges`); }
+  if (fit) {
+    // a zip, so the web version can save it too: the 3MF, an STL per piece and a note
+    const z = unzipSync(fs.readFileSync(await fit.path())), inner = Object.keys(z).find((n) => n.endsWith('.3mf'));
+    const c = closed(strFromU8(unzipSync(z[inner])['3D/3dmodel.model']));
+    check(fit.suggestedFilename().endsWith('.zip') && Object.keys(z).some((n) => n.endsWith('.stl')) && c.meshes >= 2 && !c.bad, `fit test zip: ${Object.keys(z).length} files, ${c.meshes} meshes, ${c.bad} open edges`);
+  }
   else check(false, 'fit test downloads');
+  // an elevation model, as swisstopo's XYZ text: a 2 m grid in LV95
+  await page.click('#pn-tab-pattern');
+  await page.evaluate(() => [...document.querySelectorAll('#pn-pane-pattern .pat')].find((b) => b.textContent.includes('Terrain')).click());
+  await idle();
+  const L = ['X Y Z'];
+  for (let j = 0; j < 60; j++) for (let i = 0; i < 80; i++) L.push(`${(2600001 + i * 2).toFixed(2)} ${(1199999 - j * 2).toFixed(2)} ${(1500 + 700 * Math.exp(-(((i - 40) / 18) ** 2) - (((j - 28) / 16) ** 2))).toFixed(4)}`);
+  await page.setInputFiles('#pn-pane-pattern input[type=file]', { name: 'swissalti3d_test.xyz', mimeType: 'text/plain', buffer: Buffer.from(L.join('\r\n')) });
+  await page.waitForFunction(() => /tile/.test(document.querySelector('#pn-pane-pattern')?.textContent || '') && /1,500|1500/.test(document.querySelector('#pn-pane-pattern').textContent), null, { timeout: 120000 });
+  await idle();
+  check(/Terrain/.test(await page.textContent('#pn-kind')), `elevation model loaded: ${(await page.textContent('#pn-pane-pattern .note')).slice(0, 90)}…`);
+  await page.screenshot({ path: path.join(OUT, 'panels-terrain.png') });
+  // the diffuser, as a relief (the starting panel is ribs)
+  await page.evaluate(() => [...document.querySelectorAll('#pn-pane-pattern .seg button')].find((b) => b.textContent === 'Relief').click());
+  await idle();
+  await page.evaluate(() => [...document.querySelectorAll('#pn-pane-pattern .pat')].find((b) => b.textContent.includes('Diffuser')).click());
+  await idle();
+  check(/Diffuser/.test(await page.textContent('#pn-kind')) && !!(await page.$('#pn-groove')), 'diffuser picked, with its groove control');
+  await page.screenshot({ path: path.join(OUT, 'panels-diffuser.png') });
   // print files at draft detail
   await page.click('#pn-tab-export');
   await page.evaluate(() => [...document.querySelectorAll('#pn-pane-export .chip')].find((b) => b.textContent === 'Draft').click());

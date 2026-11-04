@@ -4,6 +4,8 @@ import {
   PANEL_PATTERNS, PANEL_PATTERN_ORDER, PANEL_SHAPES, RIB_FIELDS, normalizePanel, panelDefaults, planPanel, buildPanel,
   previewRes, panelChecks, outlinePath, _compile,
 } from './panel.js';
+import { readDEM, mosaic, DEM_EXTENSIONS } from './dem.js';
+import { deflateSync, inflateSync } from 'fflate';
 
 // Starting points: each one a whole panel, ready to slice.
 export const PANEL_PRESETS = [
@@ -13,6 +15,7 @@ export const PANEL_PRESETS = [
   { name: 'Moiré', mode: 'ribs', pattern: 'lens', width: 600, height: 400, scale: 62, depth: 24, base: 5, vary: 0.4, edge: 'flush', ribs: { width: 4, gap: 4, angle: 0, bend: 0, floor: 0.2 }, finish: { color: '#eeebe4' } },
   { name: 'Canyon', mode: 'ribs', pattern: 'contour', width: 640, height: 420, scale: 110, depth: 30, base: 6, vary: 0.4, seed: 21, edge: 'flush', ribs: { width: 4, gap: 4, angle: 90, bend: 0, floor: 0.1 }, finish: { color: '#26324a', color2: '#d8a647', twoTone: true, toneAt: 0.62 } },
   { name: 'Eddy', mode: 'ribs', pattern: 'vortex', width: 520, height: 520, scale: 72, depth: 26, base: 6, vary: 0.4, edge: 'flush', ribs: { width: 5, gap: 5, angle: 0, bend: 0.5, floor: 0.15 }, finish: { color: '#6f7d6b' } },
+  { name: 'Echo', pattern: 'diffuser', width: 600, height: 600, scale: 30, depth: 50, base: 5, vary: 0.8, seed: 9, edge: 'flush', groove: 2, finish: { color: '#8d8f8e', wall: '#e4e1da' } },
   { name: 'Dune', pattern: 'dune', width: 600, height: 400, scale: 64, depth: 11, vary: 0.45, edge: 'frame', edgeW: 18, finish: { color: '#eeebe4' } },
   { name: 'Basalt', pattern: 'basalt', width: 640, height: 420, scale: 46, depth: 13, vary: 0.75, edge: 'flush', tiles: { seams: 'pattern', joint: 'none' }, mount: 'magnets', finish: { color: '#3a3b3d' } },
   { name: 'Atlas', pattern: 'contour', shape: 'rounded', corner: 28, width: 620, height: 420, scale: 48, depth: 16, vary: 0.35, seed: 12, edge: 'frame', edgeW: 14, finish: { color: '#26324a', color2: '#d8a647', twoTone: true, toneAt: 0.55 } },
@@ -79,7 +82,7 @@ export function initPanels(api) {
 
   // ---------------------------------------------------------------- builder (worker, or here when workers are blocked)
   const builder = (() => {
-    let w = null, local = false, seq = 0;
+    let w = null, local = false, seq = 0, sentDem = null;
     const cb = new Map();
     let ready = new Promise((res) => {
       try {
@@ -101,11 +104,15 @@ export function initPanels(api) {
         if (!local && !(await ready)) local = true;
         if (local) return runLocal(params, opts);
         const id = ++seq;
-        return new Promise((resolve, reject) => { cb.set(id, { resolve, reject, params, opts }); w.postMessage({ id, params, opts }); });
+        // the elevation model goes over once; after that the worker keeps it and gets only its id
+        let o = opts;
+        if (opts.dem) { o = { ...opts, dem: sentDem === opts.dem.id ? { id: opts.dem.id } : opts.dem }; sentDem = opts.dem.id; }
+        return new Promise((resolve, reject) => { cb.set(id, { resolve, reject, params, opts }); w.postMessage({ id, params, opts: o }); });
       },
     };
   })();
   const imgOpt = () => (ps.img ? { w: ps.img.w, h: ps.img.h, data: ps.img.data } : null);
+  const demOpt = () => (ps.dem && PANEL_PATTERNS[P().pattern]?.terrain ? { id: ps.dem.id, w: ps.dem.w, h: ps.dem.h, data: ps.dem.data } : null);
 
   // ---------------------------------------------------------------- skeleton
   const svgIcon = (inner, size = 24) => h('svg', { viewBox: `0 0 ${size} ${size}`, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', html: inner });
@@ -444,7 +451,7 @@ export function initPanels(api) {
     const res = kind === 'draft' && lastMs > 260 ? base * 1.7 : base;
     const t0 = performance.now();
     try {
-      const out = await builder.run(Pn, { res, bed: bed(), normals: true, groups: true, img: imgOpt() });
+      const out = await builder.run(Pn, { res, bed: bed(), normals: true, groups: true, img: imgOpt(), dem: demOpt() });
       if (kind !== 'draft') lastMs = performance.now() - t0;
       const first = !ps.res || ps.res.plan.W !== out.plan.W || ps.res.plan.H !== out.plan.H;
       ps.res = out; ps.plan = out.plan;
@@ -470,7 +477,7 @@ export function initPanels(api) {
       h('span', {}, h('strong', {}, String(n)), ` tile${n > 1 ? 's' : ''} · ${res.plan.cols} × ${res.plan.rows}`),
       h('span', {}, h('strong', {}, Pn.base + Pn.depth > 0 ? mmf(Pn.base + Pn.depth) : ''), ' deep'),
       h('span', {}, h('strong', {}, g > 1000 ? `${(g / 1000).toFixed(2)} kg` : `${Math.round(g)} g`), ' PLA'));
-    const checks = panelChecks({ ...Pn, _hasImage: !!ps.img }, res.plan, res);
+    const checks = panelChecks({ ...Pn, _hasImage: !!ps.img, _hasDem: !!ps.dem }, res.plan, res);
     const worst = checks.some((c) => c.level === 'bad') ? 'bad' : checks.some((c) => c.level === 'warn') ? 'warn' : 'ok';
     el.status.className = `status ${worst === 'ok' ? '' : worst}`;
     el.statusText.replaceChildren(h('b', {}, worst === 'bad' ? 'Fix before printing' : worst === 'warn' ? 'Print check: notes' : 'Ready to print'));
@@ -553,7 +560,7 @@ export function initPanels(api) {
   })();
   function shade(cv, src, { w = 160, hgt = 120, light = true } = {}) {
     const Pn = normalizePanel(src);
-    const C = _compile(Pn, src === P() ? imgOpt() : PANEL_PATTERNS[Pn.pattern].image ? sample : null);
+    const C = _compile(Pn, src === P() ? imgOpt() : PANEL_PATTERNS[Pn.pattern].image ? sample : null, src === P() ? demOpt() : null);
     const sc = Math.min(w / Pn.width, hgt / Pn.height) * 0.92, cw = w, ch = hgt;
     cv.width = cw; cv.height = ch;
     const g = cv.getContext('2d'), img = g.createImageData(cw, ch);
@@ -679,11 +686,13 @@ export function initPanels(api) {
         sliderCtl('pn-rb', 'Bend', { min: 0, max: 1, step: 0.01, fmt: (v) => (v ? pct(v) : 'straight') }, () => Pn.ribs.bend, (v) => { Pn.ribs.bend = v; }, local()),
         sliderCtl('pn-rf', 'Lowest rib', { min: 0.04, max: 0.8, step: 0.01, fmt: (v) => mmf(v * Pn.depth) }, () => Pn.ribs.floor, (v) => { Pn.ribs.floor = v; }, local()),
         h('p', { class: 'note' }, `${Math.round(Pn.width / (Pn.ribs.width + Pn.ribs.gap))} ribs across. Straight upright or level ribs keep the seams in the gaps between them.`)) : null,
+      pat.terrain ? group('Elevation model', 'A real landscape. From swisstopo: swissALTI3D as GeoTIFF or XYZ (also zipped), or DHM25 and other ASCII grids. Pick several neighbouring tiles at once and they are stitched by their coordinates.', ...terrainCtl()) : null,
       img ? group('Picture', pat.image ? 'The relief follows its brightness: light areas stand out.' : 'Without a picture the dots follow a gradient from the origin.', pictureCtl()) : null,
       group('Relief', null,
         sliderCtl('pn-depth', cut ? 'Bar relief' : ribs ? 'Rib depth' : 'Depth', { min: 0, max: cut ? 10 : ribs ? 60 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, local()),
         sliderCtl('pn-scale', ribs ? 'Wave size' : 'Scale', { min: 8, max: ribs ? 600 : 240, step: 1, fmt: mmf }, () => Pn.scale, (v) => { Pn.scale = v; }, local()),
-        pat.image ? null : sliderCtl('pn-vary', 'Variation', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.vary, (v) => { Pn.vary = v; }, local()),
+        pat.image || pat.terrain ? null : sliderCtl('pn-vary', pat.blocks ? 'Tilt' : 'Variation', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.vary, (v) => { Pn.vary = v; }, local()),
+        pat.blocks && Pn.mode === 'relief' ? sliderCtl('pn-groove', 'Groove between blocks', { min: 1.2, max: 8, step: 0.1, fmt: mmf }, () => Pn.groove, (v) => { Pn.groove = v; }, local()) : null,
         cut ? sliderCtl('pn-open', 'Openness', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.open, (v) => { Pn.open = v; }, local()) : null,
         sliderCtl('pn-angle', 'Angle', { min: -90, max: 90, step: 1, fmt: deg }, () => Pn.angle, (v) => { Pn.angle = v; }, local()),
         pat.image ? null : sliderCtl('pn-warp', 'Warp', { min: 0, max: 1, step: 0.01, fmt: (v) => (v ? pct(v) : 'none') }, () => Pn.warp, (v) => { Pn.warp = v; }, local()),
@@ -702,6 +711,8 @@ export function initPanels(api) {
   }
   // sensible numbers when a pattern is picked
   function tunePattern(Pn, k) {
+    if (k === 'diffuser' && Pn.mode === 'relief') { Pn.scale = 30; Pn.depth = Math.max(Pn.depth, 40); Pn.vary = Math.max(Pn.vary, 0.6); Pn.edge = 'flush'; return; }
+    if (k === 'terrain') { Pn.edge = Pn.edge === 'frame' ? 'frame' : 'flush'; if (Pn.mode === 'relief') Pn.depth = Math.max(Pn.depth, 18); }
     if (Pn.mode === 'ribs') {
       const R = { silk: 0.5, bloom: 0.2, lens: 0.13, dune: 0.32, ripple: 0.14, vortex: 0.15, sunburst: 0.07, contour: 0.22, ridge: 0.2, chevron: 0.18 };
       Pn.scale = Math.round((R[k] || 0.2) * Math.max(Pn.width, Pn.height));
@@ -725,6 +736,88 @@ export function initPanels(api) {
       h('button', { class: 'btn', type: 'button', onclick: () => input.click() }, ps.img ? 'Change picture' : 'Choose a picture'),
       ps.img ? h('button', { class: 'btn', type: 'button', onclick: () => { ps.img = null; try { localStorage.removeItem('weft.panel.img'); } catch { /* ok */ } rebuild(); renderPane('pattern'); } }, 'Remove') : null), input);
   }
+  // ---------------------------------------------------------------- elevation models
+  function terrainCtl() {
+    const Pn = P(), T = Pn.terrain;
+    const input = h('input', { type: 'file', multiple: true, accept: DEM_EXTENSIONS.map((e) => `.${e}`).join(','), hidden: true });
+    input.addEventListener('change', async () => {
+      const files = [...(input.files || [])];
+      if (files.length) await loadDEM(files);
+      input.value = '';
+    });
+    const d = ps.dem;
+    const thumb = h('canvas', { class: 'pn-pic', width: 96, height: 72, 'aria-hidden': 'true' });
+    if (d) idle(() => drawDEM(thumb, d));
+    const out = [h('div', { class: 'pn-picrow' }, d ? thumb : h('div', { class: 'pn-pic empty' }, 'No model yet'), h('div', { class: 'btn-row' },
+      h('button', { class: 'btn', type: 'button', onclick: () => input.click() }, d ? 'Load other files' : 'Load elevation files'),
+      d ? h('button', { class: 'btn', type: 'button', onclick: () => { ps.dem = null; try { localStorage.removeItem('weft.panel.dem'); } catch { /* ok */ } rebuild(); renderPane('pattern'); } }, 'Remove') : null), input)];
+    if (d) {
+      const m = d.meta, perM = Math.max(Pn.width / m.widthM, Pn.height / m.heightM);
+      const relief = (m.zmax - m.zmin) * perM, ratio = Math.round(1000 / perM);
+      out.push(h('p', { class: 'note' }, `${m.tiles} tile${m.tiles > 1 ? 's' : ''} · ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)} · ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m. On this panel that is 1 : ${ratio.toLocaleString()}, so at true scale the relief would be ${relief < 1 ? relief.toFixed(2) : relief.toFixed(1)} mm: Depth ${Pn.depth} mm makes it ×${Math.max(1, Pn.depth / Math.max(relief, 1e-3)).toFixed(1)} taller.`));
+      out.push(h('div', { class: 'btn-row' },
+        h('button', { class: 'btn', type: 'button', title: 'Keep the width and set the height so the whole map fits with nothing cut off', onclick: () => { Pn.height = clamp(Math.round((Pn.width * m.heightM) / m.widthM), 80, 2400); commit(); rebuild(); renderAll(); } }, 'Shape the panel like the map'),
+        h('button', { class: 'btn', type: 'button', title: 'Depth at the true scale of the map', onclick: () => { Pn.depth = clamp(+relief.toFixed(1), 0.5, 30); commit(); rebuild(); renderPane('pattern'); } }, 'True scale depth')));
+    }
+    out.push(
+      sliderCtl('pn-water', 'Water level', { min: 0, max: 0.9, step: 0.01, fmt: (v) => (v ? (d ? `${Math.round(d.meta.zmin + v * (d.meta.zmax - d.meta.zmin)).toLocaleString()} m` : pct(v)) : 'none') }, () => T.water, (v) => { T.water = v; }, local()),
+      sliderCtl('pn-steps', 'Terraces', { min: 0, max: 40, step: 1, fmt: (v) => (v ? `${v} steps` : 'smooth') }, () => T.steps, (v) => { T.steps = v; }, local()),
+      h('p', { class: 'note' }, 'Everything below the water level prints flat, like a lake. Terraces turn the slopes into steps like a contour map; with Two-tone tips the peaks come out snowy.'));
+    return out;
+  }
+  const fmtLen = (m) => (m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.round(m)} m`);
+  function drawDEM(cv, d) {
+    const g = cv.getContext('2d'), w = cv.width, hh = cv.height, img = g.createImageData(w, hh);
+    const sc = Math.max(d.w / w, d.h / hh);
+    for (let j = 0; j < hh; j++) for (let i = 0; i < w; i++) {
+      const x = Math.min(d.w - 2, Math.max(0, Math.floor(d.w / 2 + (i - w / 2) * sc))), y = Math.min(d.h - 2, Math.max(0, Math.floor(d.h / 2 + (j - hh / 2) * sc)));
+      const k = y * d.w + x, z = d.data[k], sx = d.data[k + 1] - z, sy = d.data[k + d.w] - z;
+      const shade = clamp(0.62 + (sy - sx) * 40, 0, 1) * (0.55 + 0.45 * z), o = (j * w + i) * 4;
+      img.data[o] = 120 + 135 * shade; img.data[o + 1] = 115 + 130 * shade; img.data[o + 2] = 100 + 120 * shade; img.data[o + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+  async function loadDEM(files) {
+    toast(`Reading ${files.length > 1 ? `${files.length} files` : files[0].name}…`);
+    await new Promise((r) => setTimeout(r, 30));
+    const tiles = [], bad = [];
+    for (const f of files) {
+      try { tiles.push(...readDEM(f.name, new Uint8Array(await f.arrayBuffer()))); }
+      catch (e) { console.warn(e); bad.push(`${f.name}: ${e.message}`); }
+    }
+    if (!tiles.length) { toast(bad[0] || 'No elevation data in those files'); return; }
+    try {
+      const m = mosaic(tiles, 1400);
+      ps.dem = { id: Date.now(), w: m.w, h: m.h, data: m.data, meta: { widthM: m.widthM, heightM: m.heightM, zmin: m.zmin, zmax: m.zmax, tiles: tiles.length } };
+      const Pn = P();
+      if (!PANEL_PATTERNS[Pn.pattern].terrain) { Pn.pattern = 'terrain'; if (Pn.mode === 'cut') Pn.mode = 'relief'; tunePattern(Pn, 'terrain'); }
+      saveDEM();
+      commit(); rebuild(); renderAll();
+      toast(`${tiles.length} tile${tiles.length > 1 ? 's' : ''}: ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)}, ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m${bad.length ? ` · ${bad.length} file${bad.length > 1 ? 's' : ''} skipped` : ''}`);
+    } catch (e) { console.error(e); toast(e.message || 'Could not read the elevation files'); }
+  }
+  // kept on this device at up to 1024 samples across, as 16-bit heights
+  function saveDEM() {
+    const d = ps.dem; if (!d) return;
+    for (const max of [1024, 640, 400]) {
+      const sc = Math.max(1, Math.max(d.w, d.h) / max), w = Math.max(2, Math.round(d.w / sc)), hh = Math.max(2, Math.round(d.h / sc));
+      const q = new Uint16Array(w * hh);
+      for (let j = 0; j < hh; j++) for (let i = 0; i < w; i++) q[j * w + i] = Math.round(65535 * d.data[Math.min(d.h - 1, Math.floor((j + 0.5) * sc)) * d.w + Math.min(d.w - 1, Math.floor((i + 0.5) * sc))]);
+      const z = deflateSync(new Uint8Array(q.buffer), { level: 6 });
+      let b = ''; for (let k = 0; k < z.length; k += 0x8000) b += String.fromCharCode(...z.subarray(k, k + 0x8000));
+      if (store.set('weft.panel.dem', { w, h: hh, meta: d.meta, data: btoa(b) })) return;
+    }
+  }
+  try {
+    const sd = store.get('weft.panel.dem', null);
+    if (sd && sd.data) {
+      const bin = atob(sd.data), z = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) z[k] = bin.charCodeAt(k);
+      const q = new Uint16Array(inflateSync(z).slice().buffer), data = new Float32Array(q.length);
+      for (let k = 0; k < q.length; k++) data[k] = q[k] / 65535;
+      ps.dem = { id: Date.now(), w: sd.w, h: sd.h, data, meta: sd.meta };
+    }
+  } catch (e) { console.warn('elevation model', e); }
   async function loadPicture(file) {
     const url = URL.createObjectURL(file);
     const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
@@ -843,7 +936,7 @@ export function initPanels(api) {
   function paneExport() {
     const Pn = P(), res = ps.res;
     if (!res) return [h('p', { class: 'note' }, 'Building…')];
-    const checks = panelChecks({ ...Pn, _hasImage: !!ps.img }, res.plan, res);
+    const checks = panelChecks({ ...Pn, _hasImage: !!ps.img, _hasDem: !!ps.dem }, res.plan, res);
     const rows = res.tiles.map((t) => {
       const bb = t.bodies.reduce((b, m) => [Math.min(b[0], m.bbox[0]), Math.min(b[1], m.bbox[1]), Math.max(b[2], m.bbox[3]), Math.max(b[3], m.bbox[4]), Math.max(b[4], m.bbox[5])], [1e9, 1e9, -1e9, -1e9, 0]);
       const g = t.bodies.reduce((s, b) => s + b.grams, 0);
@@ -1115,7 +1208,7 @@ export function initPanels(api) {
     const res = DETAIL[ps.detail]?.res || 0.55;
     try {
       say('Planning…');
-      const head = await builder.run(Pn, { res, bed: bd, final: true, only: [], parts: true, img: imgOpt() });
+      const head = await builder.run(Pn, { res, bed: bd, final: true, only: [], parts: true, img: imgOpt(), dem: demOpt() });
       const plan = head.plan, parts = head.parts, files = {};
       const fils = [F.color.toLowerCase()];
       if (F.twoTone && !fils.includes(F.color2.toLowerCase())) fils.push(F.color2.toLowerCase());
@@ -1124,7 +1217,7 @@ export function initPanels(api) {
       const cols = Math.ceil(Math.sqrt(live.length)), stride = [bd[0] + 30, bd[1] + 30];
       for (const [k, tile] of live.entries()) {
         say(`Tile ${tile.label} (${k + 1} of ${live.length})…`);
-        const out = await builder.run(Pn, { res, bed: bd, final: true, only: [tile.index], img: imgOpt() });
+        const out = await builder.run(Pn, { res, bed: bd, final: true, only: [tile.index], img: imgOpt(), dem: demOpt() });
         const t = out.tiles[0];
         if (!t) continue;
         const bb = t.bodies.reduce((q, b) => [Math.min(q[0], b.bbox[0]), Math.min(q[1], b.bbox[1]), Math.max(q[2], b.bbox[3]), Math.max(q[3], b.bbox[4]), Math.max(q[4], b.bbox[5])], [1e9, 1e9, -1e9, -1e9, 0]);
@@ -1169,7 +1262,18 @@ export function initPanels(api) {
       const out = await builder.run(test, { res: 0.3, bed: bed(), final: true });
       const objs = out.tiles.map((t, k) => tileObject(t, [Pn.finish.color.toLowerCase()], test.finish, false, [bed()[0] / 2 + (k ? 35 : -35), bed()[1] / 2], 'Fit test'));
       if (out.parts.length) objs.push(...partsObjects(out.parts, bed()).map((o) => ({ ...o, at: [o.at[0], o.at[1] - 50] })));
-      await saveFile(`${slug(Pn.name)}-fit-test.3mf`, new Blob([threeMF(objs, [Pn.finish.color.toLowerCase()], test.name)], { type: 'model/3mf' }));
+      // a zip, which every view (the web page included) can save
+      const name = `${slug(Pn.name)}-fit-test`, files = { [`${name}.3mf`]: [threeMF(objs, [Pn.finish.color.toLowerCase()], test.name), { level: 0 }] };
+      for (const t of out.tiles) { const m = plateMesh(t.bodies[0], false); files[`stl/${name}-${t.label}.stl`] = stl({ pos: m.pos, idx: m.idx }, `Fit test ${t.label}`); }
+      for (const p of out.parts) { const m = plateMesh(p.mesh, false); centreAll([m]); files[`stl/${name}-${p.key}.stl`] = stl({ pos: m.pos, idx: m.idx }, `Fit test ${p.label}`); }
+      files['fit-test.txt'] = strToU8([
+        `Fit test for ${Pn.name}: two ${test.base} mm pieces with one ${T.joint === 'keys' ? 'hidden key' : `${T.joint} tab`} at ${T.clearance.toFixed(2)} mm clearance.`,
+        '', 'Print it with the same filament and settings as the panel, then join the pieces on a flat table.',
+        '• Too tight to press together: raise Clearance by 0.05 to 0.1 mm.',
+        '• Loose or rattling: lower Clearance by 0.05 mm.',
+        '• Just right: firm hand pressure and no gap you can see.',
+      ].join('\n'));
+      await saveFile(`${name}.zip`, new Blob([zipSync(files, { level: 6 })], { type: 'application/zip' }));
     } catch (e) { console.error(e); toast('Could not build the fit test'); }
   }
   function saveToDevice() {

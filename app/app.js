@@ -2266,6 +2266,8 @@ async function copyText(text, el) {
 
 // ============================================================ files
 const downloadsCap = !desktop && window.claude && window.claude.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+// The page runtime around the web version saves only some kinds of file; anything else goes inside a zip.
+const WEB_SAVES = /\.(gif|png|jpe?g|webp|mp4|webm|txt|json|md|docx|pptx|epub|csv|ttf|html|svg|pdf|xlsx|zip|fig)$/i;
 async function saveFile(filename, blob) {
   if (desktop) {
     const r = await desktop.saveFile(filename, new Uint8Array(await blob.arrayBuffer()));
@@ -2274,6 +2276,10 @@ async function saveFile(filename, blob) {
   }
   const dl = await downloadsCap;
   if (dl) {
+    if (!WEB_SAVES.test(filename)) {
+      blob = new Blob([zipSync({ [filename]: [new Uint8Array(await blob.arrayBuffer()), { level: 6 }] })], { type: 'application/zip' });
+      filename = `${filename.replace(/\.[^.]*$/, '')}.zip`;
+    }
     try { await dl.save({ filename, data: blob }); toast(`Saved ${filename}`); }
     catch (e) {
       if (e && e.code === 'declined') toast('Download cancelled');

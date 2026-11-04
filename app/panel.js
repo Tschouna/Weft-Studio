@@ -114,6 +114,31 @@ function scaleCell(u, v) {
   return SC;
 }
 
+// Acoustic diffuser: rows of rectangular blocks, each with its own height and a slanted top. Units are
+// slots (the Scale): rows are 1 to 3 slots tall, blocks 1 to 4 slots wide. Fills DB:
+// [u0, u1, v0, v1, height, slope u, slope v, column id, row id]
+const DB = new Float64Array(9);
+export const diffuserRowEdge = (k, seed) => k % 3 === 0 || hash2(k, 7, seed + 31) < 0.4;
+function diffuserBlock(u, v, seed, vary) {
+  let r0 = Math.floor(v), r1 = r0 + 1;
+  while (!diffuserRowEdge(r0, seed)) r0--;
+  while (!diffuserRowEdge(r1, seed)) r1++;
+  const colEdge = (k) => (k + r0 * 5) % 3 === 0 || hash2(k, r0, seed + 57) < 0.55;
+  let c0 = Math.floor(u), c1 = c0 + 1;
+  while (!colEdge(c0)) c0--;
+  while (!colEdge(c1)) c1++;
+  const hw = (c1 - c0) / 2, hh = (r1 - r0) / 2;
+  const h0 = 0.15 + 0.85 * hash2(c0, r0, seed + 91);
+  // each top leans along one axis, never past the panel's depth or below its back
+  const room = Math.min(h0 - 0.04, 0.98 - h0), m = vary * room * (0.45 + 0.55 * hash2(c0, r0, seed + 13));
+  const dir = Math.floor(hash2(c0, r0, seed + 17) * 4);
+  DB[0] = c0; DB[1] = c1; DB[2] = r0; DB[3] = r1; DB[4] = h0;
+  DB[5] = dir === 0 ? m / hw : dir === 1 ? -m / hw : 0; DB[6] = dir === 2 ? m / hh : dir === 3 ? -m / hh : 0;
+  DB[7] = c0; DB[8] = r0;
+  return DB;
+}
+const diffuserCell = (u, v, o) => { const b = diffuserBlock(u, v, o.seed, o.vary); SQ[0] = b[7]; SQ[1] = b[8]; SQ[2] = (b[0] + b[1]) / 2; SQ[3] = (b[2] + b[3]) / 2; SQ[4] = Math.min(u - b[0], b[1] - u, v - b[2], b[3] - v); return SQ; };
+
 // ============================================================ patterns
 // Each pattern is a height h(u, v) from 0 to 1 in pattern units (one unit = the Scale in mm). Openwork
 // patterns also give cut(u, v): positive where the panel stays solid, in pattern units, and set o.bh to
@@ -337,6 +362,24 @@ export const PANEL_PATTERNS = {
     h(u, v, o) { const [d, r] = halftoneDot(u, v, o); return rounded(d, r); },
     cut(u, v, o) { const [d, r] = halftoneDot(u, v, o); const c = r < 0.07 ? 1 : d - r; o.bh = Math.min(1, Math.max(0, c) / 0.1); return c; },
   },
+  diffuser: {
+    label: 'Diffuser', note: 'Blocks at every height with slanted tops, like an acoustic diffuser. Variation tilts the tops', blocks: true, cellR: 2.2, cell: diffuserCell,
+    h(u, v, o) { const b = diffuserBlock(u, v, o.seed, o.vary); return clamp(b[4] + b[5] * (u - (b[0] + b[1]) / 2) + b[6] * (v - (b[2] + b[3]) / 2), 0, 1); },
+  },
+  terrain: {
+    label: 'Terrain', note: 'A real landscape from an elevation model, such as swisstopo\'s swissALTI3D', terrain: true,
+    h(u, v, o, x, y) {
+      let z = o.dem ? o.dem(x, y) : (() => {
+        // a stand-in range until a model is loaded
+        let s = 0, a = 1, f = 0.3, w = 1, n = 0;
+        for (let k = 0; k < 4; k++) { let r = 1 - Math.abs(gnoise(u * f, v * f, o.seed + k * 31) * 2 - 1); r = r * r * w; w = clamp(r * 2, 0, 1); s += r * a; n += a; a *= 0.5; f *= 2.05; }
+        return clamp((s / n) * 1.4, 0, 1);
+      })();
+      if (o.water > 0) z = Math.max(0, (z - o.water) / (1 - o.water));
+      if (o.steps > 0) { const t = z * o.steps, i = Math.floor(t); z = Math.min(1, (i + smooth(0.78, 1, t - i)) / o.steps); }
+      return z;
+    },
+  },
   picture: { label: 'Picture', note: 'Your picture in relief: light areas stand out', image: true, h(u, v, o, x, y) { return o.lum ? o.lum(x, y) : 0.5; } },
   plain: { label: 'Plain', hidden: true, h() { return 0; } },
 };
@@ -356,6 +399,7 @@ export const PANEL_BASE = {
   pattern: 'dune', mode: 'relief', depth: 10, scale: 60, angle: 0, vary: 0.4, warp: 0, seed: 7, open: 0.5,
   invert: false, origin: 'centre', morph: 'none', morphDir: 'up', fade: 0, fadeDir: 'top',
   ribs: { width: 6, gap: 6, angle: 0, bend: 0, floor: 0.15 },
+  groove: 2, terrain: { water: 0, steps: 0 },
   tiles: { cols: 0, rows: 0, seams: 'straight', joint: 'dovetail', clearance: 0.2, tab: 1, labels: true, snap: true },
   mount: 'tape',
   finish: { color: '#eeebe4', color2: '#d8a647', twoTone: false, toneAt: 0.6, material: 'matte', wall: '#e4e1da', backlight: false, led: '#ffb46b' },
@@ -383,6 +427,8 @@ export function normalizePanel(src) {
   if (P.mode === 'cut' && !PANEL_PATTERNS[P.pattern].cut) P.mode = 'relief';
   if (!['relief', 'cut', 'ribs'].includes(P.mode)) P.mode = 'relief';
   if (P.morph !== 'none' && (!PANEL_PATTERNS[P.morph] || PANEL_PATTERNS[P.morph].hidden)) P.morph = 'none';
+  P.groove = clamp(+P.groove || 2, 1.2, 12);
+  P.terrain.water = clamp(+P.terrain.water || 0, 0, 0.9); P.terrain.steps = clamp(Math.round(+P.terrain.steps || 0), 0, 40);
   P.tiles.clearance = clamp(+P.tiles.clearance || 0, 0, 0.8);
   P.tiles.tab = clamp(+P.tiles.tab || 1, 0.6, 1.6);
   if (P.tiles.seams === 'pattern' && !PANEL_PATTERNS[P.pattern].cell) P.tiles.seams = 'straight';
@@ -452,16 +498,19 @@ function pocketDepths(P) {
   const slot = P.mount === 'slots' ? clamp(P.base - 1.6, 2.4, 6) : 0;
   const key = P.tiles.joint === 'keys' && P.tiles.seams !== 'pattern' ? clamp(P.base * 0.5, 1.6, 3) : 0;
   const deepest = Math.max(mag, slot, key, P.tiles.labels ? 0.6 : 0);
-  const chamfer = P.mode === 'ribs' ? 0 : clamp(P.base - deepest - 0.7, 0.4, 1.2);
+  const layered = P.mode === 'ribs' || (P.mode === 'relief' && PANEL_PATTERNS[P.pattern]?.blocks);
+  const chamfer = layered ? 0 : clamp(P.base - deepest - 0.7, 0.4, 1.2);
   const edgeLow = P.base - chamfer, cap = edgeLow - 0.6;
   return { mag: Math.min(mag, cap), slot: Math.min(slot, cap), key: Math.min(key, cap), label: Math.min(0.6, cap), chamfer, edgeLow, wantMag: mag, wantSlot: slot };
 }
 
 // Everything about the panel that does not depend on the tile: the outline, the pattern and the top.
-function compile(P, img) {
+function compile(P, img, dem) {
   const pat = PANEL_PATTERNS[P.pattern] || PANEL_PATTERNS.dune;
   const cutMode = P.mode === 'cut' && !!pat.cut;
-  const patB = !cutMode && P.morph !== 'none' && PANEL_PATTERNS[P.morph] ? PANEL_PATTERNS[P.morph] : null;
+  // the diffuser's blocks stand on the back like ribs do, each with its own flat, slanted top
+  const blockMode = !!pat.blocks && P.mode === 'relief';
+  const patB = !cutMode && !blockMode && P.morph !== 'none' && PANEL_PATTERNS[P.morph] ? PANEL_PATTERNS[P.morph] : null;
   const a = P.width / 2, b = P.height / 2, s = P.scale;
   const outline = outlineFn(P);
   const ang = (P.angle * Math.PI) / 180, ca = Math.cos(ang), sa = Math.sin(ang);
@@ -471,9 +520,10 @@ function compile(P, img) {
   const pd = pocketDepths(P);
   const base = P.base, depth = P.depth;
   const lum = img && img.data ? sampler(img, a, b) : null;
+  const demAt = dem && dem.data ? sampler(dem, a, b) : null;
   const o = {
     seed, vary: clamp(P.vary, 0, 1), open: clamp(P.open, 0, 1), k: depth / s, span: [(a + Math.abs(ox)) / s, (b + Math.abs(oy)) / s],
-    minBar: 1.1 / s, bh: 0, lum,
+    minBar: 1.1 / s, bh: 0, lum, dem: demAt, water: P.terrain?.water || 0, steps: P.terrain?.steps || 0,
   };
   const fromUV = (u, v) => [ox + (u * ca - v * sa) * s, oy + (u * sa + v * ca) * s];
   const rmax = Math.hypot(a + Math.abs(ox), b + Math.abs(oy));
@@ -513,7 +563,8 @@ function compile(P, img) {
   const mat = clamp(s * 0.35, 6, 22);
   const band = cutMode ? (frame ? ew : Math.max(6, P.edge === 'fade' ? ew * 0.5 : 6)) : 0;
   // ribs: parallel fins across the panel, their tops following the pattern
-  const ribMode = P.mode === 'ribs';
+  const ribMode = P.mode === 'ribs', layerMode = ribMode || blockMode, groove = P.groove || 2;
+  const blockAt = (u, v) => { const k = diffuserBlock(u, v, seed, o.vary); return Math.min(u - k[0], k[1] - u, v - k[2], k[3] - v) * s - groove / 2; };
   const RB = P.ribs || {}, pitch = (RB.width || 6) + (RB.gap || 6), ra = ((RB.angle || 0) * Math.PI) / 180, rc = Math.cos(ra), rs = Math.sin(ra);
   const bendA = (RB.bend || 0) * pitch * 2.4, bendK = TAU / (Math.max(P.width, P.height) * 0.62), floor = RB.floor ?? 0.15, phi = ribMode ? ribPhase(P) : 0;
   const ribAt = (x, y) => {
@@ -537,15 +588,18 @@ function compile(P, img) {
     if (P.fade > 0) h *= 1 - P.fade * smooth(0, 1, ramp(P.fadeDir, x, y));
     h = clamp(h, 0, 1);
     if (ribMode) h = floor + (1 - floor) * h;
+    let blockF = 0;
+    if (blockMode) blockF = blockAt(uv[0], uv[1]);
     let t;
     if (frame) { const inner = d - ew; t = inner <= 0 ? frameTop : Math.max(base + depth * h * smooth(depth + 1, depth + 1 + mat, inner), frameTop - inner); }
     else if (P.edge === 'fade') t = base + depth * h * smooth(0, ew, d);
     else if (P.edge === 'bevel') t = Math.min(base + depth * h, base + Math.max(0, d - pd.chamfer));
     else t = base + depth * h;
-    if (ribMode) {
-      // rib tops ease down at 45° to just above the back at the outline; a frame joins the ribs
-      R.t = Math.max(base + 0.6, Math.min(t, base + 0.6 + Math.max(0, d)));
-      R.r = frame ? Math.max(ribAt(x, y), ew - d) : ribAt(x, y);
+    if (layerMode) {
+      // rib and block tops ease down at 45° to just above the back at the outline; a frame joins them
+      R.t = blockMode ? Math.max(base + 0.6, t) : Math.max(base + 0.6, Math.min(t, base + 0.6 + Math.max(0, d)));
+      const f = ribMode ? ribAt(x, y) : blockF;
+      R.r = frame ? Math.max(f, ew - d) : f;
       R.c = 1;
     } else {
       R.t = Math.min(t, pd.edgeLow + Math.max(0, d));
@@ -556,8 +610,8 @@ function compile(P, img) {
     return R;
   };
   let zc = 0;
-  if (P.finish.twoTone) zc = clamp(base + clamp(P.finish.toneAt, 0.05, 0.95) * depth, (ribMode ? base + 0.6 : pd.edgeLow) + 0.3, base + depth - 0.3);
-  return { P, pat, patB, cutMode, ribMode, pitch, outline, evalAt, toUV, fromUV, o, s, a, b, pd, zc, twoTone: !!P.finish.twoTone && depth > 1.2 && zc > (ribMode ? base + 0.6 : pd.edgeLow) };
+  if (P.finish.twoTone) zc = clamp(base + clamp(P.finish.toneAt, 0.05, 0.95) * depth, (layerMode ? base + 0.6 : pd.edgeLow) + 0.3, base + depth - 0.3);
+  return { P, pat, patB, cutMode, ribMode, blockMode, layerMode, pitch, outline, evalAt, toUV, fromUV, o, s, a, b, pd, zc, twoTone: !!P.finish.twoTone && depth > 1.2 && zc > (layerMode ? base + 0.6 : pd.edgeLow) };
 }
 // A picture becomes brightness 0..1 over the panel, filling it like a cover photo.
 function sampler(img, a, b) {
@@ -639,6 +693,19 @@ export function planPanel(P, bed = [256, 256]) {
     };
     if (ang < 0.01) { const nx = moveGap(xs, best.cw); snapped = snapped || nx !== xs; xs = nx; }
     else if (Math.abs(ang - 90) < 0.01) { const ny = moveGap(ys, best.ch); snapped = snapped || ny !== ys; ys = ny; }
+  }
+  // the diffuser's rows run right across the panel: level seams move into the groove between two rows
+  if (T.snap && P.mode === 'relief' && pat.blocks && !P.warp && (turn === 0 || turn === 180)) {
+    const out = ys.slice(), s = P.scale;
+    for (let k = 1; k < out.length - 1; k++) {
+      let bestV = null;
+      for (let d = 0; d <= 6 && bestV === null; d++) for (const sgn of [1, -1]) {
+        const kk = Math.round(out[k] / s) + sgn * d;
+        if (bestV === null && diffuserRowEdge(turn === 0 ? kk : -kk, P.seed | 0)) bestV = kk * s;
+      }
+      if (bestV !== null && bestV - out[k - 1] <= best.ch && out[k + 1] - bestV <= best.ch && bestV - out[k - 1] > 20) out[k] = bestV;
+    }
+    if (out.some((v, k) => v !== ys[k])) { ys = out; snapped = true; }
   }
   // any seam left running along a straight rib's edge moves a millimetre clear of it
   if (P.mode === 'ribs' && !(P.ribs.bend > 0)) {
@@ -829,6 +896,7 @@ function meshBody(G, B) {
   const gX = (id) => x0 + (id % W1) * gx, gY = (id) => y0 + Math.floor(id / W1) * gy;
   const X = (id) => (id < NG ? gX(id) : px[id - NG]), Y = (id) => (id < NG ? gY(id) : py[id - NG]);
   const tAt = (id) => (id < NG ? T[id] : ptv[id - NG]);
+  const topZ = B.topFn ? (id) => B.topFn(X(id), Y(id)) : tAt;
   const val = (id, f) => {
     if (id < NG) return F[f][id];
     const k = id - NG;
@@ -889,7 +957,7 @@ function meshBody(G, B) {
       if (v !== undefined) return v;
     }
     const lv = levels[L];
-    const z = lv.z !== undefined ? lv.z : lv.cap !== undefined ? Math.min(tAt(id), lv.cap) : tAt(id);
+    const z = lv.z !== undefined ? lv.z : lv.cap !== undefined ? Math.min(topZ(id), lv.cap) : topZ(id);
     if (pn + 3 > pos.length) { const n = new Float32Array(pos.length * 2); n.set(pos); pos = n; }
     const v = pn / 3;
     pos[pn++] = X(id); pos[pn++] = Y(id); pos[pn++] = z;
@@ -1192,7 +1260,7 @@ function buildTile(C, plan, tile, res, opts) {
   const nx = Math.max(2, Math.ceil((gx1 - gx0) / res)), ny = Math.max(2, Math.ceil((gy1 - gy0) / res));
   const gx = (gx1 - gx0) / nx, gy = (gy1 - gy0) / ny, W1 = nx + 1, NG = W1 * (ny + 1);
   const T = new Float32Array(NG);
-  const Fo = new Float32Array(NG), Fc = C.cutMode ? new Float32Array(NG) : null, Fs = shape ? new Float32Array(NG) : null, Fr = C.ribMode ? new Float32Array(NG) : null;
+  const Fo = new Float32Array(NG), Fc = C.cutMode ? new Float32Array(NG) : null, Fs = shape ? new Float32Array(NG) : null, Fr = C.layerMode ? new Float32Array(NG) : null;
   const depthsSet = [...new Set(pockets.filter((p) => p.depth > 0.25).map((p) => +p.depth.toFixed(2)))].sort((p, q) => p - q);
   const Fp = depthsSet.map(() => new Float32Array(NG));
   // values right at zero make crossings that sit on the grid points: keep every value a little clear of zero
@@ -1237,6 +1305,8 @@ function buildTile(C, plan, tile, res, opts) {
     } else diag[j * nx + i] = Math.abs(b - d) < Math.abs(a - c) ? 1 : 0;
   }
   const G = { nx, ny, x0: gx0, y0: gy0, gx, gy, T, diag };
+  // a block's top is a true plane: every point on it takes its height from the block, not from the grid
+  const topFn = C.blockMode ? (x, y) => C.evalAt(x, y).t : null;
   const solid = [Fo, Fc, Fs].filter(Boolean);
   const bodies = [];
   const Sclip = (fields) => fields.flatMap((_, k) => [k, 1]);
@@ -1263,7 +1333,7 @@ function buildTile(C, plan, tile, res, opts) {
       walls.push({ clip: [...sb, ...open.flatMap((q) => [p0 + q, -1])], tags: Stags | open.reduce((m, q) => m | (1 << (p0 + q)), 0), lo: k, hi: k + 1 });
     }
     if (Fr) walls.push({ clip: topClip, tags: Stags | (1 << ri), lo: Lb, hi: Ltop });
-    const m = meshBody(G, { fields, levels, faces, walls, groups: opts.groups, noMerge: !!opts.normals });
+    const m = meshBody(G, { fields, levels, faces, walls, groups: opts.groups, noMerge: !!opts.normals, topFn });
     bodies.push({ tone: 0, ...m });
   }
   if (C.twoTone) {
@@ -1275,7 +1345,7 @@ function buildTile(C, plan, tile, res, opts) {
     const m = meshBody(G, {
       fields, levels: [{ z: C.zc }, {}], merge: { top: 1, base: 0, bit: 1 << tz },
       faces: [{ clip: clipU, L: 0, up: false, flat: true }, { clip: clipU, L: 1, up: true }],
-      walls: [{ clip: clipU, tags: (1 << ns) - 1 | (Fr ? 1 << ns : 0), lo: 0, hi: 1 }], groups: opts.groups, noMerge: !!opts.normals,
+      walls: [{ clip: clipU, tags: (1 << ns) - 1 | (Fr ? 1 << ns : 0), lo: 0, hi: 1 }], groups: opts.groups, noMerge: !!opts.normals, topFn,
     });
     if (m.index.length) bodies.push({ tone: 1, ...m });
   }
@@ -1318,8 +1388,8 @@ function buildParts(C, plan, opts) {
 export function buildPanel(src, opts = {}) {
   const P = normalizePanel(src);
   const plan = planPanel(P, opts.bed || [256, 256]);
-  const C = compile(P, opts.img);
-  const res = Math.min(opts.res || previewRes(P), P.mode === 'ribs' && !opts.res ? Math.min(P.ribs.width, P.ribs.gap) / 3 : Infinity);
+  const C = compile(P, opts.img, opts.dem);
+  const res = opts.res || previewRes(P);
   const tiles = [];
   for (const t of plan.tiles) {
     if (t.empty || (opts.only && !opts.only.includes(t.index))) continue;
@@ -1334,8 +1404,9 @@ export function buildPanel(src, opts = {}) {
 // A grid spacing that keeps the whole panel near the given number of samples.
 export function previewRes(P, budget = 260000) {
   const r = clamp(Math.sqrt((P.width * P.height) / budget), 0.6, 4);
-  // ribs need a few samples across each rib and gap to keep their walls straight; allow more samples for them
+  // ribs and the diffuser's grooves need a few samples across them to keep their walls straight
   if (P.mode === 'ribs' && P.ribs) return Math.max(Math.min(r, Math.min(P.ribs.width, P.ribs.gap) / 2.5), Math.sqrt((P.width * P.height) / 1.1e6));
+  if (P.mode === 'relief' && PANEL_PATTERNS[P.pattern]?.blocks) return Math.max(Math.min(r, (P.groove || 2) / 2.2), Math.sqrt((P.width * P.height) / 1.1e6));
   return r;
 }
 
@@ -1363,7 +1434,9 @@ export function panelChecks(src, plan, built) {
     if (RB.width < 2.4) out.push({ level: 'warn', text: `${RB.width} mm ribs are only a few lines wide. 3 mm or more prints crisp.` });
     if (tall > 9) out.push({ level: 'warn', text: `The ribs are ${tall.toFixed(0)} times taller than they are wide and may wobble near the top. Widen them, lower Depth, or slow the outer walls.` });
   }
-  if (plan.snapped) out.push({ level: 'ok', text: P.mode === 'ribs' ? 'Seams run down the gaps between ribs, so no rib is cut along its length.' : 'Seams sit in the pattern\'s grooves, so they hide in the relief.' });
+  if (P.mode === 'relief' && pat.blocks) out.push({ level: 'ok', text: `Blocks stand ${P.groove} mm apart with flat, slanted tops. They print solid, so expect a heavy panel.` });
+  if (pat.terrain && !src._hasDem) out.push({ level: 'warn', text: 'Load an elevation model under Pattern (swissALTI3D GeoTIFF or XYZ, or any ASCII grid). Until then this is a stand-in mountain range.' });
+  if (plan.snapped) out.push({ level: 'ok', text: pat.blocks && P.mode === 'relief' ? 'Level seams run along the grooves between rows of blocks.' : P.mode === 'ribs' ? 'Seams run down the gaps between ribs, so no rib is cut along its length.' : 'Seams sit in the pattern\'s grooves, so they hide in the relief.' });
   if (plan.pattern) out.push({ level: 'ok', text: 'Seams follow the pattern\'s cells. Mount each tile on its own, or glue them edge to edge.' });
   else if (plan.patternWanted) out.push({ level: 'warn', text: 'The pattern\'s cells are too big for seams to follow them on this bed, so the seams are straight. Lower Scale to bring them back.' });
   if (plan.joint === 'keys') out.push({ level: 'ok', text: `${plan.keys.length} bowtie keys join the tiles from behind. They print flat on their own plate.` });

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.4.0
+
+- **Diffuser (new pattern):**
+  - Rectangular blocks in rows, each at its own height with a slanted top, like an acoustic diffuser panel.
+  - The tops are true flat planes, and grooves you set (1.2–8 mm) keep every block crisp.
+  - Tilt sets how far the tops lean; Seed gives a new arrangement.
+  - Level seams move into the grooves between rows of blocks.
+  - New starting panel: Echo (600 × 600 mm, 50 mm deep).
+- **Terrain from real elevation data:**
+  - Load elevation models into the new **Terrain** pattern (Pattern → Elevation model):
+    - swisstopo's swissALTI3D as Cloud Optimized GeoTIFF or as XYZ text, also straight from the downloaded .zip;
+    - DHM25 and other ESRI ASCII grids;
+    - any GeoTIFF that is uncompressed, LZW or Deflate (BigTIFF too).
+  - Pick several neighbouring tiles at once and they are stitched together by their coordinates.
+  - Shows the area, the height range, the scale on your panel (for example 1 : 3,300), the true-scale relief and how much Depth exaggerates it.
+  - **Shape the panel like the map** fits the whole area without cropping. **True scale depth** sets Depth to the real relief.
+  - **Water level** prints everything below a height flat, like a lake. **Terraces** turns the slopes into contour steps.
+  - It works as a relief or as wave ribs. With two-tone tips the peaks come out snowy.
+  - The model is remembered on this device.
+- **Fit test downloads in the web version:**
+  - The fit test is now a .zip with the 3MF, an STL for each piece and a short note on adjusting the clearance.
+  - The web page can only save certain file types, so any other download (a .weft design, for example) now comes inside a .zip instead of failing.
+
 ## 2.3.0
 
 - **Panels (new compartment):**
