@@ -70,7 +70,7 @@ function closed(xml) {
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 600000 }), page.click('#pn-pane-export .btn.primary')]);
   const zip = unzipSync(fs.readFileSync(await dl.path()));
   const names = Object.keys(zip);
-  check(names.includes('map.svg') && names.includes('print-settings.txt'), `zip: ${names.length} files (${names.slice(0, 6).join(', ')}…)`);
+  check(['wall-template.svg', 'assembly-map.svg', 'parts-list.csv', 'print-settings.txt'].every((f) => names.includes(f)), `zip: ${names.length} files (${names.slice(0, 6).join(', ')}…)`);
   let meshes = 0, bad = 0;
   for (const n of names.filter((f) => f.endsWith('.3mf'))) { const inner = unzipSync(zip[n]); const c = closed(strFromU8(inner['3D/3dmodel.model'])); meshes += c.meshes; bad += c.bad; }
   check(meshes > 1 && !bad, `3MF tiles: ${meshes} meshes, ${bad} open edges`);

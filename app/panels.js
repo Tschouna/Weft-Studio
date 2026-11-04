@@ -1,12 +1,17 @@
 // Weft panels: the Panels compartment. A wall panel you shape, pattern and slice into tiles that fit the
 // bed, beside the studio in the same app. The geometry lives in panel.js and builds in panel-worker.js.
 import {
-  PANEL_PATTERNS, PANEL_PATTERN_ORDER, PANEL_SHAPES, normalizePanel, panelDefaults, planPanel, buildPanel,
+  PANEL_PATTERNS, PANEL_PATTERN_ORDER, PANEL_SHAPES, RIB_FIELDS, normalizePanel, panelDefaults, planPanel, buildPanel,
   previewRes, panelChecks, outlinePath, _compile,
 } from './panel.js';
 
 // Starting points: each one a whole panel, ready to slice.
 export const PANEL_PRESETS = [
+  { name: 'Veil', mode: 'ribs', pattern: 'silk', width: 400, height: 600, scale: 230, depth: 35, base: 6, vary: 0.5, edge: 'flush', ribs: { width: 6, gap: 6, angle: 0, bend: 0, floor: 0.15 }, finish: { color: '#22211f', wall: '#d5dbe0' } },
+  { name: 'Corolla', mode: 'ribs', pattern: 'bloom', width: 520, height: 520, scale: 92, depth: 30, base: 6, vary: 0.35, edge: 'flush', ribs: { width: 5, gap: 5, angle: 0, bend: 0, floor: 0.12 }, finish: { color: '#d8a647', material: 'silk' } },
+  { name: 'Moiré', mode: 'ribs', pattern: 'lens', width: 600, height: 400, scale: 62, depth: 24, base: 5, vary: 0.4, edge: 'flush', ribs: { width: 4, gap: 4, angle: 0, bend: 0, floor: 0.2 }, finish: { color: '#eeebe4' } },
+  { name: 'Canyon', mode: 'ribs', pattern: 'contour', width: 640, height: 420, scale: 110, depth: 30, base: 6, vary: 0.4, seed: 21, edge: 'flush', ribs: { width: 4, gap: 4, angle: 90, bend: 0, floor: 0.1 }, finish: { color: '#26324a', color2: '#d8a647', twoTone: true, toneAt: 0.62 } },
+  { name: 'Eddy', mode: 'ribs', pattern: 'vortex', width: 520, height: 520, scale: 72, depth: 26, base: 6, vary: 0.4, edge: 'flush', ribs: { width: 5, gap: 5, angle: 0, bend: 0.5, floor: 0.15 }, finish: { color: '#6f7d6b' } },
   { name: 'Dune', pattern: 'dune', width: 600, height: 400, scale: 64, depth: 11, vary: 0.45, edge: 'frame', edgeW: 18, finish: { color: '#eeebe4' } },
   { name: 'Basalt', pattern: 'basalt', width: 640, height: 420, scale: 46, depth: 13, vary: 0.75, edge: 'flush', tiles: { seams: 'pattern', joint: 'none' }, mount: 'magnets', finish: { color: '#3a3b3d' } },
   { name: 'Atlas', pattern: 'contour', shape: 'rounded', corner: 28, width: 620, height: 420, scale: 48, depth: 16, vary: 0.35, seed: 12, edge: 'frame', edgeW: 14, finish: { color: '#26324a', color2: '#d8a647', twoTone: true, toneAt: 0.55 } },
@@ -59,7 +64,7 @@ export function initPanels(api) {
     back: false,
     light: store.get('weft.panel.light', 24),
     detail: store.get('weft.panel.detail', 'standard'),
-    format: store.get('weft.panel.format', 'tiles'),
+    format: store.get('weft.panel.format', 'kit'),
     img: null,
     res: null,
     plan: null,
@@ -474,7 +479,7 @@ export function initPanels(api) {
   }
   function updateKind() {
     const Pn = P(), pat = PANEL_PATTERNS[Pn.pattern];
-    el.kind.textContent = `${PANEL_SHAPES[Pn.shape]} panel · ${pat.label} ${Pn.mode === 'cut' ? 'openwork' : 'relief'}`;
+    el.kind.textContent = `${PANEL_SHAPES[Pn.shape]} panel · ${pat.label} ${Pn.mode === 'cut' ? 'openwork' : Pn.mode === 'ribs' ? 'ribs' : 'relief'}`;
   }
 
   // ---------------------------------------------------------------- history
@@ -552,7 +557,7 @@ export function initPanels(api) {
     const T = new Float32Array(cw * ch), M = new Uint8Array(cw * ch);
     for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
       const x = (i + 0.5 - cw / 2) / sc, y = (ch / 2 - j - 0.5) / sc, R = C.evalAt(x, y), k = j * cw + i;
-      T[k] = R.t; M[k] = R.d > 0 && R.c > 0 ? 1 : 0;
+      T[k] = R.r > 0 ? R.t : Pn.base; M[k] = R.d > 0 && R.c > 0 ? 1 : 0;
     }
     const base = new THREE.Color(Pn.finish.color), tips = new THREE.Color(Pn.finish.color2), bg = new THREE.Color(Pn.finish.wall);
     const lx = -0.62, ly = 0.55, lz = 0.56, px = 1 / sc;
@@ -636,7 +641,18 @@ export function initPanels(api) {
     return cv;
   }
   function panePattern() {
-    const Pn = P(), pat = PANEL_PATTERNS[Pn.pattern], cut = Pn.mode === 'cut';
+    const Pn = P(), pat = PANEL_PATTERNS[Pn.pattern], cut = Pn.mode === 'cut', ribs = Pn.mode === 'ribs';
+    const setMode = (m) => {
+      if (Pn.mode === m) return;
+      Pn.mode = m;
+      if (m === 'cut') { Pn.depth = Math.min(Pn.depth, 4); if (Pn.tiles.seams === 'pattern') Pn.tiles.seams = 'straight'; }
+      else if (m === 'ribs') {
+        Pn.depth = Math.max(Pn.depth, 22); Pn.base = Math.max(Pn.base, 5); if (Pn.tiles.seams === 'pattern') Pn.tiles.seams = 'straight';
+        if (!RIB_FIELDS.includes(Pn.pattern)) { Pn.pattern = 'silk'; }
+        tunePattern(Pn, Pn.pattern);
+      } else Pn.depth = Math.min(Math.max(Pn.depth, 8), 30);
+      commit(); rebuild(); renderAll();
+    };
     const grid = h('div', { class: 'patterns', role: 'group', 'aria-label': 'Pattern' });
     for (const k of PANEL_PATTERN_ORDER) {
       const p = PANEL_PATTERNS[k], off = cut && !p.cut;
@@ -646,15 +662,24 @@ export function initPanels(api) {
     const img = pat.image || pat.tone;
     return [
       groupAct('Pattern', pat.note, h('button', { class: 'mini-btn', type: 'button', title: 'New random pattern, everything else stays', onclick: () => shuffle('pattern'), html: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${DICE}</svg><span>Shuffle</span>` }),
-        pat.cut ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Relief or openwork' },
-          h('button', { type: 'button', 'aria-pressed': !cut, onclick: () => { Pn.mode = 'relief'; Pn.depth = Math.max(Pn.depth, 8); commit(); rebuild(); renderAll(); } }, 'Relief'),
-          h('button', { type: 'button', 'aria-pressed': cut, onclick: () => { Pn.mode = 'cut'; Pn.depth = Math.min(Pn.depth, 4); if (Pn.tiles.seams === 'pattern') Pn.tiles.seams = 'straight'; commit(); rebuild(); renderAll(); } }, 'Openwork')) : null,
+        h('div', { class: 'seg', role: 'group', 'aria-label': 'Relief, ribs or openwork' },
+          h('button', { type: 'button', 'aria-pressed': Pn.mode === 'relief', title: 'A solid relief surface', onclick: () => setMode('relief') }, 'Relief'),
+          h('button', { type: 'button', 'aria-pressed': ribs, title: 'Parallel ribs whose heights follow the pattern', onclick: () => setMode('ribs') }, 'Ribs'),
+          pat.cut ? h('button', { type: 'button', 'aria-pressed': cut, title: 'Cut right through, so light and the wall show through', onclick: () => setMode('cut') }, 'Openwork') : null),
         grid,
-        cut ? h('p', { class: 'note' }, 'Openwork cuts right through, so light and the wall show through. Every tile keeps solid rails along its seams and round its joints and pockets.') : null),
+        cut ? h('p', { class: 'note' }, 'Openwork cuts right through, so light and the wall show through. Every tile keeps solid rails along its seams and round its joints and pockets.') : null,
+        ribs ? h('p', { class: 'note' }, 'Thin parallel ribs stand on the back, each one following the pattern\'s height. Broad patterns read best: Silk, Bloom, Lens, Dune, Ripple, Vortex, Contour.') : null),
+      ribs ? group('Ribs', 'Every rib is a straight-sided wall, so it prints crisp without supports.',
+        sliderCtl('pn-rw', 'Rib width', { min: 1.6, max: 20, step: 0.2, fmt: mmf }, () => Pn.ribs.width, (v) => { Pn.ribs.width = v; }, local()),
+        sliderCtl('pn-rg', 'Gap', { min: 1.6, max: 30, step: 0.2, fmt: mmf }, () => Pn.ribs.gap, (v) => { Pn.ribs.gap = v; }, local()),
+        sliderCtl('pn-ra', 'Direction', { min: -90, max: 90, step: 1, fmt: (v) => (v === 0 ? 'upright' : Math.abs(v) === 90 ? 'level' : deg(v)) }, () => Pn.ribs.angle, (v) => { Pn.ribs.angle = v; }, local()),
+        sliderCtl('pn-rb', 'Bend', { min: 0, max: 1, step: 0.01, fmt: (v) => (v ? pct(v) : 'straight') }, () => Pn.ribs.bend, (v) => { Pn.ribs.bend = v; }, local()),
+        sliderCtl('pn-rf', 'Lowest rib', { min: 0.04, max: 0.8, step: 0.01, fmt: (v) => mmf(v * Pn.depth) }, () => Pn.ribs.floor, (v) => { Pn.ribs.floor = v; }, local()),
+        h('p', { class: 'note' }, `${Math.round(Pn.width / (Pn.ribs.width + Pn.ribs.gap))} ribs across. Straight upright or level ribs keep the seams in the gaps between them.`)) : null,
       img ? group('Picture', pat.image ? 'The relief follows its brightness: light areas stand out.' : 'Without a picture the dots follow a gradient from the origin.', pictureCtl()) : null,
       group('Relief', null,
-        sliderCtl('pn-depth', cut ? 'Bar relief' : 'Depth', { min: 0, max: cut ? 10 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, local()),
-        sliderCtl('pn-scale', 'Scale', { min: 8, max: 240, step: 1, fmt: mmf }, () => Pn.scale, (v) => { Pn.scale = v; }, local()),
+        sliderCtl('pn-depth', cut ? 'Bar relief' : ribs ? 'Rib depth' : 'Depth', { min: 0, max: cut ? 10 : ribs ? 60 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, local()),
+        sliderCtl('pn-scale', ribs ? 'Wave size' : 'Scale', { min: 8, max: ribs ? 600 : 240, step: 1, fmt: mmf }, () => Pn.scale, (v) => { Pn.scale = v; }, local()),
         pat.image ? null : sliderCtl('pn-vary', 'Variation', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.vary, (v) => { Pn.vary = v; }, local()),
         cut ? sliderCtl('pn-open', 'Openness', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.open, (v) => { Pn.open = v; }, local()) : null,
         sliderCtl('pn-angle', 'Angle', { min: -90, max: 90, step: 1, fmt: deg }, () => Pn.angle, (v) => { Pn.angle = v; }, local()),
@@ -674,6 +699,11 @@ export function initPanels(api) {
   }
   // sensible numbers when a pattern is picked
   function tunePattern(Pn, k) {
+    if (Pn.mode === 'ribs') {
+      const R = { silk: 0.5, bloom: 0.2, lens: 0.13, dune: 0.32, ripple: 0.14, vortex: 0.15, sunburst: 0.07, contour: 0.22, ridge: 0.2, chevron: 0.18 };
+      Pn.scale = Math.round((R[k] || 0.2) * Math.max(Pn.width, Pn.height));
+      return;
+    }
     const S = { reed: 22, halftone: 16, contour: 46, ridge: 44, sunburst: 26, vortex: 36, ripple: 40, dune: 60, chevron: 44, truchet: 40, tufted: 66, weave: 44, brick: 60, bubble: 34, moroccan: 52, trellis: 40, basalt: 42, pebble: 40, scale: 44, deco: 48, pixel: 40, pyramid: 50, facet: 44, picture: 60 };
     if (S[k]) Pn.scale = Math.round(S[k] * clamp(Math.sqrt((Pn.width * Pn.height) / (520 * 380)), 0.7, 1.5));
     if (Pn.mode === 'cut' && !PANEL_PATTERNS[k].cut) Pn.mode = 'relief';
@@ -825,9 +855,9 @@ export function initPanels(api) {
         h('table', { class: 'parts' }, h('thead', {}, h('tr', {}, h('th', {}, 'Part'), h('th', {}, 'Size, mm'), h('th', {}, 'Weight'))), h('tbody', {}, ...rows))),
       group('Files', null,
         chipsCtl('Mesh detail', Object.entries(DETAIL).map(([k, d]) => ({ value: k, label: d.label, title: `${d.res} mm grid: ${d.note}` })), () => ps.detail, (v) => { ps.detail = v; store.set('weft.panel.detail', v); }, { local: true }),
-        chipsCtl('Format', [{ value: 'tiles', label: 'A 3MF per tile', title: 'Each tile opens on its own plate, ready to print' }, { value: 'one', label: 'One 3MF', title: 'Every tile in one project, for a MakerWorld listing' }, { value: 'stl', label: 'STL per tile', title: 'For any slicer' }], () => ps.format, (v) => { ps.format = v; store.set('weft.panel.format', v); }, { local: true }),
+        chipsCtl('Format', [{ value: 'kit', label: 'Complete kit', title: 'A 3MF and an STL for every tile, plus the maps and parts list' }, { value: 'tiles', label: 'A 3MF per tile', title: 'Each tile opens on its own plate, ready to print' }, { value: 'one', label: 'One 3MF', title: 'Every tile in one project, for a MakerWorld listing' }, { value: 'stl', label: 'STL per tile', title: 'For any slicer' }], () => ps.format, (v) => { ps.format = v; store.set('weft.panel.format', v); }, { local: true }),
         h('div', { class: 'btn-row' }, el.dl),
-        h('p', { class: 'note' }, 'The download holds every tile, the loose parts, a map of where each tile goes, and print settings. Tiles print face up with no supports.')),
+        h('p', { class: 'note' }, 'Every download is a production kit: the tiles and loose parts, an assembly map, a 1:1 wall template, a parts list and print settings. Tiles print face up with no supports.')),
       group('Keep it', null,
         h('div', { class: 'btn-row' },
           h('button', { class: 'btn', type: 'button', onclick: saveToDevice }, 'Save to my panels'),
@@ -840,18 +870,25 @@ export function initPanels(api) {
   function shuffle(what = 'all') {
     const Pn = P();
     if (what === 'all' || what === 'pattern') {
-      const pool = PANEL_PATTERN_ORDER.filter((k) => !PANEL_PATTERNS[k].image && k !== Pn.pattern);
+      const ribsNext = Math.random() < (Pn.mode === 'ribs' ? 0.6 : 0.28);
+      const pool = (ribsNext ? RIB_FIELDS : PANEL_PATTERN_ORDER).filter((k) => !PANEL_PATTERNS[k].image && k !== Pn.pattern);
       const k = pick(pool), pat = PANEL_PATTERNS[k];
       Pn.pattern = k;
-      Pn.mode = pat.cut && Math.random() < 0.3 ? 'cut' : 'relief';
+      Pn.mode = ribsNext ? 'ribs' : pat.cut && Math.random() < 0.3 ? 'cut' : 'relief';
       tunePattern(Pn, k);
       Pn.scale = Math.round(Pn.scale * rnd(0.8, 1.25));
-      Pn.depth = Pn.mode === 'cut' ? Math.round(rnd(1.5, 4.5) * 2) / 2 : Math.round(rnd(7, k === 'contour' ? 18 : 14) * 2) / 2;
+      Pn.depth = Pn.mode === 'cut' ? Math.round(rnd(1.5, 4.5) * 2) / 2 : Pn.mode === 'ribs' ? Math.round(rnd(20, 36)) : Math.round(rnd(7, k === 'contour' ? 18 : 14) * 2) / 2;
+      if (Pn.mode === 'ribs') {
+        const w = pick([3, 4, 5, 6, 6, 8]), gp = pick([w, w, w * 0.8, w * 1.4]);
+        Pn.ribs = { width: w, gap: +gp.toFixed(1), angle: pick([0, 0, 0, 90, 30, -30]), bend: Math.random() < 0.25 ? +rnd(0.2, 0.7).toFixed(2) : 0, floor: +rnd(0.08, 0.25).toFixed(2) };
+        Pn.base = Math.max(Pn.base, 5);
+      }
       Pn.vary = Math.round(rnd(0.15, 0.85) * 100) / 100;
       Pn.open = Math.round(rnd(0.35, 0.8) * 100) / 100;
       Pn.seed = 1 + Math.floor(Math.random() * 9999);
       Pn.angle = Math.random() < 0.7 ? 0 : pick([45, -45, 90, 30, -30]);
       Pn.warp = Math.random() < 0.18 ? Math.round(rnd(0.2, 0.6) * 100) / 100 : 0;
+      if (Pn.mode === 'ribs') tunePattern(Pn, k);
       Pn.invert = Math.random() < 0.12;
       Pn.fade = Math.random() < 0.15 ? Math.round(rnd(0.4, 0.9) * 100) / 100 : 0;
       Pn.fadeDir = pick(['top', 'bottom', 'centre', 'edges', 'left']);
@@ -860,7 +897,7 @@ export function initPanels(api) {
       if (Pn.tiles.seams === 'pattern' && (!pat.cell || Pn.mode === 'cut')) { Pn.tiles.seams = 'straight'; Pn.tiles.joint = 'dovetail'; }
     }
     if (what === 'all' || what === 'shape') {
-      Pn.edge = pick(['frame', 'frame', 'flush', 'bevel', 'fade']);
+      Pn.edge = Pn.mode === 'ribs' ? pick(['flush', 'flush', 'frame', 'fade']) : pick(['frame', 'frame', 'flush', 'bevel', 'fade']);
       Pn.edgeW = Pn.edge === 'fade' ? Math.round(rnd(30, 70)) : Math.round(rnd(10, 24));
       if (what === 'shape' || Math.random() < 0.3) {
         Pn.shape = pick(['rect', 'rounded', 'arch', 'oval', 'hex']);
@@ -1000,6 +1037,38 @@ export function initPanels(api) {
 </svg>
 `;
   }
+  // the overview: every tile where it goes, with its size and weight beside the picture
+  function assemblySVG(Pn, plan, tiles, parts) {
+    const W = Pn.width, Hh = Pn.height, sc = 520 / Math.max(W, Hh), pw = W * sc, ph = Hh * sc, pad = 28, side = 250;
+    const X = (x) => f3(pad + (x + W / 2) * sc), Y = (y) => f3(pad + 40 + (Hh / 2 - y) * sc);
+    const rows = tiles.map((t, i) => `<text x="${f3(pad * 2 + pw)}" y="${f3(pad + 70 + i * 20)}">${esc(t.label)}</text><text x="${f3(pad * 2 + pw + 44)}" y="${f3(pad + 70 + i * 20)}" fill="#696a63">${Math.round(t.size[0])} × ${Math.round(t.size[1])} × ${t.size[2].toFixed(0)} mm · ${Math.round(t.grams)} g</text>`);
+    const extra = parts.map((p, i) => `<text x="${f3(pad * 2 + pw)}" y="${f3(pad + 80 + (tiles.length + i) * 20)}">${esc(p.label)} × ${p.count}</text>`);
+    const cells = tiles.map((t) => {
+      const [x0, x1, y0, y1] = t.cell;
+      return `<rect x="${X(x0)}" y="${Y(y1)}" width="${f3((x1 - x0) * sc)}" height="${f3((y1 - y0) * sc)}" fill="#c9a07a" stroke="#f7f6f3" stroke-width="1.5"/><text x="${X((x0 + x1) / 2)}" y="${Y((y0 + y1) / 2)}" text-anchor="middle" dominant-baseline="central" font-size="${f3(Math.max(10, Math.min(22, (x1 - x0) * sc * 0.18)))}" font-weight="700" fill="#2b2016">${esc(t.label)}</text>`;
+    });
+    const clip = `<clipPath id="o"><path transform="translate(${f3(pad + (W / 2) * sc)} ${f3(pad + 40 + (Hh / 2) * sc)}) scale(${f3(sc)} ${f3(-sc)})" d="${outlinePath(Pn)}"/></clipPath>`;
+    const hgt = Math.max(ph + pad * 2 + 40, pad + 100 + (tiles.length + parts.length) * 20);
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${f3(pw + side + pad * 3)}" height="${f3(hgt)}" viewBox="0 0 ${f3(pw + side + pad * 3)} ${f3(hgt)}" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<title>${esc(Pn.name)}: assembly map</title>
+<rect width="100%" height="100%" fill="#f7f6f3"/>
+<text x="${pad}" y="${pad + 8}" font-size="18" font-weight="700" fill="#1b1c1a">${esc(Pn.name)}</text>
+<text x="${pad}" y="${pad + 26}" fill="#696a63">${Math.round(W)} × ${Math.round(Hh)} mm · ${tiles.length} tiles, ${plan.cols} × ${plan.rows} · seen from the front</text>
+<defs>${clip}</defs>
+<g clip-path="url(#o)">${cells.join('')}</g>
+<path transform="translate(${f3(pad + (W / 2) * sc)} ${f3(pad + 40 + (Hh / 2) * sc)}) scale(${f3(sc)} ${f3(-sc)})" d="${outlinePath(Pn)}" fill="none" stroke="#1b1c1a" stroke-width="${f3(1.5 / sc)}"/>
+<text x="${f3(pad * 2 + pw)}" y="${f3(pad + 46)}" font-weight="700" fill="#1b1c1a">Parts</text>
+<g fill="#1b1c1a">${rows.join('')}${extra.join('')}</g>
+</svg>
+`;
+  }
+  function partsCSV(Pn, tiles, parts, name) {
+    const lines = ['part,count,width_mm,height_mm,thickness_mm,grams_each,file'];
+    for (const t of tiles) lines.push(`Tile ${t.label},1,${t.size[0].toFixed(1)},${t.size[1].toFixed(1)},${t.size[2].toFixed(1)},${Math.round(t.grams)},${name}-${t.label}`);
+    for (const p of parts) lines.push(`${p.label},${p.count},${p.size[0]},${p.size[1]},${p.size[2].toFixed(1)},${Math.round(p.mesh.grams)},${name}-${p.key}`);
+    return lines.join('\n') + '\n';
+  }
   function settingsText(Pn, plan, built, parts, name, zc) {
     const grid = [];
     for (let r = plan.rows - 1; r >= 0; r--) grid.push('   ' + plan.tiles.filter((t) => t.r === r).map((t) => (t.empty ? '  ' : t.label).padEnd(4)).join(''));
@@ -1008,7 +1077,7 @@ export function initPanels(api) {
       `${Pn.name} · ${PANEL_SHAPES[Pn.shape]} wall panel, ${Math.round(Pn.width)} × ${Math.round(Pn.height)} mm, ${PANEL_PATTERNS[Pn.pattern].label} ${Pn.mode === 'cut' ? 'openwork' : 'relief'}`,
       `Made with Weft Studio. ${built.length} tiles, about ${g > 1000 ? `${(g / 1000).toFixed(2)} kg` : `${Math.round(g)} g`} of filament.`,
       '', 'Tiles, seen from the front', ...grid,
-      '', 'Each tile has its name and an arrow pointing up engraved in its back.',
+      '', 'Each tile has its name and an arrow pointing up engraved in its back. assembly-map.svg shows every tile in place with its size, wall-template.svg is the same at actual size, and parts-list.csv lists every part.',
       '', 'Printing',
       '• Every tile prints face up, flat on its back. No supports, no brim (add one for a tile under 80 mm).',
       '• 0.2 mm layers, 2–3 walls, 4 top and 4 bottom layers, 15% infill (gyroid or grid).',
@@ -1026,8 +1095,8 @@ export function initPanels(api) {
     if (plan.pattern) lines.push('', 'Joining', '• The seams follow the pattern, so neighbours slot together like a puzzle. Hang each tile on its own, or glue edge to edge.');
     lines.push('', 'Hanging', {
       tape: '• Picture-hanging strips or foam tape on the back of every tile. Hang from the top row down.',
-      magnets: '• Glue a 10 × 3 mm neodymium magnet into each pocket (check the polarity matches). Screw a steel washer to the wall behind each one: map.svg shows where, at actual size.',
-      slots: '• Each tile hangs on screws standing 4 mm off the wall. map.svg prints at actual size: tape it to the wall and drill through the red dots.',
+      magnets: '• Glue a 10 × 3 mm neodymium magnet into each pocket (check the polarity matches). Screw a steel washer to the wall behind each one: wall-template.svg shows where, at actual size.',
+      slots: '• Each tile hangs on screws standing 4 mm off the wall. wall-template.svg prints at actual size: tape it to the wall and drill through the red dots.',
       halo: `• Press a stand-off puck into each pocket (${parts.find((p) => p.key === 'puck')?.count || 0} pucks, parts file), then stick the pucks to the wall with mounting tape. Run a 5 V or 12 V LED strip round the back, about 2 cm in from the edge, facing the wall.`,
     }[Pn.mount]);
     lines.push('', 'Design code (paste into Weft Panels to edit):', JSON.stringify(Pn));
@@ -1054,10 +1123,11 @@ export function initPanels(api) {
         const out = await builder.run(Pn, { res, bed: bd, final: true, only: [tile.index], img: imgOpt() });
         const t = out.tiles[0];
         if (!t) continue;
-        tiles.push({ label: t.label, cell: t.cell, pockets: t.pockets, grams: t.bodies.reduce((s, b) => s + b.grams, 0) });
-        if (ps.format === 'tiles') files[`tiles/${name}-${t.label}.3mf`] = [threeMF([tileObject(t, fils, F, plan.rotated, [bd[0] / 2, bd[1] / 2], Pn.name)], fils, `${Pn.name} ${t.label}`), { level: 0 }];
-        else if (ps.format === 'one') objs.push(tileObject(t, fils, F, plan.rotated, [(k % cols) * stride[0] + bd[0] / 2, -Math.floor(k / cols) * stride[1] + bd[1] / 2], Pn.name));
-        else {
+        const bb = t.bodies.reduce((q, b) => [Math.min(q[0], b.bbox[0]), Math.min(q[1], b.bbox[1]), Math.max(q[2], b.bbox[3]), Math.max(q[3], b.bbox[4]), Math.max(q[4], b.bbox[5])], [1e9, 1e9, -1e9, -1e9, 0]);
+        tiles.push({ label: t.label, cell: t.cell, pockets: t.pockets, grams: t.bodies.reduce((s, b) => s + b.grams, 0), size: [bb[2] - bb[0], bb[3] - bb[1], bb[4]] });
+        if (ps.format === 'tiles' || ps.format === 'kit') files[`3mf/${name}-${t.label}.3mf`] = [threeMF([tileObject(t, fils, F, plan.rotated, [bd[0] / 2, bd[1] / 2], Pn.name)], fils, `${Pn.name} ${t.label}`), { level: 0 }];
+        if (ps.format === 'one') objs.push(tileObject(t, fils, F, plan.rotated, [(k % cols) * stride[0] + bd[0] / 2, -Math.floor(k / cols) * stride[1] + bd[1] / 2], Pn.name));
+        if (ps.format === 'stl' || ps.format === 'kit') {
           for (const b of t.bodies) {
             const m = plateMesh(b, plan.rotated);
             files[`stl/${name}-${t.label}${F.twoTone ? (b.tone ? '-tips' : '-base') : ''}.stl`] = stl({ pos: m.pos, idx: m.idx }, `${Pn.name} ${t.label}`);
@@ -1067,11 +1137,13 @@ export function initPanels(api) {
       }
       if (ps.format === 'one') files[`${name}.3mf`] = [threeMF(objs.concat(parts.length ? partsObjects(parts, bd).map((o) => ({ ...o, at: [o.at[0] + (live.length % cols) * stride[0], o.at[1] - Math.floor(live.length / cols) * stride[1]] })) : []), fils, Pn.name), { level: 0 }];
       if (parts.length && ps.format !== 'one') {
-        if (ps.format === 'stl') for (const p of parts) { const m = plateMesh(p.mesh, false); centreAll([m]); files[`stl/${name}-${p.key}.stl`] = stl({ pos: m.pos, idx: m.idx }, `${Pn.name} ${p.label}`); }
-        else files[`${name}-parts.3mf`] = [threeMF(partsObjects(parts, bd), [F.color.toLowerCase()], `${Pn.name} parts`), { level: 0 }];
+        if (ps.format === 'stl' || ps.format === 'kit') for (const p of parts) { const m = plateMesh(p.mesh, false); centreAll([m]); files[`stl/${name}-${p.key}.stl`] = stl({ pos: m.pos, idx: m.idx }, `${Pn.name} ${p.label}`); }
+        if (ps.format !== 'stl') files[`3mf/${name}-parts.3mf`] = [threeMF(partsObjects(parts, bd), [F.color.toLowerCase()], `${Pn.name} parts`), { level: 0 }];
       }
       say('Packing files…');
-      files['map.svg'] = strToU8(mapSVG(Pn, plan, tiles));
+      files['wall-template.svg'] = strToU8(mapSVG(Pn, plan, tiles));
+      files['assembly-map.svg'] = strToU8(assemblySVG(Pn, plan, tiles, parts));
+      files['parts-list.csv'] = strToU8(partsCSV(Pn, tiles, parts, name));
       files['print-settings.txt'] = strToU8(settingsText(Pn, plan, tiles, parts, name, head.info.zc));
       const zip = zipSync(files, { level: 6 });
       await saveFile(`${name}-panel-files.zip`, new Blob([zip], { type: 'application/zip' }));

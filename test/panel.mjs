@@ -3,7 +3,7 @@
 //  2. every pattern, in relief and openwork, builds closed
 //  3. joints, seams, mounts, outlines and two-tone builds all stay closed
 //  4. tiles fit the bed, and tabs never touch their sockets
-//  5. shuffled panels build closed
+//  5. random panels, ribs included, build closed
 import { buildPanel, panelDefaults, normalizePanel, planPanel, PANEL_PATTERNS, PANEL_PATTERN_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
 import { PANEL_PRESETS } from '../app/panels.js';
 
@@ -15,16 +15,13 @@ let seed = 11;
 const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
 const any = (arr) => arr[Math.floor(rand() * arr.length)];
 
-// Every edge must be used exactly once in each direction, after welding coincident points.
+// Every edge must be used exactly once in each direction. The mesher shares every vertex that two
+// faces meet at, so this is checked on the indices: a crack shows up as an open edge, and two points
+// a few nanometres apart where boundaries cross stay the separate vertices they are.
 function openEdges(m) {
-  const P = m.position, I = m.index, ids = new Map(), W = new Int32Array(P.length / 3);
-  for (let v = 0; v < W.length; v++) {
-    const k = `${Math.round(P[v * 3] * 1e4)},${Math.round(P[v * 3 + 1] * 1e4)},${Math.round(P[v * 3 + 2] * 1e4)}`;
-    let w = ids.get(k); if (w === undefined) { w = ids.size; ids.set(k, w); } W[v] = w;
-  }
-  const K = 2 ** 24, e = new Map();
+  const P = m.position, I = m.index, K = 2 ** 24, e = new Map();
   for (let t = 0; t < I.length; t += 3) {
-    const a = W[I[t]], b = W[I[t + 1]], c = W[I[t + 2]];
+    const a = I[t], b = I[t + 1], c = I[t + 2];
     if (a === b || b === c || a === c) continue;
     for (const [x, y] of [[a, b], [b, c], [c, a]]) { const k = x * K + y; e.set(k, (e.get(k) || 0) + 1); }
   }
@@ -94,6 +91,10 @@ if (run(3)) {
     ['small bed, tiles turned', { width: 900, height: 300 }, { bed: [250, 210] }],
     ['one tile', { width: 200, height: 160 }],
     ['morph and fade', { pattern: 'dune', morph: 'pyramid', morphDir: 'out', fade: 0.6, fadeDir: 'edges', warp: 0.4 }],
+    ['ribs: silk, dovetail, seams in the gaps', { mode: 'ribs', pattern: 'silk', width: 400, height: 600, depth: 35, base: 6, scale: 220, edge: 'flush', tiles: { joint: 'dovetail' } }],
+    ['ribs: bloom, frame, two-tone, magnets', { mode: 'ribs', pattern: 'bloom', shape: 'oval', width: 500, height: 500, depth: 28, base: 6, scale: 90, edge: 'frame', finish: { twoTone: true, toneAt: 0.6 }, mount: 'magnets' }],
+    ['ribs: bent diagonal, keys', { mode: 'ribs', pattern: 'dune', width: 600, height: 400, depth: 22, base: 5, scale: 160, ribs: { width: 4, gap: 5, angle: 35, bend: 0.6, floor: 0.2 }, tiles: { joint: 'keys' } }],
+    ['ribs: horizontal, arch, halo', { mode: 'ribs', pattern: 'ripple', shape: 'arch', width: 400, height: 600, depth: 25, base: 6, scale: 70, ribs: { width: 5, gap: 5, angle: 90 }, mount: 'halo' }],
     ['fit test', { name: 'fit', shape: 'rect', width: 120, height: 64, pattern: 'plain', depth: 0, edge: 'flush', tiles: { cols: 2, rows: 1, joint: 'dovetail', labels: false } }, { res: 0.4, final: true }],
     ['fit test keys', { name: 'fit', shape: 'rect', width: 120, height: 64, pattern: 'plain', depth: 0, edge: 'flush', tiles: { cols: 2, rows: 1, joint: 'keys', labels: false } }, { res: 0.4, final: true }],
   ];
@@ -143,14 +144,15 @@ if (run(5)) {
     const pattern = any(PANEL_PATTERN_ORDER.filter((q) => !PANEL_PATTERNS[q].image));
     const pat = PANEL_PATTERNS[pattern];
     const P = panelDefaults({
-      pattern, mode: pat.cut && rand() < 0.35 ? 'cut' : 'relief', shape: any(['rect', 'rounded', 'arch', 'oval', 'hex']),
+      pattern, mode: pat.cut && rand() < 0.3 ? 'cut' : rand() < 0.3 ? 'ribs' : 'relief', shape: any(['rect', 'rounded', 'arch', 'oval', 'hex']),
       width: Math.round(200 + rand() * 600), height: Math.round(200 + rand() * 500), corner: 30, base: 3 + rand() * 4,
       depth: 2 + rand() * 14, scale: 16 + rand() * 60, angle: any([0, 0, 30, 45, 90]), vary: rand(), warp: rand() < 0.3 ? rand() * 0.6 : 0, seed: 1 + Math.floor(rand() * 999),
       open: 0.3 + rand() * 0.5, edge: any(['frame', 'bevel', 'fade', 'flush']), edgeW: 8 + rand() * 30, fade: rand() < 0.2 ? rand() : 0, invert: rand() < 0.2,
       tiles: { joint: any(['dovetail', 'jigsaw', 'keys', 'none']), seams: pat.cell && rand() < 0.3 ? 'pattern' : 'straight', clearance: rand() * 0.4, tab: 0.7 + rand() * 0.8 },
+      ribs: { width: 3 + rand() * 8, gap: 3 + rand() * 8, angle: any([0, 0, 90, 30, -45]), bend: rand() < 0.3 ? rand() : 0, floor: 0.05 + rand() * 0.3 },
       mount: any(['tape', 'magnets', 'slots', 'halo']), finish: { twoTone: rand() < 0.3, toneAt: 0.3 + rand() * 0.4 },
     });
-    const { bad } = checkBuild(`random ${k} (${pattern} ${P.mode} ${P.shape} ${P.tiles.joint})`, P, { res: 1.8, final: true, bed: any([[256, 256], [180, 180], [250, 210]]) });
+    const { bad } = checkBuild(`random ${k} (${pattern} ${P.mode} ${P.shape} ${P.tiles.joint})`, P, { res: P.mode === 'ribs' ? 1 : 1.8, final: true, bed: any([[256, 256], [180, 180], [250, 210]]) });
     if (!bad) ok++; else console.log('   ', JSON.stringify(P));
   }
   console.log(`  ${ok} of ${N} random panels closed`);

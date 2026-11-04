@@ -6,12 +6,19 @@
   - A second studio beside the first: **Panels** in the top bar (or **View → Panels**, Ctrl+P).
   - Design a wall panel up to 2.4 m across. It slices itself into tiles that fit your printer's bed, and every tile prints face up with no supports.
   - The 3D preview shows it on the wall, as separate tiles, or laid out on print beds. The light can rake low across the relief, and you can turn the panel round to see its back.
+- **Wave ribs:**
+  - Turn any pattern into parallel ribs that stand on the back plate, each one rising and falling with the pattern, like slatted wave wall art.
+  - Rib width, gap, direction (upright, level or any angle), bend (the ribs curve as they run) and lowest rib (so no rib disappears).
+  - Ribs go up to 60 mm deep, with straight vertical sides, and print without supports.
+  - Upright or level ribs move the seams into the gaps between them, so no rib is cut along its length.
+  - Three new broad patterns made for ribs: **Silk** (drifting diagonal folds), **Bloom** (petals opening from a dome) and **Lens** (two fine wave grids gathering into a moiré lens).
+  - New rib starting panels: Veil (400 × 600 mm, 6 mm ribs, 35 mm deep, in six tiles for a 256 mm bed), Corolla, Moiré, Canyon and Eddy.
 - **Outlines and edges:**
   - Five outlines: rectangle, rounded, arch, oval and hexagon.
   - Four edges: a raised frame, a 45° bevel, a fade, or flush to the edge.
   - You set the back's thickness.
-- **24 patterns:**
-  - Dune, Ripple, Chevron, Vortex, Sunburst, Contour, Ridge, Pyramid, Facet, Pixel, Basalt, Brick, Pebble, Scale, Deco, Tufted, Weave, Reed, Truchet, Moroccan, Trellis, Bubble, Halftone and Picture.
+- **27 patterns:**
+  - Dune, Ripple, Chevron, Vortex, Sunburst, Contour, Ridge, Silk, Bloom, Lens, Pyramid, Facet, Pixel, Basalt, Brick, Pebble, Scale, Deco, Tufted, Weave, Reed, Truchet, Moroccan, Trellis, Bubble, Halftone and Picture.
   - Picture turns a photo of yours into relief.
   - Seven of them cut right through as openwork, with solid rails kept along every seam.
   - Each has Depth, Scale, Variation, Angle, Warp and Seed. You can also morph one pattern into another across the panel, fade it out towards one side, or invert it.
@@ -35,16 +42,18 @@
   - **Two-tone tips:** the top of the relief becomes its own part in a second colour, for an AMS or one filament change.
   - Matte, satin or silk preview.
   - A choice of wall colours, and a backlight preview with six LED colours.
-- **Export:**
-  - Download a 3MF per tile (each opens on its own plate), one 3MF with every tile, or an STL per tile.
+- **Export, a production kit:**
+  - **Complete kit** (a 3MF and an STL for every tile), a 3MF per tile (each opens on its own plate), one 3MF with every tile, or an STL per tile.
   - The loose parts (keys, pucks) come with it.
-  - **map.svg** shows at actual size where every tile, screw or washer goes.
+  - **assembly-map.svg**: every tile in place, with its size and weight.
+  - **wall-template.svg**: the same at actual size, with the screws or washers marked.
+  - **parts-list.csv** lists every part.
   - **print-settings.txt** has the tile layout, print settings, joining and hanging steps, and the design code.
   - Also: a cover image, Copy design code, and Save to my panels.
-- **Starting panels:** 16 ready-made panels (Dune, Basalt, Atlas, Sunrise, Chester, Riad, Kiln, Loom, Tidal, Pixel, Maelstrom, Halftone, Shingle, Kinetic, Truchet, Odeon), and **Shuffle** for a random one in your size.
+- **Starting panels:** 21 ready-made panels (Veil, Corolla, Moiré, Canyon, Eddy, Dune, Basalt, Atlas, Sunrise, Chester, Riad, Kiln, Loom, Tidal, Pixel, Maelstrom, Halftone, Shingle, Kinetic, Truchet, Odeon), and **Shuffle** for a random one in your size.
 - **Fixes:**
   - Opening the app on the Collection or Guide no longer logs a warning from the hidden studio stage.
-- **Tests:** `npm test` now also checks panels. Every tile and part of every starting panel, every pattern and a batch of random panels must come out closed, fit the bed, and keep their tabs clear of their sockets.
+- **Tests:** `npm test` now also checks panels. Every tile and part of every starting panel, every pattern, rib panels and a batch of random panels must come out closed, fit the bed, and keep their tabs clear of their sockets.
 
 ## 2.2.0
 

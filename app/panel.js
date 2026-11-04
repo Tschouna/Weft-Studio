@@ -205,6 +205,31 @@ export const PANEL_PATTERNS = {
       return clamp((s / n) * (1.25 + 0.6 * o.vary), 0, 1);
     },
   },
+  silk: {
+    label: 'Silk', note: 'Broad diagonal folds drifting across the panel, like pulled silk. Made for ribs',
+    h(u, v, o) {
+      const drift = 0.3 * Math.sin(TAU * (u - v) * 0.21 + o.seed) + 0.18 * Math.sin(TAU * v * 0.37 + o.seed * 1.7);
+      const fold = Math.cos(TAU * ((u + v) * 0.55 + drift * (0.6 + o.vary)));
+      return clamp(0.5 + 0.42 * fold + 0.08 * Math.sin(TAU * (u * 0.31 - v * 0.17) + o.seed * 2.3), 0, 1);
+    },
+  },
+  bloom: {
+    label: 'Bloom', note: 'Petals opening from a dome in the middle. Made for ribs', radial: true,
+    h(u, v, o) {
+      const r = Math.hypot(u, v), th = Math.atan2(v, u), N = 5 + Math.round(o.vary * 4);
+      const petals = 0.5 + 0.5 * Math.cos(N * th + 1.4 * r);
+      const env = Math.exp(-r * r * 0.18);
+      return clamp(env * (0.45 + 0.55 * petals) + 0.12 * Math.cos(TAU * r * 0.5) * (1 - env), 0, 1);
+    },
+  },
+  lens: {
+    label: 'Lens', note: 'Two fine wave grids crossing at a shallow angle, gathering into a lens',
+    h(u, v, o) {
+      const a = 0.18 + 0.25 * o.vary, w1 = Math.cos(TAU * u * 1.6), w2 = Math.cos(TAU * 1.6 * (u * Math.cos(a) + v * Math.sin(a)));
+      const lens = Math.exp(-((u * 0.35) ** 2 + (v * 0.5) ** 2));
+      return clamp(0.5 + 0.25 * (w1 + w2) * (0.4 + 0.6 * lens), 0, 1);
+    },
+  },
   pyramid: {
     label: 'Pyramid', note: 'Square pyramids; Variation tilts each apex', cellR: 0.71, grid: [1, 1], cell: squareCell,
     h(u, v, o) {
@@ -315,6 +340,8 @@ export const PANEL_PATTERNS = {
   plain: { label: 'Plain', hidden: true, h() { return 0; } },
 };
 export const PANEL_PATTERN_ORDER = Object.keys(PANEL_PATTERNS).filter((k) => !PANEL_PATTERNS[k].hidden);
+// broad fields read best through ribs: these open in Ribs
+export const RIB_FIELDS = ['silk', 'bloom', 'lens', 'dune', 'ripple', 'vortex', 'sunburst', 'contour', 'ridge', 'chevron'];
 
 export const PANEL_SHAPES = {
   rect: 'Rectangle', rounded: 'Rounded', arch: 'Arch', oval: 'Oval', hex: 'Hexagon',
@@ -327,6 +354,7 @@ export const PANEL_BASE = {
   base: 5, edge: 'frame', edgeW: 16,
   pattern: 'dune', mode: 'relief', depth: 10, scale: 60, angle: 0, vary: 0.4, warp: 0, seed: 7, open: 0.5,
   invert: false, origin: 'centre', morph: 'none', morphDir: 'up', fade: 0, fadeDir: 'top',
+  ribs: { width: 6, gap: 6, angle: 0, bend: 0, floor: 0.15 },
   tiles: { cols: 0, rows: 0, seams: 'straight', joint: 'dovetail', clearance: 0.2, tab: 1, labels: true, snap: true },
   mount: 'tape',
   finish: { color: '#eeebe4', color2: '#d8a647', twoTone: false, toneAt: 0.6, material: 'matte', wall: '#e4e1da', backlight: false, led: '#ffb46b' },
@@ -345,8 +373,14 @@ export function normalizePanel(src) {
   if (!PANEL_PATTERNS[P.pattern]) P.pattern = 'dune';
   if (!PANEL_SHAPES[P.shape]) P.shape = 'rect';
   P.width = clamp(+P.width || 480, 80, 2400); P.height = clamp(+P.height || 320, 80, 2400);
-  P.base = clamp(+P.base || 5, 2.4, 14); P.depth = clamp(+P.depth, 0, 30); P.scale = clamp(+P.scale || 60, 6, 400);
+  P.base = clamp(+P.base || 5, 2.4, 14); P.depth = clamp(+P.depth, 0, P.mode === 'ribs' ? 60 : 30); P.scale = clamp(+P.scale || 60, 6, 600);
+  if (P.mode === 'ribs') {
+    P.ribs.width = clamp(+P.ribs.width || 6, 1.6, 30); P.ribs.gap = clamp(+P.ribs.gap || 6, 1.6, 40);
+    P.ribs.angle = clamp(+P.ribs.angle || 0, -90, 90); P.ribs.bend = clamp(+P.ribs.bend || 0, 0, 1); P.ribs.floor = clamp(+P.ribs.floor, 0.04, 0.8);
+    if (P.tiles.seams === 'pattern') P.tiles.seams = 'straight';
+  }
   if (P.mode === 'cut' && !PANEL_PATTERNS[P.pattern].cut) P.mode = 'relief';
+  if (!['relief', 'cut', 'ribs'].includes(P.mode)) P.mode = 'relief';
   if (P.morph !== 'none' && (!PANEL_PATTERNS[P.morph] || PANEL_PATTERNS[P.morph].hidden)) P.morph = 'none';
   P.tiles.clearance = clamp(+P.tiles.clearance || 0, 0, 0.8);
   P.tiles.tab = clamp(+P.tiles.tab || 1, 0.6, 1.6);
@@ -400,7 +434,7 @@ function pocketDepths(P) {
   const slot = P.mount === 'slots' ? clamp(P.base - 1.6, 2.4, 6) : 0;
   const key = P.tiles.joint === 'keys' && P.tiles.seams !== 'pattern' ? clamp(P.base * 0.5, 1.6, 3) : 0;
   const deepest = Math.max(mag, slot, key, P.tiles.labels ? 0.6 : 0);
-  const chamfer = clamp(P.base - deepest - 0.7, 0.4, 1.2);
+  const chamfer = P.mode === 'ribs' ? 0 : clamp(P.base - deepest - 0.7, 0.4, 1.2);
   const edgeLow = P.base - chamfer, cap = edgeLow - 0.6;
   return { mag: Math.min(mag, cap), slot: Math.min(slot, cap), key: Math.min(key, cap), label: Math.min(0.6, cap), chamfer, edgeLow, wantMag: mag, wantSlot: slot };
 }
@@ -460,8 +494,18 @@ function compile(P, img) {
   // inside a frame the relief eases out over a short margin, so the frame's slope meets a clean flat band
   const mat = clamp(s * 0.35, 6, 22);
   const band = cutMode ? (frame ? ew : Math.max(6, P.edge === 'fade' ? ew * 0.5 : 6)) : 0;
-  // fills R.t (top height, mm) and R.c (openwork field, mm, positive = solid)
-  const R = { t: 0, c: 0, d: 0 };
+  // ribs: parallel fins across the panel, their tops following the pattern
+  const ribMode = P.mode === 'ribs';
+  const RB = P.ribs || {}, pitch = (RB.width || 6) + (RB.gap || 6), ra = ((RB.angle || 0) * Math.PI) / 180, rc = Math.cos(ra), rs = Math.sin(ra);
+  const bendA = (RB.bend || 0) * pitch * 2.4, bendK = TAU / (Math.max(P.width, P.height) * 0.62), floor = RB.floor ?? 0.15;
+  const ribAt = (x, y) => {
+    const along = -x * rs + y * rc, ph = bendK * along + seed;
+    const sAcross = x * rc + y * rs + bendA * Math.sin(ph);
+    const f = sAcross / pitch - Math.round(sAcross / pitch);
+    return ((RB.width || 6) / 2 - Math.abs(f) * pitch) / Math.sqrt(1 + (bendA * bendK * Math.cos(ph)) ** 2);
+  };
+  // fills R.t (top height, mm), R.c (openwork field, mm, positive = solid) and R.r (rib field)
+  const R = { t: 0, c: 0, d: 0, r: 1 };
   const evalAt = (x, y) => {
     const d = outline(x, y);
     toUV(x, y);
@@ -474,19 +518,28 @@ function compile(P, img) {
     }
     if (P.fade > 0) h *= 1 - P.fade * smooth(0, 1, ramp(P.fadeDir, x, y));
     h = clamp(h, 0, 1);
+    if (ribMode) h = floor + (1 - floor) * h;
     let t;
     if (frame) { const inner = d - ew; t = inner <= 0 ? frameTop : Math.max(base + depth * h * smooth(depth + 1, depth + 1 + mat, inner), frameTop - inner); }
     else if (P.edge === 'fade') t = base + depth * h * smooth(0, ew, d);
     else if (P.edge === 'bevel') t = Math.min(base + depth * h, base + Math.max(0, d - pd.chamfer));
     else t = base + depth * h;
-    R.t = Math.min(t, pd.edgeLow + Math.max(0, d));
-    R.c = cutMode ? Math.max(c, band - d) : 1;
+    if (ribMode) {
+      // rib tops ease down at 45° to just above the back at the outline; a frame joins the ribs
+      R.t = Math.max(base + 0.6, Math.min(t, base + 0.6 + Math.max(0, d)));
+      R.r = frame ? Math.max(ribAt(x, y), ew - d) : ribAt(x, y);
+      R.c = 1;
+    } else {
+      R.t = Math.min(t, pd.edgeLow + Math.max(0, d));
+      R.c = cutMode ? Math.max(c, band - d) : 1;
+      R.r = 1;
+    }
     R.d = d;
     return R;
   };
   let zc = 0;
-  if (P.finish.twoTone) zc = clamp(base + clamp(P.finish.toneAt, 0.05, 0.95) * depth, pd.edgeLow + 0.3, base + depth - 0.3);
-  return { P, pat, patB, cutMode, outline, evalAt, toUV, fromUV, o, s, a, b, pd, zc, twoTone: !!P.finish.twoTone && depth > 1.2 && zc > pd.edgeLow };
+  if (P.finish.twoTone) zc = clamp(base + clamp(P.finish.toneAt, 0.05, 0.95) * depth, (ribMode ? base + 0.6 : pd.edgeLow) + 0.3, base + depth - 0.3);
+  return { P, pat, patB, cutMode, ribMode, pitch, outline, evalAt, toUV, fromUV, o, s, a, b, pd, zc, twoTone: !!P.finish.twoTone && depth > 1.2 && zc > (ribMode ? base + 0.6 : pd.edgeLow) };
 }
 // A picture becomes brightness 0..1 over the panel, filling it like a cover photo.
 function sampler(img, a, b) {
@@ -554,6 +607,20 @@ export function planPanel(P, bed = [256, 256]) {
     const nx = snap(xs, g[0], best.cw), ny = snap(ys, g[1], best.ch);
     snapped = nx !== xs || ny !== ys;
     xs = nx; ys = ny;
+  }
+  if (T.snap && P.mode === 'ribs' && !(P.ribs.bend > 0)) {
+    const pitch = P.ribs.width + P.ribs.gap, ang = ((P.ribs.angle % 180) + 180) % 180;
+    const moveGap = (arr, max) => {
+      const out = arr.slice();
+      for (let k = 1; k < out.length - 1; k++) {
+        let v = (Math.round(out[k] / pitch - 0.5) + 0.5) * pitch;
+        if (v - out[k - 1] > max) v -= pitch;
+        if (v - out[k - 1] > 1 && v < out[out.length - 1] - 1) out[k] = v;
+      }
+      return out[out.length - 1] - out[out.length - 2] > max ? arr : out;
+    };
+    if (ang < 0.01) { const nx = moveGap(xs, best.cw); snapped = snapped || nx !== xs; xs = nx; }
+    else if (Math.abs(ang - 90) < 0.01) { const ny = moveGap(ys, best.ch); snapped = snapped || ny !== ys; ys = ny; }
   }
   const outline = outlineFn(P);
   const tiles = [];
@@ -1102,7 +1169,7 @@ function buildTile(C, plan, tile, res, opts) {
   const nx = Math.max(2, Math.ceil((gx1 - gx0) / res)), ny = Math.max(2, Math.ceil((gy1 - gy0) / res));
   const gx = (gx1 - gx0) / nx, gy = (gy1 - gy0) / ny, W1 = nx + 1, NG = W1 * (ny + 1);
   const T = new Float32Array(NG);
-  const Fo = new Float32Array(NG), Fc = C.cutMode ? new Float32Array(NG) : null, Fs = shape ? new Float32Array(NG) : null;
+  const Fo = new Float32Array(NG), Fc = C.cutMode ? new Float32Array(NG) : null, Fs = shape ? new Float32Array(NG) : null, Fr = C.ribMode ? new Float32Array(NG) : null;
   const depthsSet = [...new Set(pockets.filter((p) => p.depth > 0.25).map((p) => +p.depth.toFixed(2)))].sort((p, q) => p - q);
   const Fp = depthsSet.map(() => new Float32Array(NG));
   // values right at zero make crossings that sit on the grid points: keep every value a little clear of zero
@@ -1128,6 +1195,7 @@ function buildTile(C, plan, tile, res, opts) {
       T[k] = R.t;
       Fo[k] = nudge(R.d);
       if (Fc) Fc[k] = nudge(Math.max(R.c, rail(x, y)));
+      if (Fr) Fr[k] = nudge(R.r);
       if (Fs) Fs[k] = nudge(shape(x, y));
       for (let q = 0; q < depthsSet.length; q++) {
         let v = -1e9;
@@ -1149,36 +1217,42 @@ function buildTile(C, plan, tile, res, opts) {
   const solid = [Fo, Fc, Fs].filter(Boolean);
   const bodies = [];
   const Sclip = (fields) => fields.flatMap((_, k) => [k, 1]);
-  // the base body (the whole tile when it is one colour)
+  // the base body (the whole tile when it is one colour). With ribs, the back is one slab and the ribs
+  // stand on it: the gaps between them are a floor at the back's thickness.
   {
-    const fields = [...solid, ...Fp];
     const ns = solid.length, sb = Sclip(solid), Stags = (1 << ns) - 1;
+    const ri = Fr ? ns : -1, p0 = ns + (Fr ? 1 : 0);
+    const fields = [...solid, ...(Fr ? [Fr] : []), ...Fp];
     let Ftz = null;
     if (C.twoTone) { Ftz = new Float32Array(NG); for (let k = 0; k < NG; k++) Ftz[k] = tzOf(T[k]); fields.push(Ftz); }
     const tz = C.twoTone ? fields.length - 1 : -1;
-    const levels = [{ z: 0 }, ...depthsSet.map((z) => ({ z })), C.twoTone ? { cap: C.zc } : {}];
-    const Ltop = levels.length - 1;
-    const faces = [{ clip: [...sb, ...Fp.flatMap((_, q) => [ns + q, -1])], L: 0, up: false, flat: true }];
-    depthsSet.forEach((_, q) => faces.push({ clip: [...sb, ns + q, 1], L: 1 + q, up: false, flat: true }));
-    if (C.twoTone) { faces.push({ clip: [...sb, tz, -1], L: Ltop, up: true }); faces.push({ clip: [...sb, tz, 1], L: Ltop, up: true, flat: true }); }
-    else faces.push({ clip: sb, L: Ltop, up: true });
+    const levels = [{ z: 0 }, ...depthsSet.map((z) => ({ z })), ...(Fr ? [{ z: P.base }] : []), C.twoTone ? { cap: C.zc } : {}];
+    const Ltop = levels.length - 1, Lb = Fr ? Ltop - 1 : -1;
+    const topClip = Fr ? [...sb, ri, 1] : sb;
+    const faces = [{ clip: [...sb, ...Fp.flatMap((_, q) => [p0 + q, -1])], L: 0, up: false, flat: true }];
+    depthsSet.forEach((_, q) => faces.push({ clip: [...sb, p0 + q, 1], L: 1 + q, up: false, flat: true }));
+    if (Fr) faces.push({ clip: [...sb, ri, -1], L: Lb, up: true, flat: true });
+    if (C.twoTone) { faces.push({ clip: [...topClip, tz, -1], L: Ltop, up: true }); faces.push({ clip: [...topClip, tz, 1], L: Ltop, up: true, flat: true }); }
+    else faces.push({ clip: topClip, L: Ltop, up: true });
     const walls = [];
     for (let k = 0; k <= depthsSet.length; k++) {
       const open = Fp.map((_, q) => q).filter((q) => q >= k);
-      walls.push({ clip: [...sb, ...open.flatMap((q) => [ns + q, -1])], tags: Stags | open.reduce((m, q) => m | (1 << (ns + q)), 0), lo: k, hi: k + 1 });
+      walls.push({ clip: [...sb, ...open.flatMap((q) => [p0 + q, -1])], tags: Stags | open.reduce((m, q) => m | (1 << (p0 + q)), 0), lo: k, hi: k + 1 });
     }
+    if (Fr) walls.push({ clip: topClip, tags: Stags | (1 << ri), lo: Lb, hi: Ltop });
     const m = meshBody(G, { fields, levels, faces, walls, groups: opts.groups, noMerge: !!opts.normals });
     bodies.push({ tone: 0, ...m });
   }
   if (C.twoTone) {
     const Ftz = new Float32Array(NG);
     for (let k = 0; k < NG; k++) Ftz[k] = tzOf(T[k]);
-    const fields = [...solid, Ftz], ns = solid.length, sb = Sclip(solid), tz = ns;
-    const clipU = [...sb, tz, 1];
+    const ns = solid.length, sb = Sclip(solid);
+    const fields = [...solid, ...(Fr ? [Fr] : []), Ftz], tz = fields.length - 1;
+    const clipU = [...sb, ...(Fr ? [ns, 1] : []), tz, 1];
     const m = meshBody(G, {
       fields, levels: [{ z: C.zc }, {}], merge: { top: 1, base: 0, bit: 1 << tz },
       faces: [{ clip: clipU, L: 0, up: false, flat: true }, { clip: clipU, L: 1, up: true }],
-      walls: [{ clip: clipU, tags: (1 << ns) - 1, lo: 0, hi: 1 }], groups: opts.groups, noMerge: !!opts.normals,
+      walls: [{ clip: clipU, tags: (1 << ns) - 1 | (Fr ? 1 << ns : 0), lo: 0, hi: 1 }], groups: opts.groups, noMerge: !!opts.normals,
     });
     if (m.index.length) bodies.push({ tone: 1, ...m });
   }
@@ -1222,7 +1296,7 @@ export function buildPanel(src, opts = {}) {
   const P = normalizePanel(src);
   const plan = planPanel(P, opts.bed || [256, 256]);
   const C = compile(P, opts.img);
-  const res = opts.res || previewRes(P);
+  const res = Math.min(opts.res || previewRes(P), P.mode === 'ribs' && !opts.res ? Math.min(P.ribs.width, P.ribs.gap) / 3 : Infinity);
   const tiles = [];
   for (const t of plan.tiles) {
     if (t.empty || (opts.only && !opts.only.includes(t.index))) continue;
@@ -1236,7 +1310,10 @@ export function buildPanel(src, opts = {}) {
 }
 // A grid spacing that keeps the whole panel near the given number of samples.
 export function previewRes(P, budget = 260000) {
-  return clamp(Math.sqrt((P.width * P.height) / budget), 0.6, 4);
+  const r = clamp(Math.sqrt((P.width * P.height) / budget), 0.6, 4);
+  // ribs need a few samples across each rib and gap to keep their walls straight; allow more samples for them
+  if (P.mode === 'ribs' && P.ribs) return Math.max(Math.min(r, Math.min(P.ribs.width, P.ribs.gap) / 2.5), Math.sqrt((P.width * P.height) / 1.1e6));
+  return r;
 }
 
 // What to check before printing. Returns [{ level: 'ok' | 'warn' | 'bad', text }].
@@ -1257,7 +1334,13 @@ export function panelChecks(src, plan, built) {
     if (bw2 !== null && bw2 < 2.5) out.push({ level: 'warn', text: `Openwork bars are about ${bw2.toFixed(1)} mm wide. Raise Scale or lower Openness for sturdier bars.` });
     else out.push({ level: 'ok', text: 'Openwork bars stay at least 2 mm wide, with solid rails along every seam.' });
   }
-  if (plan.snapped) out.push({ level: 'ok', text: 'Seams sit in the pattern\'s grooves, so they hide in the relief.' });
+  if (P.mode === 'ribs') {
+    const RB = P.ribs, tall = P.depth / RB.width;
+    out.push({ level: 'ok', text: `${Math.round(P.width / (RB.width + RB.gap))} ribs, ${RB.width} mm wide with ${RB.gap} mm gaps, up to ${(P.base + P.depth).toFixed(0)} mm deep.` });
+    if (RB.width < 2.4) out.push({ level: 'warn', text: `${RB.width} mm ribs are only a few lines wide. 3 mm or more prints crisp.` });
+    if (tall > 9) out.push({ level: 'warn', text: `The ribs are ${tall.toFixed(0)} times taller than they are wide and may wobble near the top. Widen them, lower Depth, or slow the outer walls.` });
+  }
+  if (plan.snapped) out.push({ level: 'ok', text: P.mode === 'ribs' ? 'Seams run down the gaps between ribs, so no rib is cut along its length.' : 'Seams sit in the pattern\'s grooves, so they hide in the relief.' });
   if (plan.pattern) out.push({ level: 'ok', text: 'Seams follow the pattern\'s cells. Mount each tile on its own, or glue them edge to edge.' });
   else if (plan.patternWanted) out.push({ level: 'warn', text: 'The pattern\'s cells are too big for seams to follow them on this bed, so the seams are straight. Lower Scale to bring them back.' });
   if (plan.joint === 'keys') out.push({ level: 'ok', text: `${plan.keys.length} bowtie keys join the tiles from behind. They print flat on their own plate.` });
