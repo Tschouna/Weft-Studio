@@ -209,15 +209,16 @@ export const PANEL_PATTERNS = {
     label: 'Silk', note: 'Broad diagonal folds drifting across the panel, like pulled silk. Made for ribs',
     h(u, v, o) {
       const drift = 0.3 * Math.sin(TAU * (u - v) * 0.21 + o.seed) + 0.18 * Math.sin(TAU * v * 0.37 + o.seed * 1.7);
-      const fold = Math.cos(TAU * ((u + v) * 0.55 + drift * (0.6 + o.vary)));
-      return clamp(0.5 + 0.42 * fold + 0.08 * Math.sin(TAU * (u * 0.31 - v * 0.17) + o.seed * 2.3), 0, 1);
+      const c = Math.cos(TAU * ((u + v) * 0.55 + drift * (0.6 + o.vary))), fold = Math.sign(c) * Math.abs(c) ** 0.6;
+      return clamp(0.5 + 0.44 * fold + 0.06 * Math.sin(TAU * (u * 0.31 - v * 0.17) + o.seed * 2.3), 0, 1);
     },
   },
   bloom: {
     label: 'Bloom', note: 'Petals opening from a dome in the middle. Made for ribs', radial: true,
     h(u, v, o) {
       const r = Math.hypot(u, v), th = Math.atan2(v, u), N = 5 + Math.round(o.vary * 4);
-      const petals = 0.5 + 0.5 * Math.cos(N * th + 1.4 * r);
+      // the petals open out of a smooth dome, so nothing pinches where they all meet
+      const open = smooth(0.25, 1.6, r), petals = lerp(1, 0.5 + 0.5 * Math.cos(N * th + 1.4 * r), open);
       const env = Math.exp(-r * r * 0.18);
       return clamp(env * (0.45 + 0.55 * petals) + 0.12 * Math.cos(TAU * r * 0.5) * (1 - env), 0, 1);
     },
@@ -389,6 +390,23 @@ export function normalizePanel(src) {
   return P;
 }
 
+// Where the ribs start across the panel. A rib edge exactly on a straight side of the outline would give
+// two boundaries in one place, so the ribs shift (by a half or a quarter pitch) until both sides are clear.
+function ribPhase(P) {
+  const RB = P.ribs || {}, w = RB.width || 6, pitch = w + (RB.gap || 6), ang = ((((RB.angle || 0) % 180) + 180) % 180);
+  const ext = ang < 0.01 ? P.width / 2 : Math.abs(ang - 90) < 0.01 ? P.height / 2 : null;
+  if (ext === null || RB.bend > 0) return 0;
+  const clear = (phi) => Math.min(...[ext, -ext].map((e) => { const f = ((e - phi) / pitch - Math.round((e - phi) / pitch)) * pitch; return Math.abs(Math.abs(f) - w / 2); }));
+  const need = Math.min(1, pitch * 0.1);
+  let best = 0, bc = -1;
+  for (const phi of [0, pitch / 2, pitch / 4, -pitch / 4, pitch / 8]) { const c = clear(phi); if (c >= need) return phi; if (c > bc) { bc = c; best = phi; } }
+  return best;
+}
+const ribEdgeGap = (P, v) => {
+  const RB = P.ribs, pitch = RB.width + RB.gap, f = ((v - ribPhase(P)) / pitch - Math.round((v - ribPhase(P)) / pitch)) * pitch;
+  return Math.abs(Math.abs(f) - RB.width / 2);
+};
+
 function outlineFn(P) {
   const a = P.width / 2, b = P.height / 2;
   switch (P.shape) {
@@ -497,10 +515,10 @@ function compile(P, img) {
   // ribs: parallel fins across the panel, their tops following the pattern
   const ribMode = P.mode === 'ribs';
   const RB = P.ribs || {}, pitch = (RB.width || 6) + (RB.gap || 6), ra = ((RB.angle || 0) * Math.PI) / 180, rc = Math.cos(ra), rs = Math.sin(ra);
-  const bendA = (RB.bend || 0) * pitch * 2.4, bendK = TAU / (Math.max(P.width, P.height) * 0.62), floor = RB.floor ?? 0.15;
+  const bendA = (RB.bend || 0) * pitch * 2.4, bendK = TAU / (Math.max(P.width, P.height) * 0.62), floor = RB.floor ?? 0.15, phi = ribMode ? ribPhase(P) : 0;
   const ribAt = (x, y) => {
     const along = -x * rs + y * rc, ph = bendK * along + seed;
-    const sAcross = x * rc + y * rs + bendA * Math.sin(ph);
+    const sAcross = x * rc + y * rs + bendA * Math.sin(ph) - phi;
     const f = sAcross / pitch - Math.round(sAcross / pitch);
     return ((RB.width || 6) / 2 - Math.abs(f) * pitch) / Math.sqrt(1 + (bendA * bendK * Math.cos(ph)) ** 2);
   };
@@ -609,11 +627,11 @@ export function planPanel(P, bed = [256, 256]) {
     xs = nx; ys = ny;
   }
   if (T.snap && P.mode === 'ribs' && !(P.ribs.bend > 0)) {
-    const pitch = P.ribs.width + P.ribs.gap, ang = ((P.ribs.angle % 180) + 180) % 180;
+    const pitch = P.ribs.width + P.ribs.gap, ang = ((P.ribs.angle % 180) + 180) % 180, phi = ribPhase(P);
     const moveGap = (arr, max) => {
       const out = arr.slice();
       for (let k = 1; k < out.length - 1; k++) {
-        let v = (Math.round(out[k] / pitch - 0.5) + 0.5) * pitch;
+        let v = phi + (Math.round((out[k] - phi) / pitch - 0.5) + 0.5) * pitch;
         if (v - out[k - 1] > max) v -= pitch;
         if (v - out[k - 1] > 1 && v < out[out.length - 1] - 1) out[k] = v;
       }
@@ -621,6 +639,11 @@ export function planPanel(P, bed = [256, 256]) {
     };
     if (ang < 0.01) { const nx = moveGap(xs, best.cw); snapped = snapped || nx !== xs; xs = nx; }
     else if (Math.abs(ang - 90) < 0.01) { const ny = moveGap(ys, best.ch); snapped = snapped || ny !== ys; ys = ny; }
+  }
+  // any seam left running along a straight rib's edge moves a millimetre clear of it
+  if (P.mode === 'ribs' && !(P.ribs.bend > 0)) {
+    const ang = ((P.ribs.angle % 180) + 180) % 180, arr = ang < 0.01 ? xs : Math.abs(ang - 90) < 0.01 ? ys : null;
+    if (arr) for (let k = 1; k < arr.length - 1; k++) if (ribEdgeGap(P, arr[k]) < 0.6) arr[k] += 1;
   }
   const outline = outlineFn(P);
   const tiles = [];
