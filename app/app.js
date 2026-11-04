@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
 import { generate, swatch, makeProfile, easeProfile, makeSection } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
+import { initPanels } from './panels.js';
 
 // ============================================================ catalogue
 const PATTERNS = {
@@ -300,6 +301,9 @@ const state = {
   version: 0,
 };
 const history = { stack: [JSON.stringify(state.design)], at: 0 };
+// the Panels compartment keeps its own history; undo and the top bar follow whichever is in front
+let panels = null;
+const panelsFocused = () => !!panels && (UI === 'v2' ? document.body.dataset.view === 'panels' : panels.active);
 function commitHistory() {
   const snap = JSON.stringify(state.design);
   if (snap === history.stack[history.at]) return;
@@ -310,10 +314,12 @@ function commitHistory() {
   syncUndo();
 }
 function syncUndo() {
+  if (panelsFocused()) { $('#undo').disabled = !panels.canUndo(); $('#redo').disabled = !panels.canRedo(); return; }
   $('#undo').disabled = history.at <= 0;
   $('#redo').disabled = history.at >= history.stack.length - 1;
 }
 function travel(dir) {
+  if (panelsFocused()) { if (dir < 0) panels.undo(); else panels.redo(); return; }
   const at = history.at + dir;
   if (at < 0 || at >= history.stack.length) return;
   history.at = at;
@@ -450,6 +456,7 @@ controls.addEventListener('start', () => { $('#hint').style.opacity = 0; if (sta
 
 function resize() {
   const r = canvas.parentElement.getBoundingClientRect();
+  if (!r.width || !r.height) return; // hidden behind another view: keep the last size
   renderer.setSize(r.width, r.height, false);
   stage.camera.aspect = r.width / Math.max(1, r.height);
   stage.camera.updateProjectionMatrix();
@@ -2678,7 +2685,7 @@ function openDesign(d) {
   showView('studio');
 }
 // 2.0 shows the studio, the collection and the guide one at a time; the classic page scrolls between them.
-const VIEWS = ['studio', 'collection', 'guide'];
+const VIEWS = ['studio', 'panels', 'collection', 'guide'];
 function showView(v, fromHash) {
   if (!VIEWS.includes(v)) v = 'studio';
   if (UI !== 'v2') { $(`#${v}`).scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); return; }
@@ -2687,6 +2694,8 @@ function showView(v, fromHash) {
   document.querySelectorAll('.views a[data-view]').forEach((a) => (a.dataset.view === v ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   if (!fromHash && location.hash.slice(1) !== v) { try { window.history.replaceState(null, '', v === 'studio' ? location.pathname + location.search : `#${v}`); } catch { /* sandboxed */ } }
   if (v === 'studio' && was !== 'studio') { resize(); invalidate(); }
+  if (v === 'panels') panels?.show(); else panels?.hide();
+  syncUndo();
   if (v !== 'studio') { const page = $(`#${v}`); if (page && was !== v) page.scrollTop = 0; if (thumbQueue.length) setTimeout(pumpThumbs, 30); }
 }
 // The collection, grouped by what each piece is for
@@ -2758,6 +2767,7 @@ function saveDesignFile() {
   return saveFile(`${slug(d.name)}.weft`, new Blob([JSON.stringify({ weft: 1, ...d }, null, 2)], { type: 'application/json' }));
 }
 function loadCode(text) {
+  if (panels?.loadCode(text)) { showView('panels'); toast('Panel loaded'); return; }
   try {
     const d = JSON.parse(text.trim());
     if (d) delete d.weft;
@@ -3032,7 +3042,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#shu
 $('#undo').addEventListener('click', () => travel(-1));
 $('#redo').addEventListener('click', () => travel(1));
 $('#status-btn').addEventListener('click', () => setTab('export'));
-$('#go-export')?.addEventListener('click', () => { setTab('export'); showView('studio'); });
+$('#go-export')?.addEventListener('click', () => { if (panelsFocused()) { panels.goExport(); return; } setTab('export'); showView('studio'); });
 document.querySelectorAll('.views a[data-view], .brand').forEach((a) => a.addEventListener('click', (e) => {
   if (UI !== 'v2') return;
   e.preventDefault();
@@ -3071,6 +3081,7 @@ $('#theme').addEventListener('click', () => {
   store.set('weft.theme', root.dataset.theme);
   swatchCache.clear();
   renderSurface();
+  panels?.refreshTheme();
   refreshAccent();
   refreshDimColor();
 });
@@ -3087,27 +3098,28 @@ if (desktop) {
       case 'open': desktop.openDesign(); break;
       case 'load-design': loadCode(arg.text); break;
       case 'save': saveDesignFile(); break;
-      case 'export': setTab('export'); showView('studio'); exportFiles(); break;
+      case 'export': if (panelsFocused()) panels.exportFiles(); else { setTab('export'); showView('studio'); exportFiles(); } break;
       case 'slicer': sendToSlicer(); break;
       case 'cover': saveCover(); break;
       case 'undo': travel(-1); break;
       case 'redo': travel(1); break;
-      case 'shuffle': shuffle(arg ? { [arg]: true } : undefined); break;
+      case 'shuffle': if (panelsFocused()) panels.shuffle(arg === 'surface' ? 'pattern' : arg === 'colour' ? 'colour' : arg === 'shape' ? 'shape' : 'all'); else shuffle(arg ? { [arg]: true } : undefined); break;
       case 'multicolor': setMulticolor(!state.multicolor); break;
       case 'view': $(`#view-${arg}`).click(); break;
-      case 'frame': $('#reset-view').click(); break;
+      case 'frame': if (panelsFocused()) panels.frame(); else $('#reset-view').click(); break;
       case 'toggle': if (toggles[arg] && !$(toggles[arg]).hidden) $(toggles[arg]).click(); break;
       case 'theme': $('#theme').click(); break;
       case 'guide': showView('guide'); break;
       case 'collection': showView('collection'); break;
       case 'studio-view': showView('studio'); break;
+      case 'panels': showView('panels'); break;
       case 'ui': if (arg !== UI) switchUI(); break;
       default: break;
     }
   });
   // F frames the piece, like the Frame button, unless you are typing
   document.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey && !/input|textarea|select/i.test(document.activeElement?.tagName || '')) $('#reset-view').click();
+    if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey && !/input|textarea|select/i.test(document.activeElement?.tagName || '')) { if (panelsFocused()) panels.frame(); else $('#reset-view').click(); }
   });
 }
 
@@ -3129,6 +3141,12 @@ renderAll();
 syncToggles();
 renderCollection();
 renderSaved();
+panels = initPanels({
+  THREE, OrbitControls, RoomEnvironment, zipSync, strToU8, h, store, toast, saveFile, stl, sliderCtl, chipsCtl, switchCtl, group, groupAct,
+  FILAMENTS, MATERIALS, PRINTERS, UI, desktop, slug, clamp, copyText, bedMesh, syncUndo,
+  getPrinter: () => state.printer,
+  setPrinter: (v) => { state.printer = v; store.set('weft.printer', v); if (state.tab === 'export') renderExport(); },
+});
 resize();
 if (state.tab !== 'object') setTab(state.tab);
 if (UI === 'v2' && location.hash) showView(location.hash.slice(1), true);

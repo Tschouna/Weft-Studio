@@ -8,7 +8,7 @@
 <!-- desktop:end -->
 <title>Weft Studio</title>
 <meta name="weft-ui" content="v2">
-<meta name="description" content="Parametric studio for 3D-printable planters, hanging and wall planters, vases, bowls, trays, boxes, lamps, lanterns and napkin rings.">
+<meta name="description" content="Parametric studio for 3D-printable planters, vases, bowls, trays, boxes, lamps, lanterns, napkin rings and tiled wall panels.">
 <script>
   // Someone who chose the classic design in this browser gets it straight away (the desktop app loads it itself).
   try { if (!window.weftDesktop && localStorage.getItem('weft.ui') === '"classic"') location.replace('classic.html' + location.hash); } catch (e) { /* storage blocked: stay here */ }
@@ -141,6 +141,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; text-wrap: balance; }
 body[data-view="collection"] .studio, body[data-view="guide"] .studio { display: none; }
 .view-page { height: 100%; overflow: auto; overscroll-behavior: contain; display: none; }
 body[data-view="collection"] #collection, body[data-view="guide"] #guide { display: block; }
+/* the Panels compartment: a second studio of its own, shown only in its view */
+body:not([data-view="panels"]) #panels { display: none !important; }
+body[data-view="panels"] #studio { display: none !important; }
+body[data-view="panels"] #mc-toggle { visibility: hidden; }
+.views .new { font: 600 9.5px/1 var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 3px 6px; }
 
 /* step rail: the five steps really are a sequence, so they keep their numbers */
 .steps { display: flex; flex-direction: column; gap: 4px; padding: 12px 8px; background: var(--rail); border-right: 1px solid var(--line); min-height: 0; overflow: auto; }
@@ -510,6 +515,7 @@ html.desktop ::-webkit-scrollbar-track { background: transparent; }
   </a>
   <nav class="views" aria-label="Views">
     <a href="#studio" data-view="studio" aria-current="page">Studio</a>
+    <a href="#panels" data-view="panels">Panels <span class="new">New</span></a>
     <a href="#collection" data-view="collection">Collection <span class="count" id="coll-count"></span></a>
     <a href="#guide" data-view="guide">Print guide</a>
   </nav>
@@ -608,6 +614,8 @@ html.desktop ::-webkit-scrollbar-track { background: transparent; }
     </div>
   </section>
 
+  <section class="studio" id="panels" aria-label="Panels"></section>
+
   <section class="view-page" id="collection" aria-labelledby="collection-title">
     <div class="page">
       <div class="page-head">
@@ -667,6 +675,17 @@ html.desktop ::-webkit-scrollbar-track { background: transparent; }
             <li>Hanging planters: thread cord or macramé up to Ø 4 mm through the teardrop holes under the rim.</li>
             <li>Wall planters print upright on their D shape. Hook the keyhole in the flat back over a screw with its head 4 mm out of the wall.</li>
             <li>Lanterns are for LED tealights only, never a real flame.</li>
+          </ul>
+        </article>
+        <article class="tip">
+          <h3>Wall panels</h3>
+          <ul>
+            <li>Every tile prints face up, flat on its back: no supports, no overhangs, whatever the pattern.</li>
+            <li>0.2 mm layers, 2–3 walls, 15% infill. Print one tile and check it against the next before the rest.</li>
+            <li>Dovetail and jigsaw tabs press down into their neighbours on a flat table. Print the fit test first and adjust Clearance if it is tight.</li>
+            <li>Hidden keys are bowties that press into pockets across each seam on the back.</li>
+            <li>Each tile's name and an up arrow are engraved in its back, and map.svg shows where every tile goes.</li>
+            <li>Two-tone tips: with an AMS the colour swaps by itself; without one, add a filament change at the height in print-settings.txt.</li>
           </ul>
         </article>
         <article class="tip">

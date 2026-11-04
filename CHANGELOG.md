@@ -1,5 +1,51 @@
 # Changelog
 
+## 2.3.0
+
+- **Panels (new compartment):**
+  - A second studio beside the first: **Panels** in the top bar (or **View → Panels**, Ctrl+P).
+  - Design a wall panel up to 2.4 m across. It slices itself into tiles that fit your printer's bed, and every tile prints face up with no supports.
+  - The 3D preview shows it on the wall, as separate tiles, or laid out on print beds. The light can rake low across the relief, and you can turn the panel round to see its back.
+- **Outlines and edges:**
+  - Five outlines: rectangle, rounded, arch, oval and hexagon.
+  - Four edges: a raised frame, a 45° bevel, a fade, or flush to the edge.
+  - You set the back's thickness.
+- **24 patterns:**
+  - Dune, Ripple, Chevron, Vortex, Sunburst, Contour, Ridge, Pyramid, Facet, Pixel, Basalt, Brick, Pebble, Scale, Deco, Tufted, Weave, Reed, Truchet, Moroccan, Trellis, Bubble, Halftone and Picture.
+  - Picture turns a photo of yours into relief.
+  - Seven of them cut right through as openwork, with solid rails kept along every seam.
+  - Each has Depth, Scale, Variation, Angle, Warp and Seed. You can also morph one pattern into another across the panel, fade it out towards one side, or invert it.
+- **Slicing into tiles:**
+  - By default the panel uses the fewest tiles that fit the bed, turning them a quarter if that fits better. You can also set the tiles across and down yourself.
+  - Seams are straight. On patterns with straight grooves they move into the grooves; on cell patterns (Basalt, Pebble, Brick and others) they can follow the cells, so the joins vanish into the relief.
+  - Joints:
+    - **Dovetail** or **Jigsaw** tabs through the full thickness, with adjustable tab size and clearance.
+    - **Hidden keys:** bowties that press into pockets across each seam on the back.
+    - **None.**
+  - **Download a fit test:** two small pieces with one joint, to dial in the clearance first.
+- **The back:**
+  - Each tile's name and an up arrow are engraved in its back, mirrored so they read from behind.
+  - Hanging, per tile:
+    - Mounting tape.
+    - Pockets for 10 × 3 mm magnets.
+    - Screw slots.
+    - **Halo stand-offs:** printed pucks that hold the panel 16 mm off the wall for an LED strip behind it.
+- **Finish:**
+  - Any filament colour.
+  - **Two-tone tips:** the top of the relief becomes its own part in a second colour, for an AMS or one filament change.
+  - Matte, satin or silk preview.
+  - A choice of wall colours, and a backlight preview with six LED colours.
+- **Export:**
+  - Download a 3MF per tile (each opens on its own plate), one 3MF with every tile, or an STL per tile.
+  - The loose parts (keys, pucks) come with it.
+  - **map.svg** shows at actual size where every tile, screw or washer goes.
+  - **print-settings.txt** has the tile layout, print settings, joining and hanging steps, and the design code.
+  - Also: a cover image, Copy design code, and Save to my panels.
+- **Starting panels:** 16 ready-made panels (Dune, Basalt, Atlas, Sunrise, Chester, Riad, Kiln, Loom, Tidal, Pixel, Maelstrom, Halftone, Shingle, Kinetic, Truchet, Odeon), and **Shuffle** for a random one in your size.
+- **Fixes:**
+  - Opening the app on the Collection or Guide no longer logs a warning from the hidden studio stage.
+- **Tests:** `npm test` now also checks panels. Every tile and part of every starting panel, every pattern and a batch of random panels must come out closed, fit the bed, and keep their tabs clear of their sockets.
+
 ## 2.2.0
 
 - **Candle holder (new object):**

@@ -227,6 +227,7 @@ function buildMenu() {
         { label: 'Turntable', click: () => send('toggle', 'spin') },
         { label: 'Light or Dark', click: () => send('theme') },
         { type: 'separator' },
+        { label: 'Panels', accelerator: 'CmdOrCtrl+P', click: () => send('panels') },
         { label: 'Collection', click: () => send('collection') },
         { label: 'Print Guide', click: () => send('guide') },
         {

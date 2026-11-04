@@ -60,6 +60,15 @@ const step = (m) => console.log(new Date().toISOString().slice(11, 19), m);
   await ui('classic');
   await win.screenshot({ path: path.join(OUT, 'app-classic.png') });
   await ui('v2');
+  // the Panels compartment: open it from the View menu and export its files
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'panels'));
+  await win.waitForSelector('#pn-readout strong', { timeout: 180000 });
+  await win.waitForFunction(() => !document.querySelector('#panels .busy').classList.contains('show'), null, { timeout: 180000 });
+  step('panels: ' + (await win.textContent('#pn-readout')).replace(/\s+/g, ' '));
+  await win.screenshot({ path: path.join(OUT, 'app-panels.png') });
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'export'));
+  await win.waitForFunction(() => /panel-files/.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 600000 });
+  step('panel export: ' + (await win.textContent('#toast')));
   console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no errors');
   await app.close();
 })().catch((e) => { console.error(e); process.exit(1); });

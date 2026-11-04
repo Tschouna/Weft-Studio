@@ -1,7 +1,7 @@
 {
   "name": "weft-studio",
   "productName": "Weft Studio",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Parametric studio for 3D-printable homeware: planters, vases, bowls, trays, boxes, lamps, lanterns and more.",
   "main": "electron/main.js",
   "author": "Jonah Scherrer",
@@ -14,7 +14,7 @@
     "dist": "npm run vendor && electron-builder --win",
     "dist:dir": "npm run vendor && electron-builder --win --dir",
     "release": "npm run vendor && electron-builder --win --publish always",
-    "test": "node test/engine.mjs",
+    "test": "node test/engine.mjs && node test/panel.mjs",
     "set-repo": "node scripts/set-repo.mjs"
   },
   "dependencies": {

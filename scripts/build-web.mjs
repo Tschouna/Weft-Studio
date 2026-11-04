@@ -40,5 +40,5 @@ writeFileSync(join(root, 'web/index.html'), fragment);
 writeFileSync(join(root, 'web/standalone.html'), html);
 // the classic (1.x) design, a whole page of its own beside the published one
 writeFileSync(join(root, 'web/classic.html'), forWeb('classic.html'));
-for (const f of ['app.js', 'engine.js', 'presets.js', 'worker.js']) cpSync(join(root, 'app', f), join(root, 'web', f));
+for (const f of ['app.js', 'engine.js', 'presets.js', 'worker.js', 'panel.js', 'panels.js', 'panel-worker.js']) cpSync(join(root, 'app', f), join(root, 'web', f));
 console.log('web/ written: index.html (for publishing), standalone.html (open from a local server), classic.html');
