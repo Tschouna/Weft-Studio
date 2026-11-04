@@ -418,7 +418,8 @@ export function normalizePanel(src) {
   if (!PANEL_PATTERNS[P.pattern]) P.pattern = 'dune';
   if (!PANEL_SHAPES[P.shape]) P.shape = 'rect';
   P.width = clamp(+P.width || 480, 80, 2400); P.height = clamp(+P.height || 320, 80, 2400);
-  P.base = clamp(+P.base || 5, 2.4, 14); P.depth = clamp(+P.depth, 0, P.mode === 'ribs' ? 60 : 30); P.scale = clamp(+P.scale || 60, 6, 600);
+  const terrain = !!PANEL_PATTERNS[P.pattern]?.terrain;
+  P.base = clamp(+P.base || 5, 2.4, 14); P.depth = clamp(+P.depth, 0, terrain ? 400 : P.mode === 'ribs' ? 60 : 30); P.scale = clamp(+P.scale || 60, 6, 600);
   if (P.mode === 'ribs') {
     P.ribs.width = clamp(+P.ribs.width || 6, 1.6, 30); P.ribs.gap = clamp(+P.ribs.gap || 6, 1.6, 40);
     P.ribs.angle = clamp(+P.ribs.angle || 0, -90, 90); P.ribs.bend = clamp(+P.ribs.bend || 0, 0, 1); P.ribs.floor = clamp(+P.ribs.floor, 0.04, 0.8);
@@ -597,12 +598,13 @@ function compile(P, img, dem) {
     else t = base + depth * h;
     if (layerMode) {
       // rib and block tops ease down at 45° to just above the back at the outline; a frame joins them
-      R.t = blockMode ? Math.max(base + 0.6, t) : Math.max(base + 0.6, Math.min(t, base + 0.6 + Math.max(0, d)));
+      R.t = blockMode || pat.terrain ? Math.max(base + 0.6, t) : Math.max(base + 0.6, Math.min(t, base + 0.6 + Math.max(0, d)));
       const f = ribMode ? ribAt(x, y) : blockF;
       R.r = frame ? Math.max(f, ew - d) : f;
       R.c = 1;
     } else {
-      R.t = Math.min(t, pd.edgeLow + Math.max(0, d));
+      // a terrain ends in straight sides like a model of the land; other reliefs ease off at the very edge
+      R.t = pat.terrain ? t : Math.min(t, pd.edgeLow + Math.max(0, d));
       R.c = cutMode ? Math.max(c, band - d) : 1;
       R.r = 1;
     }
@@ -1419,6 +1421,7 @@ export function panelChecks(src, plan, built) {
   const [bw, bh] = plan.rotated ? [bed[1], bed[0]] : bed;
   const n = plan.tiles.filter((t) => !t.empty).length;
   if (max[0] + plan.protrude > bw - 4 || max[1] + plan.protrude > bh - 4) out.push({ level: 'bad', text: `Tiles are up to ${Math.round(max[0] + plan.protrude)} × ${Math.round(max[1] + plan.protrude)} mm; the bed takes ${bw} × ${bh}. Use more tiles.` });
+  if (bed[2] && P.base + P.depth > bed[2] - 2) out.push({ level: 'bad', text: `Tiles stand ${Math.round(P.base + P.depth)} mm tall and the printer builds up to ${bed[2]} mm. Lower Depth to ${Math.floor(bed[2] - 2 - P.base)} mm or less.` });
   else out.push({ level: 'ok', text: `${n} tile${n > 1 ? 's' : ''}, each fits the ${bed[0]} × ${bed[1]} mm bed${plan.rotated ? ' turned a quarter' : ''}.` });
   out.push({ level: 'ok', text: 'No overhangs: every tile prints face up, flat on its back, without supports.' });
   if (n > 36) out.push({ level: 'warn', text: `${n} tiles make a big download. Draft detail keeps the files smaller, or use a larger printer.` });

@@ -6,7 +6,7 @@
 //  5. random panels, ribs included, build closed
 //  6. elevation files (GeoTIFF of every kind, XYZ, ASCII grid, zip) read back exactly and stitch,
 //     and terrain and diffuser panels build closed
-import { buildPanel, panelDefaults, normalizePanel, planPanel, PANEL_PATTERNS, PANEL_PATTERN_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
+import { buildPanel, panelDefaults, normalizePanel, planPanel, panelChecks, PANEL_PATTERNS, PANEL_PATTERN_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
 import { PANEL_PRESETS } from '../app/panels.js';
 import { readDEM, mosaic } from '../app/dem.js';
 import { zlibSync, zipSync, strToU8 } from 'fflate';
@@ -214,6 +214,7 @@ if (run(6)) {
     ['terrain relief, map-shaped', { pattern: 'terrain', width: 450, height: 350, depth: 22, edge: 'flush' }],
     ['terrain with lake, terraces, snowy tips', { pattern: 'terrain', width: 450, height: 350, depth: 22, terrain: { water: 0.25, steps: 9 }, finish: { twoTone: true, toneAt: 0.7 }, mount: 'magnets' }],
     ['terrain as ribs', { pattern: 'terrain', mode: 'ribs', width: 450, height: 350, depth: 30, ribs: { width: 4, gap: 4 } }],
+    ['a tall mountain, 160 mm, straight sides', { pattern: 'terrain', width: 520, height: 520, depth: 160, base: 6, edge: 'flush', finish: { twoTone: true, toneAt: 0.8 } }],
   ]) {
     const P = panelDefaults(over);
     const r = buildPanel(P, { res: 1.2, bed: [256, 256], final: true, dem });
@@ -223,6 +224,11 @@ if (run(6)) {
     console.log(`  ${bad ? 'FAIL' : 'ok  '} ${name}: ${r.tiles.length} tiles${bad ? `, ${bad} bad bodies` : ''}`);
     if (bad) fail(name);
   }
+  // tiles taller than the printer are flagged
+  const tall = normalizePanel(panelDefaults({ pattern: 'terrain', width: 520, height: 520, depth: 300 }));
+  const flagged = panelChecks(tall, planPanel(tall, [256, 256, 256]), null).some((c) => c.level === 'bad' && /mm tall/.test(c.text));
+  console.log(`  ${flagged ? 'ok  ' : 'FAIL'} a 306 mm tall tile is flagged on a 256 mm printer`);
+  if (!flagged) fail('printer height check');
 }
 
 console.log(failures ? `\n${failures} panel check(s) failed` : '\nall panel checks passed');

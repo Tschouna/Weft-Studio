@@ -77,7 +77,9 @@ export function initPanels(api) {
   };
   const history = { stack: [JSON.stringify(ps.P)], at: 0 };
   const printer = () => PRINTERS.find((q) => q.id === api.getPrinter()) || PRINTERS[0];
-  const bed = () => printer().bed.slice(0, 2);
+  // width, depth and height of the build volume
+  const bed = () => printer().bed.slice(0, 3);
+  const maxDepth = () => Math.max(10, Math.floor(bed()[2] - 2 - P().base));
   const P = () => ps.P;
 
   // ---------------------------------------------------------------- builder (worker, or here when workers are blocked)
@@ -689,7 +691,7 @@ export function initPanels(api) {
       pat.terrain ? group('Elevation model', 'A real landscape. From swisstopo: swissALTI3D as GeoTIFF or XYZ (also zipped), or DHM25 and other ASCII grids. Pick several neighbouring tiles at once and they are stitched by their coordinates.', ...terrainCtl()) : null,
       img ? group('Picture', pat.image ? 'The relief follows its brightness: light areas stand out.' : 'Without a picture the dots follow a gradient from the origin.', pictureCtl()) : null,
       group('Relief', null,
-        sliderCtl('pn-depth', cut ? 'Bar relief' : ribs ? 'Rib depth' : 'Depth', { min: 0, max: cut ? 10 : ribs ? 60 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, local()),
+        sliderCtl('pn-depth', cut ? 'Bar relief' : ribs ? 'Rib depth' : 'Depth', { min: 0, max: cut ? 10 : pat.terrain ? maxDepth() : ribs ? 60 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, { local: true, after: () => { commit(true); rebuild(false); if (pat.terrain) refreshTerrainNote(); } }),
         sliderCtl('pn-scale', ribs ? 'Wave size' : 'Scale', { min: 8, max: ribs ? 600 : 240, step: 1, fmt: mmf }, () => Pn.scale, (v) => { Pn.scale = v; }, local()),
         pat.image || pat.terrain ? null : sliderCtl('pn-vary', pat.blocks ? 'Tilt' : 'Variation', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.vary, (v) => { Pn.vary = v; }, local()),
         pat.blocks && Pn.mode === 'relief' ? sliderCtl('pn-groove', 'Groove between blocks', { min: 1.2, max: 8, step: 0.1, fmt: mmf }, () => Pn.groove, (v) => { Pn.groove = v; }, local()) : null,
@@ -754,10 +756,14 @@ export function initPanels(api) {
     if (d) {
       const m = d.meta, perM = Math.max(Pn.width / m.widthM, Pn.height / m.heightM);
       const relief = (m.zmax - m.zmin) * perM, ratio = Math.round(1000 / perM);
-      out.push(h('p', { class: 'note' }, `${m.tiles} tile${m.tiles > 1 ? 's' : ''} · ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)} · ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m. On this panel that is 1 : ${ratio.toLocaleString()}, so at true scale the relief would be ${relief < 1 ? relief.toFixed(2) : relief.toFixed(1)} mm: Depth ${Pn.depth} mm makes it ×${Math.max(1, Pn.depth / Math.max(relief, 1e-3)).toFixed(1)} taller.`));
+      out.push(h('p', { class: 'note pn-terrain-note' }, terrainNote()));
       out.push(h('div', { class: 'btn-row' },
         h('button', { class: 'btn', type: 'button', title: 'Keep the width and set the height so the whole map fits with nothing cut off', onclick: () => { Pn.height = clamp(Math.round((Pn.width * m.heightM) / m.widthM), 80, 2400); commit(); rebuild(); renderAll(); } }, 'Shape the panel like the map'),
-        h('button', { class: 'btn', type: 'button', title: 'Depth at the true scale of the map', onclick: () => { Pn.depth = clamp(+relief.toFixed(1), 0.5, 30); commit(); rebuild(); renderPane('pattern'); } }, 'True scale depth')));
+        h('button', { class: 'btn', type: 'button', title: 'Depth at the true scale of the map, as far as the printer is tall', onclick: () => {
+          const want = +relief.toFixed(1), most = maxDepth();
+          Pn.depth = clamp(want, 0.5, most); commit(); rebuild(); renderPane('pattern');
+          if (want > most) toast(`True scale is ${Math.round(want)} mm deep; your printer takes ${most} mm, so it is ${most} mm. A smaller area or a larger panel gets closer.`);
+        } }, 'True scale depth')));
     }
     out.push(
       sliderCtl('pn-water', 'Water level', { min: 0, max: 0.9, step: 0.01, fmt: (v) => (v ? (d ? `${Math.round(d.meta.zmin + v * (d.meta.zmax - d.meta.zmin)).toLocaleString()} m` : pct(v)) : 'none') }, () => T.water, (v) => { T.water = v; }, local()),
@@ -765,6 +771,16 @@ export function initPanels(api) {
       h('p', { class: 'note' }, 'Everything below the water level prints flat, like a lake. Terraces turn the slopes into steps like a contour map; with Two-tone tips the peaks come out snowy.'));
     return out;
   }
+  // how the chosen Depth compares with the real relief at this panel's scale
+  function terrainNote() {
+    const Pn = P(), d = ps.dem;
+    if (!d) return '';
+    const m = d.meta, perM = Math.max(Pn.width / m.widthM, Pn.height / m.heightM);
+    const relief = (m.zmax - m.zmin) * perM, ratio = Math.round(1000 / perM), k = Pn.depth / Math.max(relief, 1e-3);
+    const how = k > 1.08 ? `Depth ${Pn.depth} mm stretches it ${k.toFixed(1)}× taller than true.` : k < 0.92 ? `Depth ${Pn.depth} mm squashes it to ${k < 0.5 ? `1/${Math.round(1 / k)}` : `${Math.round(k * 100)}%`} of its true height.` : `Depth ${Pn.depth} mm is true scale.`;
+    return `${m.tiles} tile${m.tiles > 1 ? 's' : ''} · ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)} · ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m. On this panel that is 1 : ${ratio.toLocaleString()}, so the true relief is ${relief < 1 ? relief.toFixed(2) : Math.round(relief)} mm tall. ${how}`;
+  }
+  function refreshTerrainNote() { const n = el.panes.pattern.querySelector('.pn-terrain-note'); if (n) n.textContent = terrainNote(); }
   const fmtLen = (m) => (m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.round(m)} m`);
   function drawDEM(cv, d) {
     const g = cv.getContext('2d'), w = cv.width, hh = cv.height, img = g.createImageData(w, hh);
@@ -791,6 +807,9 @@ export function initPanels(api) {
       ps.dem = { id: Date.now(), w: m.w, h: m.h, data: m.data, meta: { widthM: m.widthM, heightM: m.heightM, zmin: m.zmin, zmax: m.zmax, tiles: tiles.length } };
       const Pn = P();
       if (!PANEL_PATTERNS[Pn.pattern].terrain) { Pn.pattern = 'terrain'; if (Pn.mode === 'cut') Pn.mode = 'relief'; tunePattern(Pn, 'terrain'); }
+      // true scale where that is printable and still reads as a panel; mountains are usually far taller than that
+      const perM = Math.max(Pn.width / m.widthM, Pn.height / m.heightM), relief = (m.zmax - m.zmin) * perM;
+      Pn.depth = Math.round(clamp(relief, 8, Math.min(maxDepth(), 0.35 * Math.min(Pn.width, Pn.height))));
       saveDEM();
       commit(); rebuild(); renderAll();
       toast(`${tiles.length} tile${tiles.length > 1 ? 's' : ''}: ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)}, ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m${bad.length ? ` · ${bad.length} file${bad.length > 1 ? 's' : ''} skipped` : ''}`);

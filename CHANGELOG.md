@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.1
+
+- **Terrain stands out properly:**
+  - Mountains were squashed: Depth stopped at 30 mm, so the Matterhorn on a 52 cm panel came out at a fourteenth of its true height.
+  - Terrain can now be as deep as your printer is tall. Tiles taller than the printer are flagged in the print check.
+  - Loading a model picks a Depth that shows the landscape: true scale where that's printable, up to about a third of the panel's size.
+  - The readout says plainly whether Depth squashes the relief or stretches it, and by how much.
+  - **True scale depth** goes as far as your printer allows and says so when it can't reach true scale.
+  - Terrain now ends in straight sides like a terrain model, instead of being bevelled at the edges.
+
 ## 2.4.0
 
 - **Diffuser (new pattern):**
