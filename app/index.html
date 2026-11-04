@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- desktop:begin -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' data: blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://wms.geo.admin.ch; font-src 'self'; worker-src 'self' blob:; connect-src 'self' data: blob: https://data.geo.admin.ch https://api3.geo.admin.ch">
 <!-- desktop:end -->
 <title>Weft Studio</title>
 <meta name="weft-ui" content="v2">
@@ -686,7 +686,7 @@ html.desktop ::-webkit-scrollbar-track { background: transparent; }
             <li>Hidden keys are bowties that press into pockets across each seam on the back.</li>
             <li>Wave ribs stand straight up, so they need no supports. For ribs over 30 mm tall, slow the outer walls a little.</li>
             <li>Diffuser blocks and tall terrain print solid: allow for the weight, and keep 15% infill.</li>
-            <li>Terrain: swisstopo's swissALTI3D tiles (GeoTIFF or XYZ) load straight from their .zip. Load neighbouring tiles together and they join up.</li>
+            <li>Terrain: type a Swiss peak or place under From swisstopo, frame the area on the map and fetch the heights. Files you download yourself (swissALTI3D GeoTIFF or XYZ, even zipped) load too, and neighbouring tiles join up.</li>
             <li>Each tile's name and an up arrow are engraved in its back. The assembly map shows where every tile goes, and the wall template is the same at actual size.</li>
             <li>Two-tone tips: with an AMS the colour swaps by itself; without one, add a filament change at the height in print-settings.txt.</li>
           </ul>

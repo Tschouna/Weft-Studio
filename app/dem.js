@@ -251,7 +251,8 @@ export function readASC(bytes) {
 // ---------------------------------------------------------------- stitching
 // Tiles onto one grid at most `max` samples on its long side, averaging the samples that fall in each cell.
 // Returns { w, h, data (0..1, NaN filled), zmin, zmax, widthM, heightM, cell, tiles }.
-export function mosaic(tiles, max = 1400) {
+// With rect ({ e0, e1, n0, n1 } in the tiles' units) only that area is kept.
+export function mosaic(tiles, max = 1400, rect = null) {
   if (!tiles.length) throw new Error('No elevation data');
   // tiles without coordinates sit side by side, left to right
   let X0 = Infinity, X1 = -Infinity, Y0 = Infinity, Y1 = -Infinity;
@@ -261,36 +262,53 @@ export function mosaic(tiles, max = 1400) {
     X0 = Math.min(X0, t.x0); X1 = Math.max(X1, t.x0 + t.w * t.cell);
     Y1 = Math.max(Y1, t.y1); Y0 = Math.min(Y0, t.y1 - t.h * (t.cellY || t.cell));
   }
-  const fine = Math.min(...tiles.map((t) => t.cell));
+  const m = mosaicInto(rect || { e0: X0, e1: X1, n0: Y0, n1: Y1 }, Math.min(...tiles.map((t) => t.cell)), max);
+  for (const t of tiles) m.add(t);
+  return m.finish();
+}
+// The same, a tile at a time, for a rectangle known beforehand: each tile can be dropped once added.
+export function mosaicInto(rect, fine, max = 1400) {
+  const X0 = rect.e0, X1 = rect.e1, Y0 = rect.n0, Y1 = rect.n1;
   const cell = Math.max(fine, Math.max(X1 - X0, Y1 - Y0) / max);
   const w = Math.max(2, Math.round((X1 - X0) / cell)), h = Math.max(2, Math.round((Y1 - Y0) / cell));
   const sum = new Float64Array(w * h), cnt = new Uint32Array(w * h);
-  for (const t of tiles) {
-    const cy = t.cellY || t.cell;
-    for (let j = 0; j < t.h; j++) {
-      const gy = Math.min(h - 1, Math.max(0, Math.floor((Y1 - (t.y1 - (j + 0.5) * cy)) / cell)));
-      for (let i = 0; i < t.w; i++) {
-        const z = t.data[j * t.w + i];
-        if (z !== z) continue;
-        const gx = Math.min(w - 1, Math.max(0, Math.floor((t.x0 + (i + 0.5) * t.cell - X0) / cell)));
-        sum[gy * w + gx] += z; cnt[gy * w + gx]++;
+  let count = 0;
+  return {
+    add(t) {
+      count++;
+      const cy = t.cellY || t.cell;
+      for (let j = 0; j < t.h; j++) {
+        const ny = t.y1 - (j + 0.5) * cy;
+        if (ny < Y0 || ny > Y1) continue;
+        const gy = Math.min(h - 1, Math.max(0, Math.floor((Y1 - ny) / cell)));
+        for (let i = 0; i < t.w; i++) {
+          const z = t.data[j * t.w + i];
+          if (z !== z) continue;
+          const ex = t.x0 + (i + 0.5) * t.cell;
+          if (ex < X0 || ex > X1) continue;
+          const gx = Math.min(w - 1, Math.max(0, Math.floor((ex - X0) / cell)));
+          sum[gy * w + gx] += z; cnt[gy * w + gx]++;
+        }
       }
-    }
-  }
-  const data = new Float32Array(w * h);
-  let zmin = Infinity, zmax = -Infinity, holes = 0;
-  for (let k = 0; k < w * h; k++) {
-    if (cnt[k]) { const z = sum[k] / cnt[k]; data[k] = z; if (z < zmin) zmin = z; if (z > zmax) zmax = z; } else { data[k] = NaN; holes++; }
-  }
-  if (!Number.isFinite(zmin)) throw new Error('The files hold no heights');
-  // gaps (between tiles that do not touch, or empty cells when upsampling) take the nearest heights
-  if (holes) fillHoles(data, w, h);
-  const range = Math.max(1e-6, zmax - zmin);
-  for (let k = 0; k < w * h; k++) data[k] = (data[k] - zmin) / range;
-  return { w, h, data, zmin, zmax, widthM: X1 - X0, heightM: Y1 - Y0, cell, tiles: tiles.length, x0: X0, y1: Y1 };
+    },
+    finish() {
+      const data = new Float32Array(w * h);
+      let zmin = Infinity, zmax = -Infinity, holes = 0;
+      for (let k = 0; k < w * h; k++) {
+        if (cnt[k]) { const z = sum[k] / cnt[k]; data[k] = z; if (z < zmin) zmin = z; if (z > zmax) zmax = z; } else { data[k] = NaN; holes++; }
+      }
+      if (!Number.isFinite(zmin)) throw new Error('The files hold no heights');
+      // small gaps (between tiles, or empty cells when upsampling) take the heights round them; large empty
+      // areas, such as across a border, lie flat at the lowest height
+      if (holes) fillHoles(data, w, h, zmin);
+      const range = Math.max(1e-6, zmax - zmin);
+      for (let k = 0; k < w * h; k++) data[k] = (data[k] - zmin) / range;
+      return { w, h, data, zmin, zmax, widthM: X1 - X0, heightM: Y1 - Y0, cell, tiles: count, x0: X0, y1: Y1, empty: holes / (w * h) };
+    },
+  };
 }
-function fillHoles(d, w, h) {
-  for (let pass = 0; pass < 64; pass++) {
+function fillHoles(d, w, h, low) {
+  for (let pass = 0; pass < 6; pass++) {
     let left = 0;
     for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
       const k = j * w + i;
@@ -304,5 +322,5 @@ function fillHoles(d, w, h) {
     }
     if (!left) return;
   }
-  for (let k = 0; k < d.length; k++) if (d[k] !== d[k]) d[k] = 0;
+  for (let k = 0; k < d.length; k++) if (d[k] !== d[k]) d[k] = low;
 }

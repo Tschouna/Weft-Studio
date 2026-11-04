@@ -5,6 +5,7 @@ import {
   previewRes, panelChecks, outlinePath, _compile, fitTestPanel,
 } from './panel.js';
 import { readDEM, mosaic, DEM_EXTENSIONS } from './dem.js';
+import { searchPlaces, fetchTerrain, areaRect, tilesFor, mapURL, TILE_MB } from './swisstopo.js';
 import { deflateSync, inflateSync } from 'fflate';
 
 // Starting points: each one a whole panel, ready to slice.
@@ -74,6 +75,11 @@ export function initPanels(api) {
     plan: null,
     started: false,
     active: false,
+    // the place picked for a swisstopo download: { name, type, e, n, km, fine }
+    geo: store.get('weft.panel.geo', null),
+    geoQuery: '',
+    geoHits: null,
+    geoBusy: null,
   };
   const history = { stack: [JSON.stringify(ps.P)], at: 0 };
   const printer = () => PRINTERS.find((q) => q.id === api.getPrinter()) || PRINTERS[0];
@@ -681,6 +687,8 @@ export function initPanels(api) {
         grid,
         cut ? h('p', { class: 'note' }, 'Openwork cuts right through, so light and the wall show through. Every tile keeps solid rails along its seams and round its joints and pockets.') : null,
         ribs ? h('p', { class: 'note' }, 'Thin parallel ribs stand on the back, each one following the pattern\'s height. Broad patterns read best: Silk, Bloom, Lens, Dune, Ripple, Vortex, Contour.') : null),
+      pat.terrain ? group('From swisstopo', 'Type a peak, a place or coordinates, frame the area, and Weft downloads the swissALTI3D heights and stitches them. Switzerland and Liechtenstein.', ...swisstopoCtl()) : null,
+      pat.terrain ? group('Elevation model', 'The landscape on the panel. You can also load files you downloaded yourself: swissALTI3D as GeoTIFF or XYZ (also zipped), or DHM25 and other ASCII grids. Neighbouring tiles are stitched by their coordinates.', ...terrainCtl()) : null,
       ribs ? group('Ribs', 'Every rib is a straight-sided wall, so it prints crisp without supports.',
         sliderCtl('pn-rw', 'Rib width', { min: 1.6, max: 20, step: 0.2, fmt: mmf }, () => Pn.ribs.width, (v) => { Pn.ribs.width = v; }, local()),
         sliderCtl('pn-rg', 'Gap', { min: 1.6, max: 30, step: 0.2, fmt: mmf }, () => Pn.ribs.gap, (v) => { Pn.ribs.gap = v; }, local()),
@@ -688,7 +696,6 @@ export function initPanels(api) {
         sliderCtl('pn-rb', 'Bend', { min: 0, max: 1, step: 0.01, fmt: (v) => (v ? pct(v) : 'straight') }, () => Pn.ribs.bend, (v) => { Pn.ribs.bend = v; }, local()),
         sliderCtl('pn-rf', 'Lowest rib', { min: 0.04, max: 0.8, step: 0.01, fmt: (v) => mmf(v * Pn.depth) }, () => Pn.ribs.floor, (v) => { Pn.ribs.floor = v; }, local()),
         h('p', { class: 'note' }, `${Math.round(Pn.width / (Pn.ribs.width + Pn.ribs.gap))} ribs across. Straight upright or level ribs keep the seams in the gaps between them.`)) : null,
-      pat.terrain ? group('Elevation model', 'A real landscape. From swisstopo: swissALTI3D as GeoTIFF or XYZ (also zipped), or DHM25 and other ASCII grids. Pick several neighbouring tiles at once and they are stitched by their coordinates.', ...terrainCtl()) : null,
       img ? group('Picture', pat.image ? 'The relief follows its brightness: light areas stand out.' : 'Without a picture the dots follow a gradient from the origin.', pictureCtl()) : null,
       group('Relief', null,
         sliderCtl('pn-depth', cut ? 'Bar relief' : ribs ? 'Rib depth' : 'Depth', { min: 0, max: cut ? 10 : pat.terrain ? maxDepth() : ribs ? 60 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, { local: true, after: () => { commit(true); rebuild(false); if (pat.terrain) refreshTerrainNote(); } }),
@@ -778,9 +785,135 @@ export function initPanels(api) {
     const m = d.meta, perM = Math.max(Pn.width / m.widthM, Pn.height / m.heightM);
     const relief = (m.zmax - m.zmin) * perM, ratio = Math.round(1000 / perM), k = Pn.depth / Math.max(relief, 1e-3);
     const how = k > 1.08 ? `Depth ${Pn.depth} mm stretches it ${k.toFixed(1)}× taller than true.` : k < 0.92 ? `Depth ${Pn.depth} mm squashes it to ${k < 0.5 ? `1/${Math.round(1 / k)}` : `${Math.round(k * 100)}%`} of its true height.` : `Depth ${Pn.depth} mm is true scale.`;
-    return `${m.tiles} tile${m.tiles > 1 ? 's' : ''} · ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)} · ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m. On this panel that is 1 : ${ratio.toLocaleString()}, so the true relief is ${relief < 1 ? relief.toFixed(2) : Math.round(relief)} mm tall. ${how}`;
+    return `${m.source ? `${m.source} · ` : ''}${m.tiles} tile${m.tiles > 1 ? 's' : ''} · ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)} · ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m. On this panel that is 1 : ${ratio.toLocaleString()}, so the true relief is ${relief < 1 ? relief.toFixed(2) : Math.round(relief)} mm tall. ${how}`;
   }
   function refreshTerrainNote() { const n = el.panes.pattern.querySelector('.pn-terrain-note'); if (n) n.textContent = terrainNote(); }
+  // ---------------------------------------------------------------- swisstopo downloads
+  const GEO_MAX = { 2: 150, 0.5: 9 };
+  const geoAspect = () => P().width / P().height;
+  const geoRect = () => areaRect(ps.geo.e, ps.geo.n, ps.geo.km, geoAspect());
+  const geoGsd = () => (ps.geo.fine && ps.geo.km <= 1.5 ? 0.5 : 2);
+  const fmtKm = (m) => `${+(m / 1000).toFixed(m < 10000 ? 1 : 0)}`;
+  const geoSize = (r) => `${fmtKm(r.e1 - r.e0)} × ${fmtKm(r.n1 - r.n0)} km`;
+  const saveGeo = () => store.set('weft.panel.geo', ps.geo);
+  function swisstopoCtl() {
+    const q = h('input', { class: 'text', type: 'search', placeholder: 'A peak, a place, or coordinates', value: ps.geoQuery, 'aria-label': 'Place or coordinates', spellcheck: 'false', autocomplete: 'off', enterkeyhint: 'search' });
+    const go = h('button', { class: 'btn pn-geo-go', type: 'button' }, 'Search');
+    const hits = h('div', { class: 'pn-hits', 'aria-label': 'Places found' });
+    const area = h('div', { class: 'pn-geo' });
+    const search = async () => {
+      const text = q.value.trim();
+      ps.geoQuery = text;
+      if (!text) { q.focus(); return; }
+      go.disabled = true; go.textContent = 'Searching…';
+      try {
+        ps.geoHits = (await searchPlaces(text)).slice(0, 6);
+        if (!ps.geoHits.length) toast('Nothing by that name. Try another spelling, or type coordinates.');
+        // typed coordinates need no list
+        else if (ps.geoHits[0].kind === 'coordinates') { go.disabled = false; go.textContent = 'Search'; pickPlace(ps.geoHits[0]); return; }
+      } catch (e) { console.warn(e); ps.geoHits = null; toast(offline(e)); }
+      go.disabled = false; go.textContent = 'Search';
+      paintHits();
+    };
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } });
+    q.addEventListener('input', () => { ps.geoQuery = q.value; });
+    go.addEventListener('click', search);
+    function paintHits() {
+      hits.replaceChildren(...(ps.geoHits || []).map((p) => h('button', { class: 'pn-hit', type: 'button', onclick: () => pickPlace(p) },
+        h('b', {}, p.name), h('small', {}, [p.type, p.where].filter(Boolean).join(' · ')))));
+      hits.hidden = !(ps.geoHits && ps.geoHits.length);
+    }
+    function pickPlace(p) {
+      const was = ps.geo || {};
+      ps.geo = { name: p.name, type: p.type, e: Math.round(p.e), n: Math.round(p.n), km: was.km || 3, fine: !!was.fine };
+      ps.geoHits = null;
+      saveGeo(); paintHits(); paintArea();
+    }
+    function paintArea() {
+      if (!ps.geo) { area.replaceChildren(); return; }
+      const G = ps.geo;
+      // the national map round the area; a click moves the area there
+      const img = h('img', { alt: '', draggable: 'false', decoding: 'async' });
+      const box = h('div', { class: 'pn-geo-box' });
+      const pin = h('div', { class: 'pn-geo-pin' });
+      const map = h('div', { class: 'pn-geo-map', title: 'Click to move the area there' }, img, box, pin,
+        h('span', { class: 'pn-geo-credit' }, '© swisstopo'));
+      let shown = null, want = null, timer = 0;
+      const viewFor = () => {
+        const r = geoRect(), s = Math.max((r.e1 - r.e0) / 4, (r.n1 - r.n0) / 3) * 2.1;
+        return { e0: G.e - 2 * s, e1: G.e + 2 * s, n0: G.n - 1.5 * s, n1: G.n + 1.5 * s };
+      };
+      const place = () => {
+        const v = shown || viewFor(), r = geoRect(), W = v.e1 - v.e0, H = v.n1 - v.n0;
+        Object.assign(box.style, { left: `${((r.e0 - v.e0) / W) * 100}%`, top: `${((v.n1 - r.n1) / H) * 100}%`, width: `${((r.e1 - r.e0) / W) * 100}%`, height: `${((r.n1 - r.n0) / H) * 100}%` });
+        Object.assign(pin.style, { left: `${((G.e - v.e0) / W) * 100}%`, top: `${((v.n1 - G.n) / H) * 100}%` });
+      };
+      const load = () => {
+        const v = viewFor(), url = mapURL(v, 640, 480);
+        if (want === url) return;
+        want = url;
+        const im = new Image();
+        im.onload = () => { if (want !== url) return; img.src = url; shown = v; map.classList.remove('off'); place(); };
+        im.onerror = () => { if (want === url) map.classList.add('off'); };
+        im.src = url;
+      };
+      const later = () => { clearTimeout(timer); timer = setTimeout(load, 260); };
+      map.addEventListener('click', (e) => {
+        if (!shown || ps.geoBusy) return;
+        const b = map.getBoundingClientRect(), v = shown;
+        G.e = Math.round(v.e0 + ((e.clientX - b.left) / b.width) * (v.e1 - v.e0));
+        G.n = Math.round(v.n1 - ((e.clientY - b.top) / b.height) * (v.n1 - v.n0));
+        G.moved = true;
+        saveGeo(); place(); sum(); later();
+      });
+      const fineRow = switchCtl('pn-geo-fine', 'Finest detail (0.5 m grid)', () => G.fine, (v) => { G.fine = v; }, { local: true, after: () => { saveGeo(); sum(); } });
+      const note = h('p', { class: 'note pn-geo-sum' });
+      const fetchBtn = h('button', { class: 'btn primary pn-geo-fetch', type: 'button' });
+      const sum = () => {
+        const r = geoRect(), gsd = geoGsd(), n = tilesFor(r), max = GEO_MAX[gsd];
+        fineRow.style.display = G.km > 1.5 ? 'none' : '';
+        const mb = Math.max(1, Math.round(n * TILE_MB[gsd]));
+        // the area already on the panel
+        const d = ps.dem && ps.dem.meta, here = !!d && d.e === Math.round((r.e0 + r.e1) / 2) && d.n === Math.round((r.n0 + r.n1) / 2) && Math.abs(d.widthM - (r.e1 - r.e0)) < 1 && Math.abs(d.heightM - (r.n1 - r.n0)) < 1 && d.gsd === gsd;
+        note.textContent = n > max
+          ? `${geoSize(r)} touches ${n} tiles at ${gsd} m, more than the ${max} Weft fetches at once. Make the area smaller${gsd < 2 ? ' or turn off Finest detail' : ''}.`
+          : `${G.moved ? 'Near ' : ''}${G.name}: ${geoSize(r)}, ${n} tile${n > 1 ? 's' : ''} at ${gsd} m${here ? '. This area is on the panel now.' : `, up to about ${mb} MB to download.`}`;
+        if (!ps.geoBusy) { fetchBtn.textContent = here ? 'On the panel' : 'Fetch the heights'; fetchBtn.disabled = n > max || here; }
+      };
+      fetchBtn.addEventListener('click', () => (ps.geoBusy ? ps.geoBusy.abort() : download(fetchBtn, sum)));
+      const size = sliderCtl('pn-geo-km', 'Area', { min: 0.5, max: 12, step: 0.1, fmt: (v) => geoSize(areaRect(0, 0, v, geoAspect())) }, () => G.km, (v) => { G.km = v; }, { local: true, after: () => { saveGeo(); place(); sum(); later(); } });
+      area.replaceChildren(map, size, fineRow, note, fetchBtn);
+      place(); sum(); load();
+    }
+    paintHits(); paintArea();
+    return [h('div', { class: 'pn-geo-search' }, q, go), hits, area];
+  }
+  const offline = (e) => `Could not reach swisstopo${e && e.message && !/fetch|network/i.test(e.message) ? ` (${e.message})` : ''}. Check the connection, or download the tiles yourself and load them below.`;
+  async function download(btn, done) {
+    const G = ps.geo, rect = geoRect(), gsd = geoGsd(), ctl = new AbortController();
+    ps.geoBusy = ctl;
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Finding the tiles…';
+    try {
+      const m = await fetchTerrain(rect, {
+        gsd, max: 1400, signal: ctl.signal,
+        onProgress: ({ done: k, total, bytes }) => { btn.textContent = k < total ? `Downloading ${k + 1} of ${total} (${(bytes / 1e6).toFixed(1)} MB) · click to stop` : 'Stitching…'; },
+      });
+      if (ctl.signal.aborted) throw new Error('Cancelled');
+      ps.geoBusy = null;
+      if (m.empty > 0.98) { toast('No heights there: swissALTI3D covers Switzerland and Liechtenstein only.'); return; }
+      const name = `${G.moved ? 'Near ' : ''}${G.name}`;
+      useDEM(m, { tiles: m.files, source: name, e: Math.round((rect.e0 + rect.e1) / 2), n: Math.round((rect.n0 + rect.n1) / 2), gsd });
+      toast(`${name}: ${geoSize(rect)}, ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m${m.empty > 0.02 ? ` · ${Math.round(m.empty * 100)}% lies outside Switzerland and prints at the lowest height` : ''}`);
+    } catch (e) {
+      if (ctl.signal.aborted || /cancel|abort/i.test(e.message || '')) toast('Download cancelled');
+      else { console.warn(e); toast(/no swissALTI3D/.test(e.message) ? e.message : offline(e)); }
+    } finally {
+      if (ps.geoBusy === ctl) ps.geoBusy = null;
+      btn.removeAttribute('aria-busy');
+      if (btn.isConnected) done();
+    }
+  }
   const fmtLen = (m) => (m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.round(m)} m`);
   function drawDEM(cv, d) {
     const g = cv.getContext('2d'), w = cv.width, hh = cv.height, img = g.createImageData(w, hh);
@@ -804,16 +937,20 @@ export function initPanels(api) {
     if (!tiles.length) { toast(bad[0] || 'No elevation data in those files'); return; }
     try {
       const m = mosaic(tiles, 1400);
-      ps.dem = { id: Date.now(), w: m.w, h: m.h, data: m.data, meta: { widthM: m.widthM, heightM: m.heightM, zmin: m.zmin, zmax: m.zmax, tiles: tiles.length } };
-      const Pn = P();
-      if (!PANEL_PATTERNS[Pn.pattern].terrain) { Pn.pattern = 'terrain'; if (Pn.mode === 'cut') Pn.mode = 'relief'; tunePattern(Pn, 'terrain'); }
-      // true scale where that is printable and still reads as a panel; mountains are usually far taller than that
-      const perM = Math.max(Pn.width / m.widthM, Pn.height / m.heightM), relief = (m.zmax - m.zmin) * perM;
-      Pn.depth = Math.round(clamp(relief, 8, Math.min(maxDepth(), 0.35 * Math.min(Pn.width, Pn.height))));
-      saveDEM();
-      commit(); rebuild(); renderAll();
+      useDEM(m, { tiles: tiles.length });
       toast(`${tiles.length} tile${tiles.length > 1 ? 's' : ''}: ${fmtLen(m.widthM)} × ${fmtLen(m.heightM)}, ${Math.round(m.zmin).toLocaleString()} to ${Math.round(m.zmax).toLocaleString()} m${bad.length ? ` · ${bad.length} file${bad.length > 1 ? 's' : ''} skipped` : ''}`);
     } catch (e) { console.error(e); toast(e.message || 'Could not read the elevation files'); }
+  }
+  // a stitched model onto the panel, with a depth that suits it
+  function useDEM(m, meta) {
+    ps.dem = { id: Date.now(), w: m.w, h: m.h, data: m.data, meta: { widthM: m.widthM, heightM: m.heightM, zmin: m.zmin, zmax: m.zmax, ...meta } };
+    const Pn = P();
+    if (!PANEL_PATTERNS[Pn.pattern].terrain) { Pn.pattern = 'terrain'; if (Pn.mode === 'cut') Pn.mode = 'relief'; tunePattern(Pn, 'terrain'); }
+    // true scale where that is printable and still reads as a panel; mountains are usually far taller than that
+    const perM = Math.max(Pn.width / m.widthM, Pn.height / m.heightM), relief = (m.zmax - m.zmin) * perM;
+    Pn.depth = Math.round(clamp(relief, 8, Math.min(maxDepth(), 0.35 * Math.min(Pn.width, Pn.height))));
+    saveDEM();
+    commit(); rebuild(); renderAll();
   }
   // kept on this device at up to 1024 samples across, as 16-bit heights
   function saveDEM() {
@@ -1372,6 +1509,23 @@ export function initPanels(api) {
 .pn-map-cap { font: 11px var(--f-mono, monospace); color: var(--pn-muted); }
 .pn-picrow { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: center; }
 .pn-pic { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--pn-line); display: grid; place-items: center; font-size: 11px; color: var(--pn-muted); text-align: center; }
+.pn-geo-search { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.pn-geo-search .btn { width: auto; }
+.pn-hits { display: grid; gap: 2px; border: 1px solid var(--pn-line); border-radius: 9px; padding: 3px; background: var(--pn-raised); }
+.pn-hits[hidden] { display: none; }
+.pn-hit { display: grid; gap: 1px; text-align: left; padding: 6px 8px; border-radius: 7px; border: 0; background: transparent; color: inherit; min-width: 0; }
+.pn-hit:hover, .pn-hit:focus-visible { background: var(--sunken, #eee); }
+.pn-hit b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-hit small { font-size: 11px; color: var(--pn-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-geo { display: grid; gap: 10px; }
+.pn-geo:empty { display: none; }
+.pn-geo-map { position: relative; aspect-ratio: 4 / 3; border-radius: 9px; overflow: hidden; border: 1px solid var(--pn-line); background: var(--sunken, #eee); cursor: crosshair; }
+.pn-geo-map img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; }
+.pn-geo-map.off { aspect-ratio: auto; height: 0; border: 0; }
+.pn-geo-box { position: absolute; border: 2px solid var(--accent, #c43); border-radius: 2px; box-shadow: 0 0 0 9999px rgba(20, 18, 16, 0.28); pointer-events: none; transition: left 0.15s, top 0.15s, width 0.15s, height 0.15s; }
+.pn-geo-pin { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--accent, #c43); border: 2px solid #fff; pointer-events: none; }
+.pn-geo-credit { position: absolute; right: 4px; bottom: 3px; font-size: 9.5px; color: #333; background: rgba(255, 255, 255, 0.75); padding: 1px 4px; border-radius: 3px; pointer-events: none; }
+.pn-geo-fetch[aria-busy=true] { opacity: 0.85; }
 .pn-led { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); margin-right: 6px; box-shadow: 0 0 6px var(--c); vertical-align: -1px; }
 .pn-head .step-title { display: flex !important; }
 .pn-head p { display: block !important; }

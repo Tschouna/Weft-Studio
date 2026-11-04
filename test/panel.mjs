@@ -6,9 +6,12 @@
 //  5. random panels, ribs included, build closed
 //  6. elevation files (GeoTIFF of every kind, XYZ, ASCII grid, zip) read back exactly and stitch,
 //     and terrain and diffuser panels build closed
+//  7. the swisstopo downloader, against a stand-in for the services: place search, the tile catalogue
+//     (paged, newest survey, right grid) and the download stitched and cropped to the area
 import { buildPanel, panelDefaults, normalizePanel, planPanel, panelChecks, fitTestPanel, PANEL_PATTERNS, PANEL_PATTERN_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
 import { PANEL_PRESETS } from '../app/panels.js';
 import { readDEM, mosaic } from '../app/dem.js';
+import { searchPlaces, listTiles, fetchTerrain, areaRect, tilesFor, lv95ToWgs, wgsToLv95 } from '../app/swisstopo.js';
 import { zlibSync, zipSync, strToU8 } from 'fflate';
 
 let failures = 0;
@@ -237,6 +240,102 @@ if (run(6)) {
   const flagged = panelChecks(tall, planPanel(tall, [256, 256, 256]), null).some((c) => c.level === 'bad' && /mm tall/.test(c.text));
   console.log(`  ${flagged ? 'ok  ' : 'FAIL'} a 306 mm tall tile is flagged on a 256 mm printer`);
   if (!flagged) fail('printer height check');
+}
+
+// ---------------------------------------------------------------- 7
+if (run(7)) {
+  console.log('7. swisstopo downloads (offline stand-in)');
+  const check = (ok, text) => { console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${text}`); if (!ok) failures++; };
+  // a peak at the Matterhorn's spot; south of N 1 091 300 is "abroad" and has no heights
+  const PE = 2617050, PN = 1091670, CELL = 2, BORDER = 1091300;
+  const height = (e, n) => 2800 + 1600 * Math.exp(-(((e - PE) / 900) ** 2) - (((n - PN) / 700) ** 2)) + 0.05 * (n - 1090000);
+  const tileFile = (ekm, nkm, year) => {
+    const w = 1000 / CELL, v = new Float32Array(w * w);
+    for (let j = 0; j < w; j++) for (let i = 0; i < w; i++) {
+      const e = ekm * 1000 + (i + 0.5) * CELL, n = (nkm + 1) * 1000 - (j + 0.5) * CELL;
+      v[j * w + i] = n < BORDER ? NaN : year < 2020 ? 0 : height(e, n);
+    }
+    return tiff(v, w, w, { tile: 128, comp: 8, pred: 3, E0: ekm * 1000, N1: (nkm + 1) * 1000, cell: CELL });
+  };
+  const files = new Map();
+  let pages = 0;
+  const reply = (body, type = 'application/json') => ({ ok: true, status: 200, json: async () => body, arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength), type });
+  const fakeFetch = async (url) => {
+    const u = new URL(url);
+    if (u.host === 'api3.geo.admin.ch') {
+      return reply({ results: [
+        { attrs: { label: '<i>Gondola lift</i> <b>Matterhorn-Express II Furi-Schwarzsee</b> (VS) - Zermatt', objectclass: 'TLM_UEBRIGE_BAHN', y: 2621839.75, x: 1093966.875 } },
+        { attrs: { label: '<i>Viewpoint</i> <b>Matterhorn Mont Cervin|Monte Cervino</b> () - ', objectclass: 'TLM_EINZELOBJEKT', y: 2617100, x: 1091700 } },
+        { attrs: { label: '<i>Alpin peak</i> <b>Matterhorn Mont Cervin|Monte Cervino</b> () - ', objectclass: 'TLM_NAME_PKT', y: 2617048.75, x: 1091673 } },
+        { attrs: { label: '<b>Zermatt (VS)</b>', origin: 'gg25', y: 2623512, x: 1093253 } },
+        { attrs: { label: 'Somewhere abroad', origin: 'address', y: 0, x: 0 } },
+      ] });
+    }
+    if (u.pathname.endsWith('/items')) {
+      // every tile the bbox touches, four to a page, an old survey of each beside the new one
+      const [lon0, lat0, lon1, lat1] = u.searchParams.get('bbox').split(',').map(Number);
+      const all = [];
+      for (let ekm = 2600; ekm < 2640; ekm++) for (let nkm = 1080; nkm < 1100; nkm++) {
+        const c = [[ekm * 1000, nkm * 1000], [ekm * 1000 + 1000, nkm * 1000 + 1000]].map(([e, n]) => lv95ToWgs(e, n));
+        if (c[1][0] < lon0 || c[0][0] > lon1 || c[1][1] < lat0 || c[0][1] > lat1) continue;
+        if (nkm * 1000 + 1000 <= BORDER) continue; // nothing wholly abroad
+        for (const year of [2019, 2024]) {
+          const id = `swissalti3d_${year}_${ekm}-${nkm}`;
+          const asset = (gsd) => ({ href: `https://data.geo.admin.ch/ch.swisstopo.swissalti3d/${id}/${id}_${gsd}_2056_5728.tif`, type: 'image/tiff; application=geotiff; profile=cloud-optimized', gsd });
+          all.push({ id, assets: { [`${id}_0.5_2056_5728.tif`]: asset(0.5), [`${id}_2_2056_5728.tif`]: asset(2), [`${id}.xyz.zip`]: { href: 'x', type: 'application/x.xyz+zip', gsd: 2 } } });
+        }
+      }
+      const at = +(u.searchParams.get('cursor') || 0), next = at + 4;
+      pages++;
+      return reply({ features: all.slice(at, next), links: next < all.length ? [{ rel: 'next', href: `${u.origin}${u.pathname}?bbox=${u.searchParams.get('bbox')}&cursor=${next}` }] : [] });
+    }
+    const m = u.pathname.match(/swissalti3d_(\d{4})_(\d{4})-(\d{4})_(0\.5|2)_/);
+    if (!m) return { ok: false, status: 404 };
+    if (m[4] !== '2') throw new Error('fetched the 0.5 m file');
+    files.set(m[0], (files.get(m[0]) || 0) + 1);
+    return reply(tileFile(+m[2], +m[3], +m[1]));
+  };
+  // the search
+  const hits = await searchPlaces('Matterhorn', fakeFetch);
+  check(hits[0]?.type === 'Alpin peak' && hits[0].name === 'Matterhorn Mont Cervin / Monte Cervino' && hits[0].e === 2617048.75 && hits[0].n === 1091673,
+    `search puts the summit first: ${hits[0]?.name} (${hits[0]?.type})`);
+  check(hits.length === 3 && hits.at(-1).type === 'Gondola lift' && hits.some((x) => x.type === 'Municipality'), `the viewpoint on the summit folds into it, the gondola goes last, nothing abroad: ${hits.map((x) => x.type).join(', ')}`);
+  const [lv] = await searchPlaces('2617050 1091670', fakeFetch), [deg] = await searchPlaces('45.9763, 7.6586', fakeFetch);
+  const [lon, lat] = lv95ToWgs(2617050, 1091670), [e2, n2] = wgsToLv95(lon, lat);
+  check(lv.e === 2617050 && lv.n === 1091670 && Math.hypot(deg.e - 2617050, deg.n - 1091670) < 120 && Math.hypot(e2 - 2617050, n2 - 1091670) < 3,
+    `coordinates typed in metres or degrees land on the spot (degrees ${Math.round(Math.hypot(deg.e - 2617050, deg.n - 1091670))} m off, round trip ${Math.hypot(e2 - 2617050, n2 - 1091670).toFixed(1)} m)`);
+  // the catalogue
+  const rect = areaRect(PE, PN, 3, 4 / 3);
+  const list = await listTiles(rect, 2, fakeFetch);
+  const want = tilesFor(rect) - (Math.ceil(rect.e1 / 1000) - Math.floor(rect.e0 / 1000)); // the bottom row lies wholly abroad
+  check(list.length === want && list.every((t) => t.year === 2024 && /_2_2056/.test(t.href)) && pages > 2,
+    `catalogue: ${list.length} tiles (of ${tilesFor(rect)} the area touches), newest survey, 2 m files, ${pages} pages followed`);
+  // the download, stitched and cropped
+  let calls = 0;
+  const m = await fetchTerrain(rect, { gsd: 2, max: 300, fetchFn: fakeFetch, onProgress: () => calls++ });
+  let worst = 0, north = 0;
+  for (let j = 0; j < m.h; j += 7) for (let i = 0; i < m.w; i += 7) {
+    const e = rect.e0 + (i + 0.5) * m.cell, n = rect.n1 - (j + 0.5) * m.cell;
+    if (n < BORDER + 3 * m.cell) continue;
+    const got = m.zmin + m.data[j * m.w + i] * (m.zmax - m.zmin);
+    // averaged over a cell of the coarser grid: compare with the middle, allowing for the slope
+    worst = Math.max(worst, Math.abs(got - height(e, n)) / (1 + 0.004 * m.cell * 1600 / 700));
+    if (j === 0 && i === 0) north = got - (m.zmin + m.data[(m.h - 1) * m.w] * (m.zmax - m.zmin));
+  }
+  const abroad = (BORDER - rect.n0) / (rect.n1 - rect.n0);
+  check(m.w === 300 && Math.abs(m.widthM - 3000) < 1e-6 && Math.abs(m.heightM - 2250) < 1e-6 && files.size === want && calls === want + 1,
+    `download: ${m.files} files once each, ${m.w} × ${m.h} samples over ${m.widthM} × ${m.heightM} m, ${calls} progress calls`);
+  check(worst < 2 && Math.abs(m.zmax - height(PE, PN)) < 20 && north > 0,
+    `heights stitched in place and north up: off by at most ${worst.toFixed(2)} m, top ${Math.round(m.zmax)} m`);
+  check(Math.abs(m.empty - abroad) < 0.02, `${Math.round(m.empty * 100)}% of the area has no heights (abroad: ${Math.round(abroad * 100)}%)`);
+  // nothing there at all
+  let none = '';
+  try { await fetchTerrain(areaRect(2700000, 1070000, 1, 1), { fetchFn: async (url) => (/items/.test(url) ? reply({ features: [], links: [] }) : fakeFetch(url)) }); } catch (e) { none = e.message; }
+  check(/Switzerland/.test(none), `outside the model: "${none}"`);
+  // a cancelled download stops
+  const ctl = new AbortController(); let stopped = '';
+  try { await fetchTerrain(rect, { fetchFn: fakeFetch, max: 300, signal: ctl.signal, onProgress: ({ done }) => { if (done >= 2) ctl.abort(); } }); } catch (e) { stopped = e.message; }
+  check(stopped === 'Cancelled', `cancelling stops it: ${stopped || 'it went on'}`);
 }
 
 console.log(failures ? `\n${failures} panel check(s) failed` : '\nall panel checks passed');

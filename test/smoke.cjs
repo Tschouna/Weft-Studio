@@ -69,6 +69,30 @@ const step = (m) => console.log(new Date().toISOString().slice(11, 19), m);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'export'));
   await win.waitForFunction(() => /panel-files/.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 600000 });
   step('panel export: ' + (await win.textContent('#toast')));
+  // the swisstopo downloader: the page's security policy lets it reach the place search, the tile
+  // catalogue and the map (stand-ins answer here, so no network is needed)
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const asked = new Set();
+  await win.route(/geo\.admin\.ch/, (route) => {
+    const u = new URL(route.request().url());
+    asked.add(u.host);
+    const json = (b) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(b) });
+    if (u.host === 'api3.geo.admin.ch') return json({ results: [{ attrs: { label: '<i>Alpin peak</i> <b>Eiger</b> (BE) - Grindelwald', objectclass: 'TLM_NAME_PKT', y: 2643436, x: 1158638 } }] });
+    if (u.host === 'wms.geo.admin.ch') return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    return json({ features: [], links: [] });
+  });
+  await win.click('#pn-tab-pattern');
+  await win.evaluate(() => [...document.querySelectorAll('#pn-pane-pattern .pat')].find((b) => b.textContent.includes('Terrain')).click());
+  await win.fill('#pn-pane-pattern .pn-geo-search input', 'Eiger');
+  await win.press('#pn-pane-pattern .pn-geo-search input', 'Enter');
+  await win.waitForSelector('#pn-pane-pattern .pn-hit', { timeout: 60000 });
+  await win.click('#pn-pane-pattern .pn-hit');
+  await win.waitForFunction(() => document.querySelector('.pn-geo-map img')?.naturalWidth > 0, null, { timeout: 60000 });
+  await win.click('.pn-geo-fetch');
+  await win.waitForFunction(() => /swissALTI3D|swisstopo/.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 60000 });
+  const geoToast = await win.textContent('#toast');
+  step(`swisstopo: asked ${[...asked].sort().join(', ')} | ${geoToast}`);
+  if (asked.size !== 3 || /Could not reach/.test(geoToast)) errors.push(`swisstopo blocked: ${geoToast}`);
   console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no errors');
   await app.close();
 })().catch((e) => { console.error(e); process.exit(1); });

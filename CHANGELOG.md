@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5.0
+
+- **Terrain straight from swisstopo, no more picking tiles by hand:**
+  - Pattern → Terrain → **From swisstopo**: type a peak, a place or coordinates (`2617050 1091670` in metres, or `45.976, 7.658` in degrees).
+  - Summits and places come first in the results, cable cars and buildings last.
+  - A map of the place shows the area that will print. Click the map to move it; **Area** sets its size from 0.5 to 12 km, shaped like your panel.
+  - **Fetch the heights** finds the swissALTI3D tiles for the area, downloads them four at a time (newest survey, 2 m grid) and stitches and crops them to the area. Click it again to stop.
+  - For small areas (up to 1.5 km), **Finest detail** uses the 0.5 m grid instead. Those files are about 18 MB per km², against about 1 MB.
+  - The summary says how many tiles and roughly how many MB before anything downloads, and says when the framed area is the one on the panel.
+  - Areas that cross the border print flat at the lowest height there; the message says how much of the area that is.
+  - The place and area are remembered, and the readout names the place.
+  - Loading files you downloaded yourself still works as before.
+  - This is the only part of Weft that goes online, and only when you search or fetch. The desktop app is allowed to reach swisstopo's three open services; the web version can only fetch if the page it runs in allows it, and otherwise says so.
+
 ## 2.4.2
 
 - **A much smaller fit test:**
