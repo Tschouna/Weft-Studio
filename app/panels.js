@@ -7,7 +7,8 @@ import {
 
 // Starting points: each one a whole panel, ready to slice.
 export const PANEL_PRESETS = [
-  { name: 'Veil', mode: 'ribs', pattern: 'silk', width: 400, height: 600, scale: 230, depth: 35, base: 6, vary: 0.5, edge: 'flush', ribs: { width: 6, gap: 6, angle: 0, bend: 0, floor: 0.15 }, finish: { color: '#22211f', wall: '#d5dbe0' } },
+  { name: 'Veil', mode: 'ribs', pattern: 'silk', width: 400, height: 600, scale: 230, depth: 35, base: 6, vary: 0.5, edge: 'flush', ribs: { width: 6, gap: 6, angle: 0, bend: 0, floor: 0.15 }, finish: { color: '#c9b8a3', wall: '#d5dbe0' } },
+  { name: 'Noir', mode: 'ribs', pattern: 'dune', width: 600, height: 400, scale: 190, depth: 30, base: 6, vary: 0.55, edge: 'flush', ribs: { width: 6, gap: 6, angle: 0, bend: 0, floor: 0.2 }, finish: { color: '#22211f', wall: '#e4e1da' } },
   { name: 'Corolla', mode: 'ribs', pattern: 'bloom', width: 520, height: 520, scale: 92, depth: 30, base: 6, vary: 0.35, edge: 'flush', ribs: { width: 5, gap: 5, angle: 0, bend: 0, floor: 0.12 }, finish: { color: '#d8a647', material: 'silk' } },
   { name: 'Moiré', mode: 'ribs', pattern: 'lens', width: 600, height: 400, scale: 62, depth: 24, base: 5, vary: 0.4, edge: 'flush', ribs: { width: 4, gap: 4, angle: 0, bend: 0, floor: 0.2 }, finish: { color: '#eeebe4' } },
   { name: 'Canyon', mode: 'ribs', pattern: 'contour', width: 640, height: 420, scale: 110, depth: 30, base: 6, vary: 0.4, seed: 21, edge: 'flush', ribs: { width: 4, gap: 4, angle: 90, bend: 0, floor: 0.1 }, finish: { color: '#26324a', color2: '#d8a647', twoTone: true, toneAt: 0.62 } },
@@ -371,8 +372,9 @@ export function initPanels(api) {
   }
   function applyLook() {
     const night = P().finish.backlight && ps.view !== 'print';
-    hemi.intensity = night ? 0.1 : 0.42;
-    key.intensity = night ? 0.22 : 3.1;
+    const c = new THREE.Color(P().finish.color), dark = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b < 0.06;
+    hemi.intensity = night ? 0.1 : dark ? 0.8 : 0.42;
+    key.intensity = night ? 0.22 : dark ? 4.2 : 3.1;
     wallMat.color.set(P().finish.wall);
     if (night) wallMat.color.multiplyScalar(0.55);
     el.stage.classList.toggle('night', !!night);
@@ -509,6 +511,7 @@ export function initPanels(api) {
   }
   function afterLoad() {
     el.name.value = P().name;
+    fitName();
     refreshMaterials();
     renderAll();
     rebuild(true);
@@ -920,6 +923,7 @@ export function initPanels(api) {
     }
     if (what === 'all') Pn.name = newName();
     el.name.value = Pn.name;
+    fitName();
     commit();
     refreshMaterials();
     renderAll();
@@ -1211,9 +1215,16 @@ export function initPanels(api) {
     el.tBack.disabled = ps.view === 'print';
     el.tGlow.disabled = ps.view === 'print';
   }
-  el.name.addEventListener('input', () => { P().name = el.name.value || 'Untitled'; });
+  const measure = document.createElement('canvas').getContext('2d');
+  function fitName() {
+    const cs = getComputedStyle(el.name);
+    if (!cs.fontSize) return;
+    measure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    el.name.style.width = `${Math.ceil(measure.measureText(el.name.value || ' ').width + 8)}px`;
+  }
+  el.name.addEventListener('input', () => { P().name = el.name.value || 'Untitled'; fitName(); });
   el.name.addEventListener('change', () => commit());
-  el.dice.addEventListener('click', () => { P().name = newName(); el.name.value = P().name; commit(); });
+  el.dice.addEventListener('click', () => { P().name = newName(); el.name.value = P().name; fitName(); commit(); });
 
   // ---------------------------------------------------------------- styles shared by both designs
   if (!document.getElementById('pn-css')) {
@@ -1253,6 +1264,8 @@ export function initPanels(api) {
     if (ps.started) return;
     ps.started = true;
     el.name.value = P().name;
+    fitName();
+    document.fonts?.ready?.then(fitName);
     refreshMaterials();
     setTab(ps.tab);
     syncTools();

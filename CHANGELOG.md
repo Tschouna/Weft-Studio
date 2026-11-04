@@ -12,7 +12,7 @@
   - Ribs go up to 60 mm deep, with straight vertical sides, and print without supports.
   - Upright or level ribs move the seams into the gaps between them, so no rib is cut along its length.
   - Three new broad patterns made for ribs: **Silk** (drifting diagonal folds), **Bloom** (petals opening from a dome) and **Lens** (two fine wave grids gathering into a moiré lens).
-  - New rib starting panels: Veil (400 × 600 mm, 6 mm ribs, 35 mm deep, in six tiles for a 256 mm bed), Corolla, Moiré, Canyon and Eddy.
+  - New rib starting panels: Veil (400 × 600 mm, 6 mm ribs, 35 mm deep, in six tiles for a 256 mm bed), Noir, Corolla, Moiré, Canyon and Eddy.
 - **Outlines and edges:**
   - Five outlines: rectangle, rounded, arch, oval and hexagon.
   - Four edges: a raised frame, a 45° bevel, a fade, or flush to the edge.
@@ -50,7 +50,7 @@
   - **parts-list.csv** lists every part.
   - **print-settings.txt** has the tile layout, print settings, joining and hanging steps, and the design code.
   - Also: a cover image, Copy design code, and Save to my panels.
-- **Starting panels:** 21 ready-made panels (Veil, Corolla, Moiré, Canyon, Eddy, Dune, Basalt, Atlas, Sunrise, Chester, Riad, Kiln, Loom, Tidal, Pixel, Maelstrom, Halftone, Shingle, Kinetic, Truchet, Odeon), and **Shuffle** for a random one in your size.
+- **Starting panels:** 22 ready-made panels (Veil, Noir, Corolla, Moiré, Canyon, Eddy, Dune, Basalt, Atlas, Sunrise, Chester, Riad, Kiln, Loom, Tidal, Pixel, Maelstrom, Halftone, Shingle, Kinetic, Truchet, Odeon), and **Shuffle** for a random one in your size.
 - **Fixes:**
   - Opening the app on the Collection or Guide no longer logs a warning from the hidden studio stage.
 - **Tests:** `npm test` now also checks panels. Every tile and part of every starting panel, every pattern, rib panels and a batch of random panels must come out closed, fit the bed, and keep their tabs clear of their sockets.
