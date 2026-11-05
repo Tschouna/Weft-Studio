@@ -7,7 +7,9 @@
 //  6. bold, deep relief keeps its undersides printable on bellied, twisted and flared shapes
 //  7. shuffled designs print without supports
 //  8. lids fit twisted, shaped boxes
-import { generate, makeProfile, easeProfile, __test } from '../app/engine.js';
+//  9. globe lamps: every top, underside, outline and pattern builds closed, a closed ball says it needs
+//     supports and a peak with a cone underside needs none; the glow test strip is closed
+import { generate, makeProfile, easeProfile, globeShape, glowTest, GLOW_STEPS, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
 const { buildSurface, sampleRows, cellFor, processRelief, makeSection } = __test;
@@ -49,7 +51,10 @@ for (const d of COLLECTION) {
   const over = r.parts.reduce((s, p) => s + p.stats.overhang, 0);
   const tris = r.parts.reduce((s, p) => s + p.stats.tris, 0);
   console.log(`  ${d.name.padEnd(9)} ${d.surface.pattern.padEnd(9)} ${d.surface.mode.padEnd(6)} ${(tris / 1000).toFixed(0).padStart(5)}k tris  overhang ${over.toFixed(0).padStart(4)} mm²`);
-  if (d.surface.mode === 'relief' && over > 5) fail(`${d.name}: relief overhang ${over.toFixed(0)} mm²`);
+  // a closed globe leans past 45° on purpose (and says so); the rest must not
+  const supported = r.checks.some((c) => /^Needs supports/.test(c.text));
+  if (d.object === 'globe' && supported !== (d.extras.globeTop !== 'peak' || d.extras.globeUnder !== 'cone')) fail(`${d.name}: support warning ${supported ? 'shown' : 'missing'}`);
+  if (d.surface.mode === 'relief' && over > 5 && !supported) fail(`${d.name}: relief overhang ${over.toFixed(0)} mm²`);
 }
 }
 
@@ -237,6 +242,8 @@ let warn = 0, bad = 0;
 for (let k = 0; k < n; k++) {
   const d = S.shuffled(objs[k % objs.length]);
   const r = generate(d, 0.7), over = r.parts.reduce((a, p) => a + p.stats.overhang, 0);
+  // a closed globe needs supports by design, and says so
+  if (d.object === 'globe' && r.checks.some((c) => /^Needs supports/.test(c.text))) continue;
   if (r.checks.some((c) => c.level === 'bad')) { bad++; console.log(`  bad: ${d.object} ${d.surface.pattern}/${d.surface.mode} ${d.form.section} twist ${d.form.twist}: ${r.checks.filter((c) => c.level === 'bad').map((c) => c.text).join(' ')}`); }
   else if (over > 60) warn++;
 }
@@ -274,6 +281,49 @@ for (const [sec, extra] of [['polygon', { sides: 4, corner: 0.3 }], ['polygon', 
   if (!(worst > 0.1)) fail(`${sec} twist ${twist}: the lid plug hits the box (clearance ${worst.toFixed(2)} mm)`);
   if (lid.stats.overhang > 5) fail(`${sec} twist ${twist}: lid overhang ${lid.stats.overhang.toFixed(0)} mm²`);
 }
+}
+
+// ---------------------------------------------------------------- 9
+if (run(9)) {
+console.log('9. globe lamps');
+const base = { object: 'globe', form: { height: 210, diameter: 210, wall: 1.8, section: 'round', twist: 0 }, surface: { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 }, extras: { opening: 90, baseH: 45 } };
+const mk = (o) => {
+  const d = design(base);
+  for (const k of ['form', 'surface', 'extras']) Object.assign(d[k], o[k] || {});
+  if (o.multicolor) d.multicolor = o.multicolor;
+  return d;
+};
+const cases = [];
+for (const globeTop of ['round', 'peak']) for (const globeUnder of ['round', 'cone']) cases.push([`${globeTop} top, ${globeUnder} underside`, { extras: { globeTop, globeUnder } }]);
+cases.push(
+  ['egg, 3 mm wall', { form: { height: 250, diameter: 190, wall: 3 } }],
+  ['flattened orb, narrow opening', { form: { height: 150, diameter: 230 }, extras: { opening: 60 } }],
+  ['lobed melon with relief ribs', { form: { section: 'lobed', lobes: 12, lobeDepth: 0.07 }, surface: { pattern: 'ribs', mode: 'relief', count: 50, depth: 1.8, fill: 1, profile: 'round' } }],
+  ['octagon, peak top, cone underside', { form: { section: 'polygon', sides: 8, corner: 0.4 }, extras: { globeTop: 'peak', globeUnder: 'cone' } }],
+  ['twisted hexagon', { form: { section: 'polygon', sides: 6, corner: 0.45, twist: 60 } }],
+  ['lattice openwork', { surface: { pattern: 'lattice', mode: 'cut', count: 22, width: 2.2, angle: 55 } }],
+  ['two-tone bands', { multicolor: { cuts: [70, 140], slots: [0, 1, 0] } }],
+);
+for (const [name, o] of cases) {
+  const d = mk(o), r = generate(d, 0.8), g = mainOf(r);
+  let open = 0;
+  for (const p of r.parts) open += openEdges(p);
+  for (const rg of g.regions || []) open += openEdges(g, rg.first, rg.count);
+  const supported = r.checks.some((c) => /^Needs supports/.test(c.text));
+  const wantSupports = (d.extras.globeTop || 'round') === 'round' || (d.extras.globeUnder || 'round') === 'round';
+  const over = r.parts.reduce((a, p) => a + p.stats.overhang, 0);
+  const b = g.stats.bbox, gs = globeShape(d.form, d.extras, d.form.wall);
+  // the ball is as tall and wide as asked, stands on its collar, and the base is there
+  const sizeOk = Math.abs(b[5] - d.form.height) < 1.5 && Math.abs(b[3] - b[0] - d.form.diameter) < d.form.diameter * 0.08 + (d.form.section === 'round' ? 1 : 30);
+  const ok = !open && supported === wantSupports && (wantSupports || over < 60) && sizeOk && r.parts.some((p) => p.key === 'base') && Math.abs(gs.dome.zOut - gs.dome.zIn) >= d.form.wall - 1e-6;
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${(g.stats.tris / 1000).toFixed(0)}k tris, ${open} open edges, ${b[5].toFixed(0)} mm tall, overhang ${(over / 100).toFixed(0)} cm², ${supported ? 'needs supports (said so)' : 'no supports'}`);
+  if (!ok) fail(`globe ${name}`);
+}
+// the glow test strip: closed, outward, with every step
+const gt = glowTest(), gOpen = openEdges(gt);
+const gOk = !gOpen && gt.stats.volume > 3000 && gt.stats.overhang < 1 && GLOW_STEPS.length >= 5;
+console.log(`  ${gOk ? 'ok  ' : 'FAIL'} glow test: ${GLOW_STEPS.join(', ')} mm, ${(gt.stats.volume / 1000).toFixed(1)} cm³, ${gOpen} open edges`);
+if (!gOk) fail('glow test');
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

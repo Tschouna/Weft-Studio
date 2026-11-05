@@ -1,8 +1,8 @@
 # Weft Studio
 
-A desktop studio for designing 3D-printable homeware and wall panels: planters (including self-watering, hanging and wall planters, and plant stands), orchid pots, vases, bowls, trays, storage boxes with lids, cups and holders, napkin rings, tealight lanterns, candle holders, pendant lamps and table lamps. Shape the silhouette, pick one of 35 surface textures or openwork patterns (and swirl them around the piece), choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
+A desktop studio for designing 3D-printable homeware and wall panels: planters (including self-watering, hanging and wall planters, and plant stands), orchid pots, vases, bowls, trays, storage boxes with lids, cups and holders, napkin rings, tealight lanterns, candle holders, pendant lamps, table lamps and globe lamps. Shape the silhouette, pick one of 35 surface textures or openwork patterns (and swirl them around the piece), choose colours (including multicolour bands for an AMS), and export print-ready files for Bambu Studio, OrcaSlicer, PrusaSlicer or any other slicer.
 
-Every piece is built as a watertight mesh, oriented for printing, with overhangs held at 45° or less so it prints without supports. Walls default to 3 mm.
+Every piece is built as a watertight mesh, oriented for printing, with overhangs held at 45° or less so it prints without supports. Walls default to 3 mm. The one exception is the closed globe lamp: a true ball leans past 45° at the top and underneath, so the print check says it needs supports and where (or give it a 45° peak and cone to print without).
 
 **Panels** is a second studio in the same app, for wall panels:
 - Pick an outline and one of 29 patterns as a relief, as wave ribs (slatted wall art whose ribs follow the pattern) or as openwork, and set the size, up to 2.4 m. The patterns include an acoustic-style diffuser of slanted blocks, your own photo, and real terrain: type a Swiss peak or place and Weft downloads swisstopo's swissALTI3D heights for the area you frame on the map, or load elevation files yourself (GeoTIFF, XYZ, ASCII grids), with neighbouring tiles stitched together.
@@ -60,7 +60,7 @@ Requirements: Node.js 22 and npm.
 | `app/` | The studio itself, plain HTML and JavaScript modules. It is the same code in the desktop app and the browser. |
 | `app/index.html` | The Weft 2.0 page: layout and styles. |
 | `app/classic.html` | The classic (1.x) page. Both pages use the same element ids, so one `app.js` drives either. |
-| `app/engine.js` | The geometry engine: silhouettes, cross-sections (including the flat-backed D for wall planters), the 35 textures and swirl, the mesher, cord holes and keyholes, lids, saucers, sleeves, self-watering inserts, lamp bases, multicolour bands and overhang checks. Runs in a Web Worker. |
+| `app/engine.js` | The geometry engine: silhouettes, cross-sections (including the flat-backed D for wall planters), the 35 textures and swirl, the mesher, cord holes and keyholes, lids, saucers, sleeves, self-watering inserts, lamp bases, closed globes, the glow test strip, multicolour bands and overhang checks. Runs in a Web Worker. |
 | `app/presets.js` | Defaults, silhouettes and the starter collection. |
 | `app/app.js` | UI, 3D preview, drag handles, dimensions, size references, export (3MF, STL, PNG). |
 | `app/panel.js` | The panel engine: outlines, the 29 panel patterns, wave ribs, diffuser blocks with exact flat tops, tile planning, tabs, keys, back pockets, the two-tone split, and a mesher that clips a grid of triangles exactly against every boundary so tiles come out closed. Runs in `app/panel-worker.js`. |
@@ -90,6 +90,7 @@ Requirements: Node.js 22 and npm.
 6. Bold, deep relief keeps its undersides printable on bellied, twisted and flared shapes.
 7. Shuffled designs print without supports. It uses the studio's own shuffle code, read out of `app/app.js` by `test/shuffle-lib.mjs`.
 8. Lids on twisted, shaped boxes keep the box's outline and still pass the opening.
+9. Globe lamps: every top, underside, outline and pattern builds closed; a round globe says it needs supports, and a peak top with a cone underside prints without any. The glow test strip is closed.
 
 `ONLY=3,5 npm test` runs just those sections.
 

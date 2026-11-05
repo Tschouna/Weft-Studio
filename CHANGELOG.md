@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.6.0
+
+- **Globe lamp (new object):**
+  - A closed glowing ball, like an opal globe lamp, standing in a groove in a printed base that takes an E27 lamp kit. It lifts off to change the bulb.
+  - Form → Globe: the **Top** is Round or a 45° Peak, the **Underside** Round or a 45° Cone, and **Opening** sets the collar it stands on.
+  - Make Height and Diameter equal for a ball, or stretch it into an egg or a flattened orb. Lobed and polygon outlines (also twisted) make melons and faceted lanterns.
+  - Patterns stop short of the collar and of the narrow top. Relief glows through the wall; openwork works too.
+  - **Needs supports, and says so:** a round globe leans past 45° at the top and underneath. The print check names both places, the overhangs are striped on the model, and it recommends tree supports on the build plate only (inside the ball they grow up through the opening and come out through it). Peak and Cone together print without supports.
+  - It warns when the opening is too narrow to lift the globe over an A60 bulb, and that a closed globe keeps the heat in (LED only, 7 W or less).
+  - New in the Collection: Opal (a plain round globe), Melon (lobed with ribs) and Bulb (peak and cone, no supports).
+- **Translucent filament:**
+  - New **Translucent** finish. With the light on, a globe glows through its wall: brighter for translucent filament and light colours, dimmer as the wall thickens, with a hot spot near the bulb when the wall is thin.
+  - Globes default to 1.8 mm walls (4 lines). The wall slider shows the number of lines, and the print check says how that wall will glow.
+  - **Download the glow test** (under Object, for every lamp): a small curved strip whose wall steps from one line (0.45 mm) to 3 mm, about 6 g. Print it in your filament and hold it over a phone torch to choose a wall.
+  - Print guide: a new card on globe lamps and translucent filament.
+- **Fixed, found by the shuffle tests:**
+  - On open pieces whose base is wider than the wall above it (napkin rings, lamp shades), the inside of the wall dipped up to 0.8 mm below the bed. It now starts on the bed.
+  - Where a wall bends sharply inward just under the rim (a low tray with a full belly), the inside of the wall folded into a small flat ceiling that needed supports. The inside now steps in at 45° at most, and the wall is a little thinner across the bend.
+  - A napkin ring's inside chamfer is now cut at 40° instead of 45°, so it stays printable when the ring leans in slightly.
+
 ## 2.5.0
 
 - **Terrain straight from swisstopo, no more picking tiles by hand:**

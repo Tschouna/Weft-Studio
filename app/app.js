@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
-import { generate, swatch, makeProfile, easeProfile, makeSection } from './engine.js';
+import { generate, swatch, makeProfile, easeProfile, makeSection, glowTest, GLOW_STEPS } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 import { initPanels } from './panels.js';
 
@@ -146,6 +146,8 @@ const OBJECT_DEFAULTS = {
   box: { form: { height: 100, diameter: 180, base: 0.86, top: 0.9, belly: 0.5, fullness: 0.75, lip: 0, lipH: 12, inset: 1.2, wall: 3, floor: 3 }, extras: { lid: true } },
   pendant: { form: { height: 190, diameter: 250, base: 0.42, top: 0.93, belly: 0.6, fullness: 0.3, lip: 0, lipH: 12, inset: 0, wall: 3, floor: 3 }, extras: {} },
   lamp: { form: { height: 210, diameter: 140, base: 1, top: 1.02, belly: 0.5, fullness: 0.12, lip: 0, lipH: 12, inset: 0, wall: 3, floor: 3 }, extras: { socket: 40, baseH: 55, cord: true } },
+  // a globe glows best with a thinner wall: 4 lines, about 1.8 mm
+  globe: { form: { height: 220, diameter: 220, base: 1, top: 1, belly: 0.5, fullness: 0, lip: 0, lipH: 12, inset: 0, wall: 1.8, floor: 3, section: 'round', twist: 0 }, extras: { socket: 40, baseH: 45, cord: true, opening: 92, globeTop: 'round', globeUnder: 'round' }, surface: { pattern: 'smooth', bandBottom: 0, bandTop: 0, swirl: 0 }, finish: { color: '#eeebe4', material: 'translucent' } },
   bowl: { form: { height: 80, diameter: 240, base: 0.62, top: 0.97, belly: 0.7, fullness: 0.45, lip: 0, lipH: 12, inset: 1.2, wall: 3, floor: 3 }, extras: {} },
   vase: { form: { height: 180, diameter: 110, base: 0.85, top: 0.8, belly: 0.4, fullness: 0.5, lip: 4, lipH: 20, inset: 1.2, wall: 3, floor: 3 }, extras: {} },
   cup: { form: { height: 105, diameter: 90, base: 0.93, top: 1.03, belly: 0.5, fullness: 0.2, lip: 0, lipH: 12, inset: 1, wall: 3, floor: 3 }, extras: {} },
@@ -176,11 +178,14 @@ const MATERIALS = {
   matte: { label: 'Matte', roughness: 0.82, metalness: 0, sheen: 0.35, clearcoat: 0, env: 0.75 },
   satin: { label: 'Satin', roughness: 0.5, metalness: 0, sheen: 0.2, clearcoat: 0.25, env: 0.95 },
   silk: { label: 'Silk', roughness: 0.3, metalness: 0.55, sheen: 0.6, clearcoat: 0.15, env: 1.15 },
+  // translucent PLA or PETG: glassy, and it lets a lamp's light through its wall
+  translucent: { label: 'Translucent', roughness: 0.28, metalness: 0, sheen: 0.1, clearcoat: 0.5, env: 1.05, glow: 1 },
 };
 const ICONS = {
   planter: '<path d="M9 14h22l-2.5 17a3 3 0 01-3 2.6h-11a3 3 0 01-3-2.6z"/><path d="M8 14h24"/><path d="M20 14c0-5 3-8 7-9M20 14c-1-4-4-6-8-6"/>',
   box: '<path d="M8 15h24l-1.5 15.5a3 3 0 01-3 2.5H12.5a3 3 0 01-3-2.5z"/><path d="M7 15c0-2 1-3 3-3h20c2 0 3 1 3 3z"/><path d="M18 12c0-2 1-3 2-3s2 1 2 3"/><path d="M12 19l4 10M18 19l4 10M24 19l4 10M28 19l-4 10M22 19l-4 10M16 19l-4 10" stroke-width="1" opacity=".6"/>',
   lamp: '<path d="M13 5h14l3 21H10z"/><path d="M11 26h18v8H11z"/><path d="M15 9l11 13M25 9L14 22M12 16l6 7M28 16l-6 7" stroke-width="1" opacity=".6"/>',
+  globe: '<circle cx="20" cy="16" r="11.5"/><path d="M16 27.2V30h8v-2.8"/><path d="M12.5 30h15v4h-15z"/><path d="M13.6 12.6a7.4 7.4 0 015-4.6" stroke-width="1" opacity=".6"/>',
   pendant: '<path d="M20 3v9"/><path d="M15 12h10l7 14c1 3-1 5-4 5H12c-3 0-5-2-4-5z"/><path d="M15 16l12 15M25 16L13 31M11 22l18 9M29 22l-18 9" stroke-width="1" opacity=".6"/>',
   bowl: '<path d="M5 18h30c0 7-6 13-15 13S5 25 5 18z"/><path d="M14 31h12"/><path d="M8 22l8 8M14 19l11 11M20 18l10 10M26 18l7 7M32 21l-9 9M26 19l-11 11M20 18L10 28" stroke-width="1" opacity=".6"/>',
   vase: '<path d="M15 4h10M16 4c0 4-6 7-6 15 0 7 3 13 5 15h10c2-2 5-8 5-15 0-8-6-11-6-15"/><path d="M16 15v18M20 13v21M24 15v18" stroke-width="1" opacity=".6"/>',
@@ -552,10 +557,16 @@ function hazardOverlay(geo, p, opts) {
   const idx = new Uint32Array(n * 3), I = p.index;
   let k = 0;
   for (let t = 0; t < F.length; t++) if (F[t] === 1) { idx[k++] = I[t * 3]; idx[k++] = I[t * 3 + 1]; idx[k++] = I[t * 3 + 2]; }
+  // the stripes sit a hair off the surface, along its normal, rather than pulled towards the camera: that
+  // way stripes on an inside face (a closed globe's ceiling) never show through the wall at its outline
+  const P = geo.getAttribute('position').array, N = geo.getAttribute('normal')?.array, Q = new Float32Array(P.length);
+  for (let v = 0; v < P.length; v++) Q[v] = P[v] + (N ? N[v] * 0.06 : 0);
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', geo.getAttribute('position'));
+  g.setAttribute('position', new THREE.BufferAttribute(Q, 3));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
-  const mesh = new THREE.Mesh(g, hazardMaterial(opts));
+  const m = hazardMaterial(opts);
+  if (N) { m.polygonOffsetFactor = 0; m.polygonOffsetUnits = -1; }
+  const mesh = new THREE.Mesh(g, m);
   mesh.renderOrder = 3;
   mesh.userData.noFrame = true;
   mesh.userData.hazard = true;
@@ -676,9 +687,9 @@ function buildDisplay(res, d, opts) {
     root.add(cord, sock, cup);
     lightZ = top - 81; power = 30;
   }
-  if (d.object === 'lamp') {
-    // table lamp: the socket stands in the base's centre hole, the bulb above it inside the shade
-    const plate = d.extras.baseH ?? 55;
+  if (d.object === 'lamp' || d.object === 'globe') {
+    // table lamp or globe: the socket stands in the base's centre hole, the bulb above it inside the shade
+    const plate = d.extras.baseH ?? (d.object === 'globe' ? 45 : 55);
     const sockMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1b, roughness: 0.6 });
     const sockR = Math.max(10, d.extras.socket / 2 - 1.5);
     const sock = new THREE.Mesh(new THREE.CylinderGeometry(sockR, sockR, 56, 32), sockMat);
@@ -760,6 +771,32 @@ function buildDisplay(res, d, opts) {
     root.add(bulb);
     root.userData.bulb = bulb;
   }
+  // a lit globe glows through its wall, brightest close to the bulb
+  const glowMats = [];
+  if (opts.glow && d.object === 'globe') {
+    res.parts.forEach((p, i) => {
+      if (p.key !== 'globe') return;
+      const mesh = meshes[i], pass = glowPass(d);
+      mesh.castShadow = false;
+      const bulbAt = new THREE.Vector3(0, 0, lightZ - (p.place.z || 0)), R = d.form.diameter / 2, spot = clamp(0.75 / Math.max(0.4, d.form.wall), 0.12, 1.2);
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        const base = m.color.clone();
+        m.userData.glow = { base, pass };
+        m.emissive.copy(base).multiply(new THREE.Color(tint)).lerp(new THREE.Color(tint), 0.25);
+        m.emissiveIntensity = pass * (L.bright ?? 1);
+        m.onBeforeCompile = (sh) => {
+          Object.assign(sh.uniforms, { uBulb: { value: bulbAt }, uR: { value: R }, uSpot: { value: spot } });
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGlowPos;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowPos = position;');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGlowPos;\nuniform vec3 uBulb;\nuniform float uR;\nuniform float uSpot;')
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float dd = max(distance(vGlowPos, uBulb), 1.0); totalEmissiveRadiance *= 0.55 + uSpot * clamp(uR * uR / (dd * dd), 0.0, 3.0); }');
+        };
+        m.customProgramCacheKey = () => 'globe-glow';
+        glowMats.push(m);
+      }
+      power *= clamp(pass, 0.3, 1.2);
+    });
+  }
+  root.userData.glowMats = glowMats;
   if (opts.glow && hasLight(d.object)) {
     const light = new THREE.PointLight(tint, power * (L.bright ?? 1), 0, 2);
     light.position.z = lightZ;
@@ -776,11 +813,23 @@ function buildDisplay(res, d, opts) {
   return { root, meshes };
 }
 
+// How much of a lamp's light gets through a closed wall: translucent filament passes most, light colours
+// some; every extra line of wall takes some away.
+function glowPass(d) {
+  const M = MATERIALS[d.finish.material] || MATERIALS.matte, c = new THREE.Color(partColor(d, 0));
+  const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  return (M.glow ? 1 : 0.4 * Math.min(1, lum * 1.4)) * clamp(1.6 / Math.max(0.4, d.form.wall), 0.3, 1.6);
+}
 // Brightness, warmth and bulb visibility change in place, without rebuilding meshes.
 function applyLightSettings() {
   const root = stage.content;
   if (!root) return;
   const L = state.light, tint = WARMTH[L.warm] || WARMTH.warm;
+  for (const m of root.userData.glowMats || []) {
+    const g = m.userData.glow;
+    m.emissive.copy(g.base).multiply(new THREE.Color(tint)).lerp(new THREE.Color(tint), 0.25);
+    m.emissiveIntensity = g.pass * L.bright;
+  }
   if (root.userData.light) { root.userData.light.intensity = root.userData.light.userData.power * L.bright; root.userData.light.color.set(tint); }
   if (root.userData.bulb) {
     root.userData.bulb.visible = L.bulb !== false;
@@ -1324,7 +1373,7 @@ function engineToWorld(d, r, z, out) {
 }
 const _hv = new THREE.Vector3();
 function updateHandles() {
-  const show = state.handles && state.view === 'studio' && !!state.result;
+  const show = state.handles && state.view === 'studio' && !!state.result && state.design.object !== 'globe';
   handleState.group.visible = show;
   if (!show) return;
   const d = state.design, cam = stage.camera;
@@ -1776,6 +1825,17 @@ function renderObject() {
     opts.push(switchCtl('x-cord', 'Notch for the cord', () => X.cord !== false, (v) => { X.cord = v; }));
     opts.push(h('p', { class: 'note' }, 'For an E27 lamp kit (socket with a cord): the socket clips into the hole in the base, the shade stands in a groove around it and lifts off to change the bulb. The base prints top-down. LED bulbs only.'));
   }
+  if (d.object === 'globe') {
+    opts.push(chipsCtl('Socket', [{ value: 40, label: 'E27 · Ø 40' }, { value: 42, label: 'E27 + ring · Ø 42' }, { value: 29, label: 'E14 · Ø 29' }], () => X.socket, (v) => { X.socket = v; }, { structural: true }));
+    opts.push(sliderCtl('x-gsocket', 'Socket hole', { min: 20, max: 60, step: 0.5, fmt: (v) => `Ø ${v} mm` }, () => X.socket, (v) => { X.socket = v; }));
+    opts.push(sliderCtl('x-gbaseH', 'Base height', { min: 30, max: 120, step: 1, fmt: mm }, () => X.baseH ?? 45, (v) => { X.baseH = v; }));
+    opts.push(switchCtl('x-gcord', 'Notch for the cord', () => X.cord !== false, (v) => { X.cord = v; }));
+    opts.push(h('p', { class: 'note' }, 'For an E27 lamp kit (socket with a cord): the socket clips into the hole in the base, and the globe stands in a groove round it and lifts off to change the bulb. A closed globe keeps the heat in: LED bulbs only, 7 W or less.'));
+  }
+  if (hasLight(d.object) && d.object !== 'candle') {
+    opts.push(h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', onclick: downloadGlowTest }, 'Download the glow test')));
+    opts.push(h('p', { class: 'note' }, `A small curved strip whose wall steps from ${GLOW_STEPS.length > 1 ? `${GLOW_STEPS[0]} mm (one line) to ${GLOW_STEPS[GLOW_STEPS.length - 1]} mm` : ''}, about 6 g. Print it in your translucent filament and stand it over a phone torch or an LED tealight: pick the thinnest step that still hides the light source.`));
+  }
   if (d.object === 'vase') {
     opts.push(switchCtl('x-vasemode', 'Solid body for spiral vase mode', () => X.vaseMode, (v) => { X.vaseMode = v; }, { structural: true }));
     opts.push(h('p', { class: 'note' }, 'A solid body lets the slicer print one continuous spiral wall: fast, seamless, and very light. Turn it off to print real walls and a floor.'));
@@ -1830,10 +1890,13 @@ function switchObject(k) {
   if (k !== 'hanging' && k !== 'wall') d.form.bottom = 'flat';
   // low pieces need slim plain bands, or the pattern has no room
   if (OBJECT_DEFAULTS[k].surface) Object.assign(d.surface, OBJECT_DEFAULTS[k].surface);
+  // a globe glows through its wall: it starts in a light, translucent filament
+  if (OBJECT_DEFAULTS[k].finish) Object.assign(d.finish, OBJECT_DEFAULTS[k].finish);
   rescaleCount(oldD, d.form.diameter);
-  if (OBJECTS[k].lamp && d.surface.mode === 'relief' && d.surface.pattern !== 'smooth' && PATTERNS[d.surface.pattern].modes.includes('cut')) d.surface.mode = 'cut';
-  // a light needs openings: a relief-only texture becomes perforation
-  if (OBJECTS[k].lamp && !PATTERNS[d.surface.pattern].modes.includes('cut') && d.surface.pattern !== 'smooth') {
+  const opens = OBJECTS[k].lamp && !OBJECTS[k].globe;
+  if (opens && d.surface.mode === 'relief' && d.surface.pattern !== 'smooth' && PATTERNS[d.surface.pattern].modes.includes('cut')) d.surface.mode = 'cut';
+  // a light needs openings: a relief-only texture becomes perforation (a globe glows through its wall instead)
+  if (opens && !PATTERNS[d.surface.pattern].modes.includes('cut') && d.surface.pattern !== 'smooth') {
     const S = d.surface, P = PATTERNS.perforated;
     Object.assign(S, P.def, { pattern: 'perforated', mode: 'cut', swirl: 0, bandBottom: Math.max(S.bandBottom, 6), bandTop: Math.max(S.bandTop, 4) });
     S.count = clamp(Math.round((Math.PI * d.form.diameter) / P.cellMM), 4, 110);
@@ -1898,6 +1961,7 @@ function renderForm() {
   }
   if (!wallObj) secKids.push(sliderCtl('f-twist', 'Twist over the height', { min: -180, max: 180, step: 1, fmt: (v) => (v ? `${v}°` : 'none') }, () => F.twist || 0, (v) => { F.twist = v; }));
   const sz = { min: 40, max: 320, step: 1, fmt: (v) => `${v} mm` };
+  if (d.object === 'globe') { pane.replaceChildren(...globeForm(d, secKids, sz)); return; }
   pane.replaceChildren(...[
     groupAct('Silhouette', pend ? 'Shown hanging; printed crown-down' : null, diceBtn('shape', 'Shape'), sil,
       switchCtl('f-handles', 'Drag points on the model', () => state.handles, (v) => setHandles(v), { local: true }),
@@ -1924,6 +1988,30 @@ function renderForm() {
       switchCtl('f-printable', 'Keep walls under 45° overhang', () => F.printable !== false, (v) => { F.printable = v; }),
       h('p', { class: 'note' }, 'Eases steep curves just enough that the silhouette prints without supports.')),
   ].filter(Boolean));
+}
+
+// A globe is a ball on a collar: its top and underside are round, or 45° so they print without supports.
+function globeForm(d, secKids, sz) {
+  const F = d.form, X = d.extras;
+  const top = X.globeTop || 'round', under = X.globeUnder || 'round';
+  const supports = top === 'round' || under === 'round';
+  return [
+    group('Globe', 'A closed ball on a short collar that stands in the base',
+      chipsCtl('Top', [{ value: 'round', label: 'Round', title: 'A true ball: needs supports inside while it prints' }, { value: 'peak', label: 'Peak', title: 'Rises to a 45° point: prints without supports' }], () => top, (v) => { X.globeTop = v; }, { structural: true }),
+      chipsCtl('Underside', [{ value: 'round', label: 'Round', title: 'A true ball: needs supports round the collar' }, { value: 'cone', label: 'Cone', title: 'A 45° cone from the collar: prints without supports' }], () => under, (v) => { X.globeUnder = v; }, { structural: true }),
+      sliderCtl('x-opening', 'Opening', { min: 50, max: 180, step: 1, fmt: (v) => `Ø ${v} mm` }, () => X.opening ?? 92, (v) => { X.opening = v; }),
+      h('p', { class: `note${supports ? ' warn-note' : ''}` }, supports
+        ? `A closed globe leans past 45° ${top === 'round' && under === 'round' ? 'at the top and underneath' : top === 'round' ? 'at the top' : 'underneath'}, so it needs supports: tree supports on the build plate only. Peak and Cone print without any.`
+        : 'Peak top and cone underside stay within 45°: it prints without supports.'),
+      h('p', { class: 'note' }, 'The opening is the collar it stands on in the base. Keep it at least Ø 70 mm to lift the globe over an A60 bulb.')),
+    group('Size', 'Make Height and Diameter equal for a round ball, or stretch it into an egg or a flattened orb',
+      sliderCtl('f-height', 'Height', { ...sz, min: 80 }, () => F.height, (v) => { F.height = v; }),
+      sliderCtl('f-diam', 'Diameter', { ...sz, min: 80 }, () => F.diameter, (v) => { rescaleCount(F.diameter, v); F.diameter = v; })),
+    group('Cross-section', 'Round for a ball; lobes make a melon, corners a faceted lantern', ...secKids),
+    group('Wall', null,
+      sliderCtl('f-wall', 'Wall thickness', { min: 0.8, max: 4, step: 0.05, fmt: (v) => `${v.toFixed(2)} mm · ${Math.max(1, Math.round(v / 0.44))} lines` }, () => F.wall, (v) => { F.wall = v; }),
+      h('p', { class: 'note' }, 'With translucent filament: 2 lines (about 0.9 mm) is brightest but shows the bulb as a bright spot; 3 to 4 lines (1.3 to 1.8 mm) glows evenly; 3 mm and more is soft but noticeably dimmer. Light colours let more through than deep ones. Print the glow test under Object to see yours.')),
+  ];
 }
 
 // The top edge: a profile (round, bevel, rolled lip) and a line (level, wavy, slanted).
@@ -2049,7 +2137,7 @@ function switchPattern(k) {
   Object.assign(S, P.def);
   if (P.cellMM) S.count = clamp(Math.round((Math.PI * d.form.diameter) / P.cellMM), 3, 120);
   if (!P.modes.includes(S.mode)) S.mode = P.modes[0];
-  if (OBJECTS[d.object].lamp && P.modes.includes('cut')) S.mode = 'cut';
+  if (OBJECTS[d.object].lamp && !OBJECTS[d.object].globe && P.modes.includes('cut')) S.mode = 'cut';
   if (OBJECTS[d.object].watertight && P.modes.includes('relief')) S.mode = 'relief';
   if (S.mode === 'cut') { S.bandBottom = Math.max(S.bandBottom, 5); S.bandTop = Math.max(S.bandTop, 4); }
   onEdit(true, true);
@@ -2221,7 +2309,8 @@ function refreshListing() {
   const P = PATTERNS[S.pattern];
   const surf = S.pattern === 'smooth' ? 'smooth' : `${P.label.toLowerCase()} ${S.mode === 'cut' ? 'openwork' : 'relief'}`;
   const obj = OBJECTS[d.object].label.toLowerCase();
-  const noSupports = !allChecks().some((c) => c.level === 'bad');
+  const supportsNeeded = allChecks().some((c) => /^Needs supports/.test(c.text));
+  const noSupports = !supportsNeeded && !allChecks().some((c) => c.level === 'bad');
   const loops = Math.max(2, Math.round(d.form.wall / 0.45));
   const vase = d.object === 'vase' && d.extras.vaseMode && S.mode !== 'cut';
   const mc = state.multicolor && (res.parts.some((p) => p.regions) || res.info.colorChanges?.length);
@@ -2230,17 +2319,18 @@ function refreshListing() {
   const partList = res.parts.map((p) => p.label.replace(/ \(.*\)/, '')).join(', ');
   const lines = [
     title, '',
-    `${d.name} is a ${surf} ${obj}, ${Math.round(w)} mm across and ${Math.round(ht)} mm tall. ${S.mode === 'cut' ? 'The pattern runs through the wall, so it prints light and casts a soft pattern of shadows.' : 'The texture is raised from a solid wall, so it stays watertight.'} Every opening and edge is shaped to print cleanly without supports.`,
+    `${d.name} is a ${surf} ${obj}, ${Math.round(w)} mm across and ${Math.round(ht)} mm tall. ${S.mode === 'cut' ? 'The pattern runs through the wall, so it prints light and casts a soft pattern of shadows.' : d.object === 'globe' ? 'The wall is closed, so the light glows through it.' : 'The texture is raised from a solid wall, so it stays watertight.'} ${supportsNeeded ? 'The closed ball needs tree supports where it leans past 45°.' : 'Every opening and edge is shaped to print cleanly without supports.'}`,
     '',
     'Parts',
     ...res.parts.map((p) => { const b = p.stats.bbox; return `• ${p.label}: ${Math.round(b[3] - b[0])} × ${Math.round(b[4] - b[1])} × ${Math.round(b[5] - b[2])} mm`; }),
     '',
     'Print settings',
-    vase ? '• Spiral vase mode: on, 0.6 mm line width, 5 bottom layers' : `• Layer height 0.2 mm · ${loops} wall loops · 15% infill · no supports`,
+    vase ? '• Spiral vase mode: on, 0.6 mm line width, 5 bottom layers' : `• Layer height 0.2 mm · ${loops} wall loops · 15% infill · ${supportsNeeded ? 'tree supports, on the build plate only' : 'no supports'}`,
     `• About ${g} g of PLA${res.parts.length > 1 ? ` across ${res.parts.length} parts (${partList})` : ''}`,
     mc ? `• Multicolor: ${fils} filaments, colour changes at ${colorChangeHeights(d).map((z) => `${z.toFixed(1)} mm`).join(', ')}. ${vase ? 'Add the changes on the layer slider.' : 'AMS ready: the 3MF loads as one object with a part per colour, already assigned. Single-colour printers can use a filament change at each height.'}` : null,
     d.object === 'box' && d.extras.lid ? `• Lid prints top-down with ${d.extras.clearance.toFixed(2)} mm clearance. Glue the knob peg with a drop of CA glue.` : null,
     d.object === 'pendant' ? `• Prints crown-down. Socket hole Ø ${d.extras.socket} mm. LED bulbs only, 10 W or less.` : null,
+    d.object === 'globe' ? `• Globe lamp: the globe stands in a groove in the base, which prints top-down and takes an E27 lamp kit in its Ø ${d.extras.socket} mm socket hole. Translucent filament glows best at 3 to 4 wall lines. LED bulbs only, 7 W or less.` : null,
     d.object === 'lamp' ? `• Table lamp: the base prints top-down and takes an E27 lamp kit in its Ø ${d.extras.socket} mm socket hole; the shade stands in a groove in the base. LED bulbs only, 10 W or less.` : null,
     d.object === 'planter' && d.extras.base === 'insert' ? '• Self-watering: print the insert too. Thread a cotton wick through its floor and fill the reservoir through the side channel.' : null,
     d.object === 'planter' && d.extras.drain && d.extras.base !== 'insert' ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
@@ -2252,7 +2342,7 @@ function refreshListing() {
     d.object === 'candle' ? `• A ${({ tealight: 'tealight', maxi: 'maxi tealight', taper: 'taper candle' })[d.extras.candle] || 'tealight'} sits in a pocket in the top. Print solid with 15% infill; LED candles are safest.` : null,
     res.info.stand ? `• Plant stand: two flat pieces, printed lying down with no supports, that slot together into a cross. The pot sits ${Math.round(res.info.stand.lift)} mm up.` : null,
     '',
-    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', 'no supports', d.object === 'pendant' ? 'lamp shade' : null, ['planter', 'hanging', 'wall', 'orchid'].includes(d.object) ? 'plant pot' : null, d.object === 'hanging' ? 'hanging planter' : null, d.object === 'wall' ? 'wall planter' : null, d.object === 'orchid' ? 'orchid' : null, d.object === 'lantern' || d.object === 'candle' ? 'tealight holder' : null, d.object === 'candle' ? 'candle holder' : null, d.object === 'lantern' ? 'lantern' : null, d.object === 'ring' ? 'napkin ring' : null, d.object === 'tray' ? 'trinket tray' : null, res.info.stand ? 'plant stand' : null, res.info.stand ? 'mid century' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
+    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', supportsNeeded ? null : 'no supports', d.object === 'pendant' ? 'lamp shade' : null, d.object === 'globe' ? 'moon lamp' : null, d.object === 'globe' ? 'lamp shade' : null, d.finish.material === 'translucent' ? 'translucent' : null, ['planter', 'hanging', 'wall', 'orchid'].includes(d.object) ? 'plant pot' : null, d.object === 'hanging' ? 'hanging planter' : null, d.object === 'wall' ? 'wall planter' : null, d.object === 'orchid' ? 'orchid' : null, d.object === 'lantern' || d.object === 'candle' ? 'tealight holder' : null, d.object === 'candle' ? 'candle holder' : null, d.object === 'lantern' ? 'lantern' : null, d.object === 'ring' ? 'napkin ring' : null, d.object === 'tray' ? 'trinket tray' : null, res.info.stand ? 'plant stand' : null, res.info.stand ? 'mid century' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
   ];
   ta.value = lines.filter((l) => l !== null).join('\n');
 }
@@ -2551,6 +2641,21 @@ async function exportFiles() {
   btn.disabled = false; btn.lastChild.textContent = label;
 }
 
+// The glow test: a strip whose wall steps from one line to 3 mm, for trying a translucent filament.
+async function downloadGlowTest() {
+  try {
+    const d = clone(state.design), printer = PRINTERS.find((q) => q.id === state.printer) || PRINTERS[0];
+    const part = weld(glowTest(), d), fils = [partColor(d, 0).toLowerCase()];
+    const steps = GLOW_STEPS.map((t, k) => `${k + 1}. ${t} mm${k < 5 ? ` (${k + 1} line${k ? 's' : ''})` : ''}`).join('\n');
+    const zip = zipSync({
+      'glow-test.3mf': [threeMF([part], { ...d, name: 'Glow test' }, printer.bed, fils, 'bambu'), { level: 0 }],
+      'glow-test.stl': stl(part, 'Glow test'),
+      'glow-test.txt': strToU8(`Glow test\n\nA curved strip 20 mm tall whose wall gets thicker in ${GLOW_STEPS.length} steps, thinnest at one end:\n${steps}\n\nPrint it upright in the filament you want to use, with the same wall settings you will use for the lamp (Arachne walls, no infill needed). Stand it over a phone torch or an LED tealight in a dim room: thin steps are brightest but show the light source as a bright spot; thicker steps glow more evenly and more softly. Pick the thinnest step that hides the light source, and set Wall thickness to it.\n`),
+    }, { level: 6 });
+    await saveFile('weft-glow-test.zip', new Blob([zip], { type: 'application/zip' }));
+  } catch (e) { console.error(e); toast('Could not build the glow test'); }
+}
+
 async function saveCover() {
   const d = state.design;
   const [W, H] = state.aspect === '1:1' ? [1600, 1600] : [2000, 1500];
@@ -2711,7 +2816,7 @@ const COLLECTION_GROUPS = [
   ['vases', 'Vases', (d) => d.object === 'vase'],
   ['bowls', 'Bowls and trays', (d) => d.object === 'bowl' || d.object === 'tray'],
   ['storage', 'Boxes and cups', (d) => d.object === 'box' || d.object === 'cup'],
-  ['light', 'Lighting and candles', (d) => ['pendant', 'lamp', 'lantern', 'candle'].includes(d.object)],
+  ['light', 'Lighting and candles', (d) => ['pendant', 'lamp', 'globe', 'lantern', 'candle'].includes(d.object)],
   ['rings', 'Rings', (d) => d.object === 'ring'],
 ];
 let collectionFilter = store.get('weft.collFilter', 'all');
@@ -2810,6 +2915,18 @@ function safeTwist(F) {
 }
 function shuffleShape(d) {
   const F = d.form, X = d.extras, obj = d.object;
+  if (obj === 'globe') {
+    F.diameter = Math.round(rnd(170, 240)); F.height = Math.round(F.diameter * pick([1, 1, 1, rnd(0.85, 0.95), rnd(1.05, 1.18)]));
+    X.globeTop = pick(['round', 'round', 'peak']); X.globeUnder = pick(['round', 'round', 'cone']);
+    X.opening = Math.round(Math.max(76, F.diameter * rnd(0.36, 0.46)));
+    F.wall = pick([1.35, 1.8, 1.8]);
+    F.section = pick(['round', 'round', 'round', 'lobed', 'polygon']);
+    if (F.section === 'lobed') { F.lobes = Math.round(rnd(8, 14)); F.lobeDepth = +rnd(0.04, 0.09).toFixed(2); F.lobeStyle = pick(['scallop', 'wave']); }
+    if (F.section === 'polygon') { F.sides = pick([6, 8, 10]); F.corner = +rnd(0.3, 0.5).toFixed(2); }
+    // a support-free globe stays untwisted: a twist leans its 45° top and underside further
+    F.twist = F.section === 'round' || (X.globeTop === 'peak' && X.globeUnder === 'cone') ? 0 : pick([0, Math.round(rnd(30, 90)) * pick([1, -1])]);
+    return;
+  }
   const sils = {
     planter: ['cylinder', 'taper', 'barrel', 'tulip', 'urn', 'funnel', 'orb', 'orb'], box: ['barrel', 'cylinder', 'ovoid', 'lantern'], pendant: ['bell', 'ovoid', 'tulip', 'globe'],
     lamp: ['cylinder', 'taper', 'barrel', 'lantern', 'waist', 'ovoid'],
@@ -2864,8 +2981,10 @@ const BOLD_DEPTH = {
 };
 function shuffleSurface(d) {
   const F = d.form, S = d.surface, obj = d.object;
-  const lampObj = !!OBJECTS[obj].lamp;
-  const pats = lampObj
+  if (obj === 'globe' && Math.random() < 0.4) { Object.assign(S, { pattern: 'smooth', mode: 'none', swirl: 0, bandBottom: 0, bandTop: 0 }); return; }
+  const lampObj = !!OBJECTS[obj].lamp && obj !== 'globe';
+  const pats = obj === 'globe' ? ['ribs', 'ribs', 'reeds', 'waves', 'dunes', 'knit', 'quilt', 'facets', 'hammered', 'lattice', 'honeycomb', 'perforated', 'voronoi']
+    : lampObj
     ? ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'perforated']
     : ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'perforated', 'wicker', 'ribs', 'chevron', 'reeds', 'waves', 'topo', 'knit', 'weave', 'petals', 'quilt', 'facets', 'tiles', 'hammered', 'carved', 'rings', 'dunes', 'bark',
       'gouge', 'cubes', 'cubes', 'knurl', 'knurl', 'seigaiha', 'herringbone', 'blocks', 'blocks', 'spikes', 'spikes', 'shards', 'shards', 'fins', 'fins', 'hobnail', 'hobnail'];

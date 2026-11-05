@@ -103,6 +103,55 @@ export function easeProfile(rFn, H, maxDeg = 46) {
   return { fn, moved };
 }
 
+// ---------------------------------------------------------------- globe lamps
+// A closed ball (an ellipsoid when Height and Diameter differ) on a short upright collar that stands in
+// the base's groove. Its top is round, which needs supports inside, or rises to a 45° peak that closes
+// on its own; its underside is round, held by supports round the collar, or a 45° cone that needs none.
+// The profile ends in a small ring near the top, closed there by a cap to each wall's pole.
+export const GLOBE_COLLAR = 10;
+export function globeShape(F, X = {}, t = F.wall || 2) {
+  const R = F.diameter / 2, hc = GLOBE_COLLAR;
+  const rn = clamp((X.opening ?? 0.42 * F.diameter) / 2, Math.min(18, 0.6 * R), 0.8 * R);
+  const s = Math.sqrt(1 - (rn / R) ** 2);
+  const peak = X.globeTop === 'peak', cone = X.globeUnder === 'cone';
+  // for radii R across and c up: where the outline leans 45° (u in units of c from the centre)
+  const geo = (c) => {
+    const k = c / R, u45 = k / Math.sqrt(1 + k * k), r45 = R * Math.sqrt(1 - u45 * u45);
+    const coneOn = cone && r45 > rn + 0.5;
+    const zc = coneOn ? hc + (r45 - rn) + c * u45 : hc + c * s;
+    return { c, zc, u45, r45, coneOn, top: peak ? zc + c * u45 + r45 : zc + c };
+  };
+  // the height decides how tall the ball is: solve for c
+  let lo = Math.max(8, 0.15 * R), hi = 4 * R;
+  const want = clamp(F.height, geo(lo).top, geo(hi).top);
+  for (let it = 0; it < 60; it++) { const mid = (lo + hi) / 2; if (geo(mid).top < want) lo = mid; else hi = mid; }
+  const g = geo((lo + hi) / 2), { c, zc, u45, r45, coneOn } = g;
+  const zConeTop = zc - c * u45, zPeak = zc + c * u45;
+  const fn = (z) => {
+    if (z <= hc) return rn;
+    if (coneOn && z < zConeTop) return rn + (z - hc);
+    if (peak && z > zPeak) return Math.max(0, r45 - (z - zPeak));
+    const u = (z - zc) / c;
+    return R * Math.sqrt(Math.max(0, 1 - u * u));
+  };
+  // where the profile stops: a ring a few mm across (wider than the wall on a peak, so its inside stays open)
+  const rEnd = peak ? Math.max(3, t + 1.2) : Math.max(2.5, 0.02 * R);
+  const zEnd = peak ? g.top - rEnd : zc + c * Math.sqrt(1 - (rEnd / R) ** 2);
+  const dome = { zOut: g.top, zIn: peak ? g.top - t * Math.SQRT2 : g.top - t };
+  // arc length along the profile, for keeping patterns off the collar and out of the narrow top
+  const arc = (z0, z1) => { let L = 0, rp = fn(z0); const n = 400; for (let k = 1; k <= n; k++) { const z = z0 + ((z1 - z0) * k) / n, r = fn(z); L += Math.hypot(r - rp, (z1 - z0) / n); rp = r; } return L; };
+  // the pattern stops where the ball has narrowed to a third of its width
+  const rBand = Math.max(rn, 0.34 * R);
+  let zBand = zEnd;
+  for (let k = 0; k <= 800; k++) { const z = zc + ((zEnd - zc) * k) / 800; if (fn(z) < rBand) { zBand = z; break; } }
+  return {
+    fn, H: zEnd, top: g.top, R, c, zc, rn, collar: hc, peak, cone: coneOn, dome, rBand,
+    topBand: arc(zBand, zEnd) + 2, bottomBand: hc + 2,
+    // the round underside leans past 45° from the collar out to here; a round top leans past 45° above here
+    underTo: coneOn ? 0 : r45 > rn ? r45 : 0, zOver: peak ? Infinity : zPeak,
+  };
+}
+
 // ---------------------------------------------------------------- cross-sections
 // A closed, star-shaped outline with a maximum radius of 1, sampled at even arc length.
 // Columns of the wall mesh are attached to arc-length positions, so patterns keep their scale.
@@ -1054,7 +1103,7 @@ function fillBetween(D, a0, a1, w, need) {
 
 // ---------------------------------------------------------------- shell mesher
 // rows: sampled meridian; F: field (> 0 solid); D: outward displacement (or null)
-// floor: { type: 'solid' | 'hole' | 'open', thick, holeR }; top: 'rim' | 'cap'
+// floor: { type: 'solid' | 'hole' | 'open', thick, holeR }; top: 'rim' | 'cap' | 'pocket' | 'dome' | 'cut'
 // opts: { sec, twist (radians over the full height), H, zShift }
 function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
   const NR = rows.n;
@@ -1086,7 +1135,7 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     for (let j = 0; j < jb; j++) zIn[j] = floor.thick + (zIn[jb] - floor.thick) * (rows.l[j] / rows.l[jb]);
   } else if (!floor.cut) {
     zIn[0] = rows.z[0];
-    zIn[NR - 1] = rows.z[NR - 1];
+    if (top !== 'dome') zIn[NR - 1] = rows.z[NR - 1];
   }
   if (floor.type !== 'open') {
     // where the base chamfer turns upright, the inner offset folds back inward a little; near the floor
@@ -1127,9 +1176,31 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
       for (let j = b; j < NR; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = zTop; }
     }
   }
+  // The same at the bottom of an open piece (rings, lamp shades) whose wall narrows going up: its inside
+  // starts lower than its outside, under the bed, so it starts where it meets the base plane instead.
+  if (floor.type === 'open' && !floor.cut) {
+    const z0 = rows.z[0];
+    let b = 0;
+    while (b < NR - 2 && zIn[b + 1] <= z0) b++;
+    if (b > 0) {
+      const a = b + 1, f = clamp((z0 - zIn[b]) / Math.max(1e-9, zIn[a] - zIn[b]), 0, 1);
+      const rc = rows.r[b] + (rows.r[a] - rows.r[b]) * f, oc = offIn[b] + (offIn[a] - offIn[b]) * f;
+      for (let j = 0; j <= b; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = z0; }
+    }
+  }
   // keep the inner wall monotone so a flared rim or floor never folds over itself
   for (let j = NR - 2; j >= 0; j--) if (zIn[j] > zIn[j + 1] - 1e-3) zIn[j] = zIn[j + 1] - 1e-3;
   for (let j = 1; j < NR; j++) if (zIn[j] < zIn[j - 1] + 1e-3) zIn[j] = zIn[j - 1] + 1e-3;
+  // Where the wall bends sharply inward (a tight belly under the rim), the inside, a wall's thickness in,
+  // folds back on itself, and keeping it monotone flattens the fold into a little ceiling. Going up, the
+  // inside may step in no faster than 45°: the wall is a little thinner across the bend instead.
+  // (A closed globe's dome leans past 45° on purpose, and is printed with supports.)
+  if (top !== 'dome') {
+    for (let j = 1; j < NR; j++) {
+      const rPrev = rows.r[j - 1] + offIn[j - 1], rIn = rows.r[j] + offIn[j], lo = rPrev - (zIn[j] - zIn[j - 1]);
+      if (rIn < lo) offIn[j] += Math.min(lo, rows.r[j] + off[j] - 0.8) - rIn;
+    }
+  }
 
   const mesh = new Mesh();
   const mapO = new Int32Array(K).fill(-1), mapI = new Int32Array(K).fill(-1), mapW = new Int32Array(2 * K).fill(-1);
@@ -1332,6 +1403,16 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     let zc = 0; for (let i = 0; i < NU; i++) zc += mesh.P.a[ring[i] * 3 + 2]; zc /= NU;
     const ct = capV(0, 0, zc);
     for (let i = 0; i < NU; i++) mesh.tri(ct, ring[i], ring[(i + 1) % NU]);
+  }
+  if (top === 'dome') {
+    // a closed top (globe lamps): the outer and the inner wall each end in a small ring near the top,
+    // and each ring closes onto its own pole
+    const jt = NR - 1, po = capV(0, 0, opts.dome.zOut), pi = capV(0, 0, opts.dome.zIn), ro = [], ri = [];
+    for (let i = 0; i < NU; i++) {
+      point(jt * NU + i, false); ro.push(mesh.v(px, py, pz, jt * NU + i));
+      point(jt * NU + i, true); ri.push(mesh.v(px, py, pz, jt * NU + i + K));
+    }
+    for (let i = 0; i < NU; i++) { const i1 = (i + 1) % NU; mesh.tri(po, ro[i], ro[i1]); mesh.tri(pi, ri[i1], ri[i]); }
   }
   if (top === 'pocket') {
     // a solid body with a round pocket in its top (a candle holder): a flat ring from the outside in to
@@ -1589,8 +1670,9 @@ export function rimProfile(edge, t) {
   return null;
 }
 
-// An inside chamfer at an open end: the inner wall flares out by c at the very edge, at 45°.
-const chamferEdge = (c) => ({ zone: c, out: () => 0, inn: (u) => Math.max(0, c - u) });
+// An inside chamfer at an open end: the inner wall flares out by c at the very edge, at 40° (not 45°, so
+// that a ring whose wall leans in a little still keeps its lower chamfer under 45°).
+const chamferEdge = (c) => ({ zone: c / 0.84, out: () => 0, inn: (u) => Math.max(0, c - u * 0.84) });
 // Two edge profiles at once: the outside follows the first, the inside takes whichever cuts deeper.
 function combineEdges(a, b) {
   if (!a) return b; if (!b) return a;
@@ -1618,7 +1700,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   let rMin = Infinity, rMax = 0;
   for (let j = 0; j < coarse.n; j++) { rMin = Math.min(rMin, coarse.r[j]); rMax = Math.max(rMax, coarse.r[j]); }
   rMax += extra.offset || 0;
-  let cell = extra.cell || cellFor(S, mode, rMin * perim, coarse.L, quality);
+  let cell = extra.cell || cellFor(S, mode, (extra.rMinCell ?? rMin) * perim, coarse.L, quality);
   // keep the grid within budget
   const budget = 2.4e6 * Math.min(quality, 1.6);
   const est = () => (Math.ceil((rMax * sec.L) / cell) * coarse.L) / cell;
@@ -1741,7 +1823,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
       }
     }
   }
-  const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1, slide, pocket: extra.pocket };
+  const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1, slide, pocket: extra.pocket, dome: extra.dome };
   if (!cuts.length) {
     const mesh = buildShell(rows, NU, F, D, P.form.wall, { ...floor, band: bandB }, top, shellOpts);
     return { mesh, rows, NU, cell, rMax, rMin, perim };
@@ -1791,6 +1873,21 @@ function extrudePolygon(pts, t) {
   if (idx.length === 3) { const [a, b, c] = idx; mesh.tri(top[a], top[b], top[c]); mesh.tri(bot[a], bot[c], bot[b]); }
   for (let i = 0; i < n; i++) { const j = (i + 1) % n; mesh.tri(bot[i], bot[j], top[j]); mesh.tri(bot[i], top[j], top[i]); }
   return mesh;
+}
+
+// A test piece for translucent filament: a curved strip, 20 mm tall, whose wall steps from one line
+// (0.45 mm) at one end to 3 mm at the other. Stand it over a phone torch or an LED tealight to see how
+// much light each thickness lets through, and how well it hides the bulb.
+export const GLOW_STEPS = [0.45, 0.9, 1.35, 1.8, 2.25, 3];
+export function glowTest() {
+  const Ro = 32, per = 42, n = 10, a0 = 90 - (per * GLOW_STEPS.length) / 2, rad = (d) => (d * Math.PI) / 180, pts = [];
+  for (let k = 0; k <= GLOW_STEPS.length * n; k++) { const a = rad(a0 + (per * k) / n); pts.push([Ro * Math.cos(a), Ro * Math.sin(a)]); }
+  for (let s = GLOW_STEPS.length - 1; s >= 0; s--) {
+    const ri = Ro - GLOW_STEPS[s];
+    for (let k = n; k >= 0; k--) { const a = rad(a0 + per * (s + k / n)); pts.push([ri * Math.cos(a), ri * Math.sin(a)]); }
+  }
+  const m = finish(extrudePolygon(pts, 20), { overhangLimit: 46 });
+  return { key: 'glowtest', label: 'Glow test', ...m, place: { z: 0, color: 0 } };
 }
 
 // A plant stand in two flat pieces that slot together into a cross: each is a pair of legs joined by a
@@ -1854,10 +1951,13 @@ export function generate(P, quality = 1) {
   const F = P.form, X = P.extras;
   let S = P.surface;
   if (WATERTIGHT.has(P.object) && S.mode === 'cut') { S = { ...S, mode: 'relief' }; P = { ...P, surface: S }; }
-  const H = F.height;
-  let rFn = makeProfile(F);
+  // a globe lamp has a shape of its own; everything else follows the silhouette
+  const globe = P.object === 'globe';
+  const gs = globe ? globeShape(F, X, F.wall) : null;
+  const H = globe ? gs.H : F.height;
+  let rFn = globe ? gs.fn : makeProfile(F);
   let eased = 0;
-  if (F.printable !== false) { const e = easeProfile(rFn, H, 44); rFn = e.fn; eased = e.moved; }
+  if (!globe && F.printable !== false) { const e = easeProfile(rFn, H, 44); rFn = e.fn; eased = e.moved; }
   const parts = [];
   const warnings = [];
   const mode = S.pattern === 'smooth' ? 'none' : S.mode;
@@ -1870,6 +1970,7 @@ export function generate(P, quality = 1) {
   // cross-section: round corners must stay wider than the wall, or the inner outline would fold
   let rMinAll = Infinity;
   for (let k = 0; k <= 200; k++) rMinAll = Math.min(rMinAll, rFn((H * k) / 200));
+  if (globe) rMinAll = gs.rBand;
   let secF = F;
   // wall planters always have the flat back; their outline cannot twist away from the wall
   const wallObj = P.object === 'wall';
@@ -1894,6 +1995,8 @@ export function generate(P, quality = 1) {
   let minTopBand = 0;
   const insert = obj === 'planter' && X.base === 'insert';
   const lamp = obj === 'lamp';
+  // table lamps and globes stand in a groove in a printed base that holds the lamp socket
+  const onBase = lamp || globe;
   const pot = obj === 'planter' || obj === 'hanging' || obj === 'wall' || obj === 'orchid';
   // the pot's base accessory: planters have them all, orchid pots a saucer
   const potBase = obj === 'planter' ? X.base || 'none' : obj === 'orchid' && X.base === 'saucer' ? 'saucer' : 'none';
@@ -1905,7 +2008,8 @@ export function generate(P, quality = 1) {
   if (obj === 'pendant') floor = { type: 'hole', thick: F.floor, holeR: X.socket / 2 };
   // a table-lamp shade is open at both ends and stands in a groove in the base; so is a napkin ring
   const GROOVE = 3;
-  if (lamp || obj === 'ring') floor = { type: 'open' };
+  if (onBase || obj === 'ring') floor = { type: 'open' };
+  if (globe) top = 'dome';
   if (obj === 'vase' && X.vaseMode && mode !== 'cut') top = 'cap';
   // a candle holder is solid, with a pocket in the top just the size of the candle
   const CANDLES = { tealight: { d: 40, depth: 17, label: 'tealight' }, maxi: { d: 60, depth: 24, label: 'maxi tealight' }, taper: { d: 22.5, depth: 20, label: 'taper candle' } };
@@ -1926,7 +2030,9 @@ export function generate(P, quality = 1) {
   const rimShape = top === 'rim' && !lidOn && !insert ? F.rimShape || 'level' : 'level';
   const rimDrop = clamp(F.rimDepth || 0, 0, H * 0.35);
   const shaped = rimShape !== 'level' && rimDrop > 0.5;
-  const extraMain = { minTopBand, sec, twist, freezeChamfer: floor.type !== 'open', minBottomBand: lamp ? GROOVE + 3 : 0 };
+  const extraMain = { minTopBand, sec, twist, freezeChamfer: floor.type !== 'open', minBottomBand: onBase ? GROOVE + 3 : 0 };
+  // a globe keeps its pattern off the collar and out of the narrow top, where the dome closes
+  if (globe) Object.assign(extraMain, { dome: gs.dome, minTopBand: gs.topBand, minBottomBand: gs.bottomBand, rMinCell: gs.rBand });
   // napkin rings: the rim edge at both ends, and an inside chamfer
   if (obj === 'ring') { extraMain.edgeBoth = X.edgeBoth !== false; extraMain.innerChamfer = clamp(X.innerChamfer || 0, 0, Math.max(0, F.wall - 0.8)); }
   if (candle) extraMain.pocket = { r: candle.d / 2, depth: Math.min(candle.depth, H - 6) };
@@ -1960,8 +2066,8 @@ export function generate(P, quality = 1) {
   if (mc) extraMain.bands = mc;
   if (rimEdge !== 'flat' || shaped) extraMain.rim = { edge: rimEdge, shape: shaped ? rimShape : 'level', drop: rimDrop, waves: clamp(Math.round(F.rimWaves || 6), 2, 24) };
   const shell = makePatternedShell(rFn, H, P, quality, floor, top, extraMain);
-  const mainKey = { candle: 'holder', planter: 'pot', hanging: 'pot', wall: 'pot', orchid: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', lantern: 'lantern', bowl: 'bowl', tray: 'tray', vase: 'vase', cup: 'cup', ring: 'ring' }[obj];
-  const mainLabel = { candle: 'Candle holder', planter: 'Pot', hanging: 'Pot', wall: 'Pot', orchid: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', lantern: 'Lantern', bowl: 'Bowl', tray: 'Tray', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup', ring: 'Ring' }[obj];
+  const mainKey = { globe: 'globe', candle: 'holder', planter: 'pot', hanging: 'pot', wall: 'pot', orchid: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', lantern: 'lantern', bowl: 'bowl', tray: 'tray', vase: 'vase', cup: 'cup', ring: 'ring' }[obj];
+  const mainLabel = { globe: 'Globe', candle: 'Candle holder', planter: 'Pot', hanging: 'Pot', wall: 'Pot', orchid: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', lantern: 'Lantern', bowl: 'Bowl', tray: 'Tray', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup', ring: 'Ring' }[obj];
 
   let mainLift = 0;
 
@@ -2003,8 +2109,8 @@ export function generate(P, quality = 1) {
 
   // ---- table lamp base: printed top-down. Its top plate holds an E27 socket in a centre hole and has a
   // groove the shade stands in; a notch in the bottom edge lets the cord out.
-  if (lamp) {
-    const c = 0.45, tB = 3, plate = GROOVE + 2.6, Hb = clamp(X.baseH || 55, 30, 140);
+  if (onBase) {
+    const c = 0.45, tB = 3, plate = GROOVE + 2.6, Hb = clamp(X.baseH || (globe ? 45 : 55), 30, 140);
     let kLo = Infinity;
     const cols = sectionColumns(sec, 256);
     for (let i = 0; i < 256; i++) kLo = Math.min(kLo, cols.CX[i] * cols.NX[i] + cols.CY[i] * cols.NY[i]);
@@ -2156,12 +2262,19 @@ export function generate(P, quality = 1) {
   }
   const loops = Math.max(1, Math.round(F.wall / 0.45));
   if (F.wall < 0.8) checks.push({ level: 'bad', text: 'Walls under 0.8 mm are too thin for a 0.4 mm nozzle.' });
-  else if (F.wall < 2 && top !== 'cap' && top !== 'pocket') checks.push({ level: 'warn', text: `Wall ${F.wall.toFixed(1)} mm is thin and can flex or crack. 3 mm makes a sturdy piece.` });
-  else checks.push({ level: 'ok', text: `Wall ${F.wall.toFixed(1)} mm ≈ ${loops} wall loop${loops > 1 ? 's' : ''} at 0.45 mm line width.` });
+  else if (F.wall < 2 && top !== 'cap' && top !== 'pocket' && !globe) checks.push({ level: 'warn', text: `Wall ${F.wall.toFixed(1)} mm is thin and can flex or crack. 3 mm makes a sturdy piece.` });
+  else if (!globe) checks.push({ level: 'ok', text: `Wall ${F.wall.toFixed(1)} mm ≈ ${loops} wall loop${loops > 1 ? 's' : ''} at 0.45 mm line width.` });
   const overArea = parts.reduce((acc, p) => acc + p.stats.overhang, 0);
   const bridgeArea = parts.reduce((acc, p) => acc + p.stats.bridge, 0);
   const totalArea = parts.reduce((acc, p) => acc + p.stats.area, 0);
-  if (overArea / totalArea > 0.01 || overArea > 500) checks.push({ level: 'bad', text: `${(overArea / 100).toFixed(1)} cm² overhangs past 46°. It is striped on the model; add supports or change the shape.` });
+  // a closed globe leans past 45° by design: say where it needs supports, and how to print it
+  const globeNeeds = [];
+  if (globe && !gs.peak) globeNeeds.push(`the round top leans past 45° above ${Math.round(gs.zOver)} mm, so it needs supports inside`);
+  if (globe && gs.underTo > 0) globeNeeds.push(`the round underside leans past 45° from the collar out to Ø ${Math.round(2 * gs.underTo)} mm, so it needs supports round the collar`);
+  if (globeNeeds.length) {
+    const fix = [!gs.peak ? 'a Peak top' : null, gs.underTo > 0 ? 'a Cone underside' : null].filter(Boolean).join(' and ');
+    checks.push({ level: 'warn', text: `Needs supports. This is a closed globe: ${globeNeeds.join('; ')}. Use tree supports on the build plate only: inside the ball they grow up through the Ø ${Math.round(2 * (gs.rn - F.wall))} mm opening and come out through it. Supports leave marks that show when it is lit. ${fix[0].toUpperCase()}${fix.slice(1)} would print without them (striped on the model).` });
+  } else if (overArea / totalArea > 0.01 || overArea > 500) checks.push({ level: 'bad', text: `${(overArea / 100).toFixed(1)} cm² overhangs past 46°. It is striped on the model; add supports or change the shape.` });
   else if (overArea > 60) checks.push({ level: 'warn', text: `${(overArea / 100).toFixed(1)} cm² of small overhangs past 46°, striped on the model. Usually prints fine.` });
   else checks.push({ level: 'ok', text: 'No overhangs past 46°. Prints without supports.' });
   if (mode === 'cut' && bridgeArea > 40) {
@@ -2187,6 +2300,13 @@ export function generate(P, quality = 1) {
   }
   if (obj === 'lantern') checks.push({ level: 'ok', text: 'For LED tealights only, never a real flame: PLA and PETG soften from about 60 °C.' });
   if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert${X.slots !== false ? ', and the slots round its foot let the soil drink from it' : ''}. Fill it through the channel at the rim${X.slots !== false ? '' : ", and thread a cotton wick through the hole in the insert's floor"}.` });
+  if (globe) {
+    const lines = Math.max(1, Math.round(F.wall / 0.44)), inner = 2 * (gs.rn - F.wall - 0.45);
+    if (inner < 64) checks.push({ level: 'warn', text: `The opening is Ø ${Math.round(inner)} mm inside, too narrow to lift the globe over an A60 bulb (Ø 60 mm). Widen it, or use a G45 or P45 bulb (Ø 45 mm).` });
+    else checks.push({ level: 'ok', text: `The globe stands in a groove in the base and lifts off over the bulb (opening Ø ${Math.round(inner)} mm inside).` });
+    checks.push({ level: 'ok', text: 'A closed globe keeps the heat in: LED bulbs only, 7 W or less. PETG copes with warmth better than PLA.' });
+    checks.push({ level: 'ok', text: `Wall ${F.wall.toFixed(1)} mm is about ${lines} line${lines > 1 ? 's' : ''} wide. In translucent filament ${lines <= 2 ? 'that is the brightest, but the bulb shows through as a bright spot' : lines <= 4 ? 'it glows evenly and stays bright' : 'it glows softly but noticeably dimmer'}; 3 to 4 lines (1.3 to 1.8 mm) is the usual sweet spot.` });
+  }
   if (lamp) {
     let rMinIn = Infinity;
     for (let j = 0; j < shell.rows.n; j++) if (shell.rows.z[j] > 25 && shell.rows.z[j] < 140) rMinIn = Math.min(rMinIn, shell.rows.r[j] * sec.minR - F.wall);
@@ -2219,7 +2339,7 @@ export function generate(P, quality = 1) {
       return { x: x0 * Math.cos(phi) - y0 * Math.sin(phi), y: x0 * Math.sin(phi) + y0 * Math.cos(phi), z: hl.z };
     });
   }
-  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers, stand: standInfo } };
+  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers, stand: standInfo, globe: gs ? { top: gs.top, R: gs.R, zc: gs.zc, rn: gs.rn, peak: gs.peak, cone: gs.cone } : null } };
 }
 
 // ---------------------------------------------------------------- pattern swatches

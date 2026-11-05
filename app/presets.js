@@ -15,7 +15,7 @@ export const BASE = {
   },
   extras: {
     drain: 0, base: 'none', sleeveH: 0.38, sleeveTilt: 18, gap: 1.0, lid: true, knob: 'ball', knobSize: 26, lidOverhang: 0.6,
-    clearance: 0.35, plugDepth: 6, socket: 40, vaseMode: false, reservoir: 14, slots: true, stand: 'none', standLift: 70, standHug: 0.35, standLeg: 12, candle: 'tealight', edgeBoth: true, innerChamfer: 0, baseH: 55, cord: true, hangers: 3, back: 0.3,
+    clearance: 0.35, plugDepth: 6, socket: 40, opening: 92, globeTop: 'round', globeUnder: 'round', vaseMode: false, reservoir: 14, slots: true, stand: 'none', standLift: 70, standHug: 0.35, standLeg: 12, candle: 'tealight', edgeBoth: true, innerChamfer: 0, baseH: 55, cord: true, hangers: 3, back: 0.3,
   },
   finish: {
     color: '#22211f', color2: '#eeebe4', color3: '#22211f', material: 'matte',
@@ -33,6 +33,7 @@ export const OBJECTS = {
   cup: { label: 'Cup & holder', blurb: 'Pen cups, utensil holders, sleeves' },
   pendant: { label: 'Pendant lamp', blurb: 'Shade for an E27 or E14 socket', lamp: true },
   lamp: { label: 'Table lamp', blurb: 'Shade on a base for an E27 lamp kit', lamp: true },
+  globe: { label: 'Globe lamp', blurb: 'Closed glowing ball on a base for an E27 lamp kit', lamp: true, globe: true },
   hanging: { label: 'Hanging planter', blurb: 'Watertight pot with holes for hanging cords', watertight: true },
   wall: { label: 'Wall planter', blurb: 'Flat back with a keyhole for one screw', watertight: true },
   orchid: { label: 'Orchid pot', blurb: 'Open sides let the roots breathe' },
@@ -451,5 +452,26 @@ export const COLLECTION = [
     surface: { pattern: 'ribs', mode: 'relief', count: 44, angle: 0, fill: 1, depth: 2.5, profile: 'round', bandBottom: 0, bandTop: 0 },
     extras: { lid: true, knob: 'disc', knobSize: 30 },
     finish: { color: '#3a3b3d', color3: '#c9b8a3', material: 'satin' },
+  }),  // globe lamps: a plain opal ball, a melon that glows through its ribs, and one that needs no supports
+  design({
+    name: 'Opal', object: 'globe',
+    form: { height: 220, diameter: 220, section: 'round', twist: 0, inset: 0, wall: 1.8, floor: 3 },
+    surface: { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 },
+    extras: { socket: 40, baseH: 45, cord: true, opening: 92, globeTop: 'round', globeUnder: 'round' },
+    finish: { color: '#eeebe4', color2: '#22211f', material: 'translucent' },
+  }),
+  design({
+    name: 'Melon', object: 'globe',
+    form: { height: 200, diameter: 210, section: 'lobed', lobes: 12, lobeDepth: 0.06, lobeStyle: 'wave', twist: 0, inset: 0, wall: 1.35, floor: 3 },
+    surface: { pattern: 'ribs', mode: 'relief', count: 60, angle: 0, fill: 1, depth: 1.6, profile: 'round', bandBottom: 0, bandTop: 0 },
+    extras: { socket: 40, baseH: 45, cord: true, opening: 88, globeTop: 'round', globeUnder: 'round' },
+    finish: { color: '#d8a647', color2: '#5b4a3a', material: 'translucent' },
+  }),
+  design({
+    name: 'Bulb', object: 'globe',
+    form: { height: 240, diameter: 190, section: 'round', twist: 0, inset: 0, wall: 1.8, floor: 3 },
+    surface: { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 },
+    extras: { socket: 40, baseH: 45, cord: true, opening: 84, globeTop: 'peak', globeUnder: 'cone' },
+    finish: { color: '#d9a79a', color2: '#eeebe4', material: 'translucent' },
   }),
 ];
