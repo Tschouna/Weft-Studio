@@ -1,0 +1,64 @@
+# Lichtblick, the photo-weather phone app in lichtblick/:
+# - on pushes that touch it: run its checks, and on main publish it to GitHub Pages
+#   (one-time setup: Settings → Pages → Source: "GitHub Actions")
+# - twice a day: send the best photo chances to your phone through ntfy.sh, if the repository has a
+#   secret NTFY_TOPIC (and optionally a variable LICHTBLICK_URL with the Pages address)
+name: Lichtblick
+
+on:
+  push:
+    paths: ['lichtblick/**', '.github/workflows/lichtblick.yml']
+  schedule:
+    - cron: '35 4 * * *'   # early morning in Switzerland: today's chances
+    - cron: '5 15 * * *'   # afternoon: tonight and tomorrow morning
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node lichtblick/test/run.mjs
+
+  pages:
+    if: github.event_name != 'schedule' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp the service worker with this build
+        run: sed -i "s/__BUILD__/${GITHUB_SHA::8}/" lichtblick/sw.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: lichtblick }
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  digest:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      LICHTBLICK_URL: ${{ vars.LICHTBLICK_URL }}
+      LICHTBLICK_MIN: ${{ vars.LICHTBLICK_MIN }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.NTFY_TOPIC != ''
+      - uses: actions/setup-node@v4
+        if: env.NTFY_TOPIC != ''
+        with: { node-version: 22 }
+      - name: Send the photo chances
+        if: env.NTFY_TOPIC != ''
+        run: node lichtblick/scripts/digest.mjs
