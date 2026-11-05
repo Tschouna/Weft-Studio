@@ -3017,6 +3017,8 @@ function shuffleSurface(d) {
     S.bandBottom = pick([0, 0, 3]); S.bandTop = pick([0, 3, 5]);
   }
   if (obj === 'ring' || obj === 'tray') { S.bandBottom = Math.min(S.bandBottom, 2); S.bandTop = Math.min(S.bandTop, 2); }
+  // a globe's pattern runs over the whole ball
+  if (obj === 'globe') { S.bandBottom = 0; S.bandTop = 0; }
   // orchid bark needs a solid band at the bottom to stay in
   if (obj === 'orchid' && S.mode === 'cut') S.bandBottom = Math.round(rnd(14, 22));
   if (pid === 'fins' && S.mode === 'relief') { S.fill = +rnd(0.35, 0.6).toFixed(2); S.profile = pick(['flat', 'flat', 'sharp', 'round']); S.swirl = pick([0, 0, 60, 90, -90, 120]); }

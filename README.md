@@ -90,7 +90,7 @@ Requirements: Node.js 22 and npm.
 6. Bold, deep relief keeps its undersides printable on bellied, twisted and flared shapes.
 7. Shuffled designs print without supports. It uses the studio's own shuffle code, read out of `app/app.js` by `test/shuffle-lib.mjs`.
 8. Lids on twisted, shaped boxes keep the box's outline and still pass the opening.
-9. Globe lamps: every top, underside, outline and pattern builds closed; a round globe says it needs supports, and a peak top with a cone underside prints without any. The glow test strip is closed.
+9. Globe lamps: every top, underside, outline and pattern builds closed; a round globe says it needs supports, and a peak top with a cone underside prints without any. A relief stands out at full depth near the top, round the middle and underneath. The glow test strip is closed.
 
 `ONLY=3,5 npm test` runs just those sections.
 

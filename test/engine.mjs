@@ -8,7 +8,8 @@
 //  7. shuffled designs print without supports
 //  8. lids fit twisted, shaped boxes
 //  9. globe lamps: every top, underside, outline and pattern builds closed, a closed ball says it needs
-//     supports and a peak with a cone underside needs none; the glow test strip is closed
+//     supports and a peak with a cone underside needs none, relief covers the whole ball; the glow test
+//     strip is closed
 import { generate, makeProfile, easeProfile, globeShape, glowTest, GLOW_STEPS, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
@@ -318,6 +319,20 @@ for (const [name, o] of cases) {
   const ok = !open && supported === wantSupports && (wantSupports || over < 60) && sizeOk && r.parts.some((p) => p.key === 'base') && Math.abs(gs.dome.zOut - gs.dome.zIn) >= d.form.wall - 1e-6;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${(g.stats.tris / 1000).toFixed(0)}k tris, ${open} open edges, ${b[5].toFixed(0)} mm tall, overhang ${(over / 100).toFixed(0)} cm², ${supported ? 'needs supports (said so)' : 'no supports'}`);
   if (!ok) fail(`globe ${name}`);
+}
+// a relief runs over the whole ball: it stands out near the top and on the underside as well as at the middle
+{
+  const d = mk({ surface: { pattern: 'waves', mode: 'relief', count: 4, rows: 24, wave: 0.45, depth: 1.8, fill: 1, profile: 'soft' } });
+  const r = generate(d, 0.8), g = mainOf(r), gs = globeShape(d.form, d.extras, d.form.wall), P = g.position;
+  const zone = { top: 0, middle: 0, under: 0 };
+  for (let v = 0; v < P.length; v += 3) {
+    const u = (P[v + 2] - gs.zc) / gs.c, h = (Math.sqrt((P[v] ** 2 + P[v + 1] ** 2) / gs.R ** 2 + u * u) - 1) * gs.R;
+    const k = u > 0.88 ? 'top' : u < -0.75 && P[v + 2] > gs.collar + 3 ? 'under' : Math.abs(u) < 0.3 ? 'middle' : null;
+    if (k && h > zone[k]) zone[k] = h;
+  }
+  const ok = zone.top > 0.9 && zone.under > 0.9 && zone.middle > 0.9 && !openEdges(g);
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} relief all over: stands out ${zone.top.toFixed(1)} mm near the top, ${zone.middle.toFixed(1)} mm round the middle, ${zone.under.toFixed(1)} mm underneath`);
+  if (!ok) fail('globe relief coverage');
 }
 // the glow test strip: closed, outward, with every step
 const gt = glowTest(), gOpen = openEdges(gt);

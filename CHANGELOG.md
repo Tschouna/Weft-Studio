@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.1
+
+- **Globe patterns cover the whole ball:**
+  - Patterns used to stop where the ball narrowed to a third of its width, leaving a plain cap on top, and relief faded out on the underside. They now run from the collar right over the top.
+  - Relief stands out along the surface of the ball, so it keeps its full depth on the near-flat top and on the underside, not just round the middle.
+  - Right at the top, where the pattern's cells shrink to nothing, relief softens over the last few centimetres instead of crowding into spikes. Openwork stops where its openings would get narrower than its strips.
+  - Raised patterns on the underside mean supports, as the print check says; Smooth or openwork keep a Peak and Cone globe support-free.
+  - Shuffled globes no longer get plain bands.
+
 ## 2.6.0
 
 - **Globe lamp (new object):**

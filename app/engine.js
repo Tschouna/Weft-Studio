@@ -144,8 +144,14 @@ export function globeShape(F, X = {}, t = F.wall || 2) {
   const rBand = Math.max(rn, 0.34 * R);
   let zBand = zEnd;
   for (let k = 0; k <= 800; k++) { const z = zc + ((zEnd - zc) * k) / 800; if (fn(z) < rBand) { zBand = z; break; } }
+  // arc length of the cap above the point where the ball has narrowed to radius rStop
+  const topBandAt = (rStop) => {
+    let z0 = zEnd;
+    for (let k = 0; k <= 800; k++) { const z = zc + ((zEnd - zc) * k) / 800; if (fn(z) < rStop) { z0 = z; break; } }
+    return arc(z0, zEnd);
+  };
   return {
-    fn, H: zEnd, top: g.top, R, c, zc, rn, collar: hc, peak, cone: coneOn, dome, rBand,
+    fn, H: zEnd, top: g.top, R, c, zc, rn, collar: hc, peak, cone: coneOn, dome, rBand, topBandAt,
     topBand: arc(zBand, zEnd) + 2, bottomBand: hc + 2,
     // the round underside leans past 45° from the collar out to here; a round top leans past 45° above here
     underTo: coneOn ? 0 : r45 > rn ? r45 : 0, zOver: peak ? Infinity : zPeak,
@@ -973,7 +979,7 @@ function smax(a, b, k) { return -smin(-a, -b, k); }
 // turns into a staircase that the printer reproduces. Then undersides are held at 45°.
 const RELIEF_FILLET = 0.45;
 function processRelief(D, rows, NU, o) {
-  const lim = () => limitUndersides(D, rows, NU, o.sec, o.twist, o.H, o.fillBelow, 45.5, o.slide);
+  const lim = () => limitUndersides(D, rows, NU, o.sec, o.twist, o.H, o.fillBelow, 45.5, o.slide, o.skipOverhung);
   if (o.mode !== 'relief') { if (o.mode !== 'none') lim(); return; }
   smoothRelief(D, rows, NU, o.perim, o.fillet ?? RELIEF_FILLET);
   lim();
@@ -1046,7 +1052,9 @@ function softenCliffs(D, rows, NU, perim) {
 // A twisted outline also swings sideways from row to row, which counts as growing outward on the flanks.
 // Up to `fillBelow` (the base chamfer) it may also fill where the bare wall alone is too steep; higher up
 // it only stops the relief from making a wall worse, so a long flare never piles material up.
-function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg = 45.5, slide = null) {
+// skipOverhung: where the bare wall itself leans past the limit (a globe's underside, printed on supports),
+// the relief there is left as it is
+function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg = 45.5, slide = null, skipOverhung = false) {
   const T = Math.tan((deg * Math.PI) / 180), n = rows.n;
   const { CX, CY, NX, NY } = sectionColumns(sec, NU);
   const Htot = H || rows.z[n - 1] || 1;
@@ -1069,6 +1077,7 @@ function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg 
       const dSl = slide ? (slide.amt[j + 1] - slide.amt[j]) * slide.w[i] : 0;
       const dR = above - below + dSl * NY[i];
       const raw = (rows.z[j + 1] - rows.z[j]) * T - dR;
+      if (skipOverhung && raw < 0) continue;
       const allow = rows.l[j + 1] <= fillBelow ? raw : Math.max(0, raw);
       const need = D[(j + 1) * NU + i] - allow;
       if (!twist && sec.round && !slide) { const a = j * NU + i; if (D[a] < need) D[a] = need; continue; }
@@ -1209,6 +1218,7 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
   function corner(i, j, inner) {
     let o, zz;
     if (inner) { o = offIn[j] + (Din ? Din[j * NU + i] : 0); zz = zIn[j]; }
+    else if (opts.normalRelief && D) { const dd = D[j * NU + i]; o = off[j] + dd * rows.nr[j]; zz = rows.z[j] + dd * rows.nz[j]; }
     else { o = off[j] + (D ? D[j * NU + i] : 0); zz = rows.z[j]; }
     if (zShift) zz += zShift[i] * zw[j];
     const sc = rows.r[j];
@@ -1755,7 +1765,9 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const freezeL = extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 0.4 : 0;
   // openings must keep their printable orientation, so a twisted outline does not drag them round
   const unswirl = mode === 'cut' ? ((extra.twist || 0) / TAU) * (H / Math.max(1e-6, rows.z[rows.n - 1])) : 0;
-  let { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, edgeBot, freezeL, unswirl });
+  let { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, edgeBot, freezeL, unswirl, keepDepth: extra.keepDepth });
+  // toward a closed top (globes) the cells shrink to nothing: the relief eases off within poleFade of the axis
+  if (D && extra.poleFade > 0) for (let j = 0; j < rows.n; j++) { const k = smoothstep(0, extra.poleFade, rows.r[j]); if (k < 1) for (let i = 0; i < NU; i++) D[j * NU + i] *= k; }
   // In the valleys of a shaped outline the inside of the wall is wider than the outside, so an opening is
   // stretched sideways on its way through and its pointed top flattens. Where that stretch passes 12%
   // the wall stays solid; openings there end in upright sides instead.
@@ -1801,7 +1813,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     const fa = extra.flatBack.nyArc;
     if (D) for (let i = 0; i < NU; i++) { const k = 1 - smoothstep(fa - 0.3, fa - 0.02, cols.NY[i]); if (k < 1) for (let j = 0; j < rows.n; j++) D[j * NU + i] *= k; }
   }
-  if (D) processRelief(D, rows, NU, { sec, perim, mode, twist: extra.twist || 0, H, fillBelow: extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 1 : 0, slide });
+  if (D) processRelief(D, rows, NU, { sec, perim, mode, twist: extra.twist || 0, H, fillBelow: extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 1 : 0, slide, skipOverhung: extra.skipOverhung });
   // holes through the wall: teardrops for hanging cords, keyholes for a screw
   if (extra.holes && extra.holes.length) {
     const cols = sectionColumns(sec, NU), du = sec.L / NU;
@@ -1823,7 +1835,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
       }
     }
   }
-  const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1, slide, pocket: extra.pocket, dome: extra.dome };
+  const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1, slide, pocket: extra.pocket, dome: extra.dome, normalRelief: extra.normalRelief };
   if (!cuts.length) {
     const mesh = buildShell(rows, NU, F, D, P.form.wall, { ...floor, band: bandB }, top, shellOpts);
     return { mesh, rows, NU, cell, rMax, rMin, perim };
@@ -2032,7 +2044,19 @@ export function generate(P, quality = 1) {
   const shaped = rimShape !== 'level' && rimDrop > 0.5;
   const extraMain = { minTopBand, sec, twist, freezeChamfer: floor.type !== 'open', minBottomBand: onBase ? GROOVE + 3 : 0 };
   // a globe keeps its pattern off the collar and out of the narrow top, where the dome closes
-  if (globe) Object.assign(extraMain, { dome: gs.dome, minTopBand: gs.topBand, minBottomBand: gs.bottomBand, rMinCell: gs.rBand });
+  if (globe) {
+    // the pattern runs over the whole ball. Relief stands out along the surface (not sideways), keeps its
+    // full depth on the underside too (the print check says where that needs supports), and softens only
+    // right at the top, where its cells shrink below its depth; openwork stops where its openings would
+    // get narrower than its strips.
+    const cutStop = clamp((2 * (S.width || 2) * Math.max(1, S.count)) / TAU, 6, 0.34 * gs.R);
+    Object.assign(extraMain, {
+      dome: gs.dome, minBottomBand: gs.bottomBand, rMinCell: gs.rBand,
+      minTopBand: mode === 'cut' ? gs.topBandAt(cutStop) + 2 : gs.topBandAt(3) + 0.5,
+      normalRelief: true, keepDepth: true, skipOverhung: true,
+      poleFade: mode === 'relief' ? clamp((relief * Math.max(1, S.count)) / Math.PI, 6, 0.25 * gs.R) : 0,
+    });
+  }
   // napkin rings: the rim edge at both ends, and an inside chamfer
   if (obj === 'ring') { extraMain.edgeBoth = X.edgeBoth !== false; extraMain.innerChamfer = clamp(X.innerChamfer || 0, 0, Math.max(0, F.wall - 0.8)); }
   if (candle) extraMain.pocket = { r: candle.d / 2, depth: Math.min(candle.depth, H - 6) };
@@ -2271,9 +2295,10 @@ export function generate(P, quality = 1) {
   const globeNeeds = [];
   if (globe && !gs.peak) globeNeeds.push(`the round top leans past 45° above ${Math.round(gs.zOver)} mm, so it needs supports inside`);
   if (globe && gs.underTo > 0) globeNeeds.push(`the round underside leans past 45° from the collar out to Ø ${Math.round(2 * gs.underTo)} mm, so it needs supports round the collar`);
+  if (globe && !globeNeeds.length && mode === 'relief' && overArea > 60) globeNeeds.push(`the raised pattern leans past 45° in places (${(overArea / 100).toFixed(1)} cm², striped on the model), so it needs supports there too; openwork or Smooth keeps this shape support-free`);
   if (globeNeeds.length) {
     const fix = [!gs.peak ? 'a Peak top' : null, gs.underTo > 0 ? 'a Cone underside' : null].filter(Boolean).join(' and ');
-    checks.push({ level: 'warn', text: `Needs supports. This is a closed globe: ${globeNeeds.join('; ')}. Use tree supports on the build plate only: inside the ball they grow up through the Ø ${Math.round(2 * (gs.rn - F.wall))} mm opening and come out through it. Supports leave marks that show when it is lit. ${fix[0].toUpperCase()}${fix.slice(1)} would print without them (striped on the model).` });
+    checks.push({ level: 'warn', text: `Needs supports. This is a closed globe: ${globeNeeds.join('; ')}. Use tree supports on the build plate only: inside the ball they grow up through the Ø ${Math.round(2 * (gs.rn - F.wall))} mm opening and come out through it. Supports leave marks that show when it is lit.${fix ? ` ${fix[0].toUpperCase()}${fix.slice(1)} would print without them (striped on the model).` : ''}` });
   } else if (overArea / totalArea > 0.01 || overArea > 500) checks.push({ level: 'bad', text: `${(overArea / 100).toFixed(1)} cm² overhangs past 46°. It is striped on the model; add supports or change the shape.` });
   else if (overArea > 60) checks.push({ level: 'warn', text: `${(overArea / 100).toFixed(1)} cm² of small overhangs past 46°, striped on the model. Usually prints fine.` });
   else checks.push({ level: 'ok', text: 'No overhangs past 46°. Prints without supports.' });
