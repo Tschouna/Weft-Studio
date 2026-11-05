@@ -1,8 +1,8 @@
 # Lichtblick
 
-A phone app for landscape and astro photographers in Switzerland. It answers one question: **where and when is it worth going out with the camera?**
+A phone app for landscape, wildlife and astro photographers in Switzerland. It answers one question: **where and when is it worth going out with the camera?**
 
-It reads MeteoSwiss's forecast models for 47 hand-picked spots, each with an example photo, and for your own spots. Then it looks for the moments that make pictures:
+It reads MeteoSwiss's forecast models for 62 hand-picked spots (47 landscapes and 15 wildlife places), each with an example photo, and for your own spots. Then it looks for the moments that make pictures:
 
 | | Opportunity | What the app looks for |
 |---|---|---|
@@ -21,17 +21,19 @@ It reads MeteoSwiss's forecast models for 47 hand-picked spots, each with an exa
 | ✨🌌 | **Stars and Milky Way** | Clear, moonless darkness; the galactic core above the *real* mountains (not just above 0°), or the summer arch overhead. |
 | 🌠 | **Meteor showers** | The major showers near their peak, weighed against moon and clouds. |
 | 🟢 | **Northern lights** | NOAA's Kp forecast of 7 or more, a clear sky and an open view north. |
+| 🦌 | **Wildlife** | For each species at a spot: its season (rut, young, hibernation, migration) × its daily rhythm × the weather (rain, wind, heat; sunshine for marmots, thermals for eagles; falling pressure, fresh snow) × the light. Tells you the best window and where to approach from so the animals cannot smell you. |
 
 Every opportunity has a score from 0 to 100 and the reasons in plain words ("Lowlands under 100 % low cloud (Bern, Thun) · Inversion: 6 °C warmer than normal"). 88+ is exceptional, 75+ great, 60+ good.
 
-## The four tabs
+## The five tabs
 
 - **Chances:** the best opportunities of the next five days across all spots, by day, filterable (light, fog, water, storms, winter, autumn, night, your favourites).
-- **Map:** swisstopo's map (dark, national map or aerial) with a forecast layer over Switzerland and a 5-day time slider: *photo weather*, *fog & low cloud* (watch the sea of fog form), *all clouds*, *rain & snow*. Spots are coloured by their chance at that hour. Layers: live MeteoSwiss wind, humidity, temperature, fresh snow, snow depth, foehn and sunshine; MeteoSwiss webcams; night lights (light pollution). Long-press to add a spot.
+- **Map:** swisstopo's map (dark, national map or aerial) with a forecast layer over Switzerland and a 5-day time slider: *photo weather*, *fog & low cloud* (watch the sea of fog form), *all clouds*, *rain & snow*. Spots are coloured by their chance at that hour. Layers: live MeteoSwiss wind, humidity, temperature, fresh snow, snow depth, foehn and sunshine; MeteoSwiss webcams; night lights (light pollution); federal game reserves, water and migratory bird reserves, and wildlife rest zones. Long-press to add a spot.
+- **Wildlife:** the best chances for animal pictures on each of the next five days, and a planner for one spot: an hour-by-hour activity chart per species over the light (golden, soft, harsh), the weather and wind hour by hour, the scent tip, what is in season there (month bars, rut, young), what people have seen and photographed within 10 km this month (iNaturalist), and a species guide for 21 Swiss species with the rules for watching them. Spots include ibex ridges (Augstmatthorn, Niederhorn, Pilatus, Pontresina), the Swiss National Park (Val Trupchun for the red deer rut, Margunet), the Saas-Fee marmots, bird reserves (Fanel, Klingnauer Stausee, Bolle di Magadino, Ermatinger Becken, Neeracherried), the Altreu storks and two wildlife parks.
 - **Night sky:** for any spot and any of the next 14 nights: darkness, the moon, and **where the Milky Way stands, drawn over the real mountain horizon** as a panorama (or the whole sky), with a time slider and heights in fists at arm's length, no coordinates. Hour-by-hour clouds (MeteoSwiss), and with a meteoblue key meteoblue's cloud layers, fog, visibility and, with the Seeing package, seeing (″ and indices), jet stream and the bad layer. A 5-week moon calendar marks the Milky Way nights. Meteor showers and the northern-lights forecast.
 - **Spots:** the 47 curated spots and yours. Each spot page has the photo (with credit), what is coming up there, a five-day cloud-layer chart, today's sun and moon times (including when the sun really rises over the ridge), the horizon with the sun's path, the nearest live MeteoSwiss measurements and webcams, directions and a link to the swisstopo map.
 
-**Your own spots:** search a place (swisstopo), use where you stand, long-press the map, or **pick a photo**: the app reads the GPS position and compass direction from the photo, makes a spot there and uses the photo as its picture. It suggests what the place is good for (lake, above the fog, larches, dark sky…); those tags decide which opportunities are looked for. Everything stays on your phone; *Settings → Export my spots* makes a backup.
+**Your own spots:** search a place (swisstopo), use where you stand, long-press the map, or **pick a photo**: the app reads the GPS position and compass direction from the photo, makes a spot there and uses the photo as its picture. It suggests what the place is good for (lake, above the fog, larches, dark sky…) and you can tick the wildlife found there; those decide which opportunities are looked for. Everything stays on your phone; *Settings → Export my spots* makes a backup.
 
 ## Getting it on your phone
 
@@ -73,13 +75,16 @@ Try it from the *Actions* tab with *Run workflow*. Without the secret the job do
 | Live measurements, webcams | MeteoSwiss SwissMetNet (10-minute values) and MeteoSwiss weather cameras, from data.geo.admin.ch |
 | Autumn colours | MeteoSwiss phenological observations (open data), turned into a climatology by `scripts/phenology.mjs` |
 | Night sky | meteoblue Forecast API (your key) |
+| Wildlife sightings | iNaturalist research-grade observations of mammals and birds (only Creative Commons photos, credited) |
+| Wildlife areas | Federal Office for the Environment (FOEN) via swisstopo: game reserves, bird reserves, wildlife rest zones |
+| Species seasons and behaviour | `data/species.js`, written for this app from Swiss field knowledge (rut, young, hibernation, migration) |
 | Sun, moon, Milky Way | computed on the phone with [Astronomy Engine](https://github.com/cosinekitty/astronomy) (MIT) |
 | Maps, place search, heights, mountain horizons | swisstopo (geo.admin.ch); horizons from elevation profiles out to 60 km |
 | Night lights | NASA Black Marble (VIIRS, 2016) |
 | Northern lights | NOAA Space Weather Prediction Center, 3-day Kp forecast |
 | Spot photos | Wikimedia Commons; author and licence on each spot. The spot position is where the camera recorded it when the file says so, otherwise the classic viewpoint. |
 
-The forecast is a model, not a promise: the scores say how promising the model looks, and the reasons say why. The frozen-lake and autumn windows are estimates from season, altitude and statistics; check a webcam before a long drive. The mountain horizon uses Swiss terrain only, so peaks across the border can be missing.
+The forecast is a model, not a promise: the scores say how promising the model looks, and the reasons say why. The frozen-lake and autumn windows are estimates from season, altitude and statistics; check a webcam before a long drive. Wildlife chances are estimates too: animals follow their own plans. Keep your distance, stay on paths in reserves, and respect the winter rest zones. The mountain horizon uses Swiss terrain only, so peaks across the border can be missing.
 
 ## Working on it
 
@@ -99,12 +104,13 @@ Plain HTML and JavaScript modules, no build step. Node 22 for the checks and scr
 | `index.html`, `css/app.css` | The page and its look |
 | `js/main.js`, `js/app.js` | Start-up, tabs, the app's state: spots, forecasts, opportunities |
 | `js/scoring.js` | The opportunity detectors |
+| `js/wildlife.js` | The wildlife activity model (season, rhythm, weather, light, scent) |
 | `js/astro.js` | Sun, moon, twilight, Milky Way, meteor showers |
-| `js/sources/` | MeteoSwiss, meteoblue, swisstopo, NOAA |
+| `js/sources/` | MeteoSwiss, meteoblue, swisstopo, NOAA, iNaturalist |
 | `js/views/` | The tabs, the spot page, settings, charts |
 | `js/store.js` | Settings and your spots (localStorage), caches and photos (IndexedDB) |
 | `js/exif.js` | Reads the GPS position from photos |
-| `data/` | Curated spots, their horizons, the autumn-colour climatology, Switzerland's outline |
+| `data/` | Curated spots, their horizons, the species guide, the autumn-colour climatology, Switzerland's outline |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline and install |
 | `scripts/` | Data builders, the push digest, the local server |
 | `../.github/workflows/lichtblick.yml` | Checks, GitHub Pages, scheduled push alerts |

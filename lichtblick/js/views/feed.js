@@ -6,7 +6,7 @@ import { favourites, settings } from '../store.js';
 import { distance, fmtKm } from '../geo.js';
 import { openSpot } from './spot.js';
 
-const GROUPS = [['all', 'All'], ['fav', '★ Mine'], ['light', '🌅 Light'], ['fog', '☁️ Fog'], ['water', '🪞 Water'], ['storm', '⚡ Storms'], ['winter', '❄️ Winter'], ['season', '🍂 Autumn'], ['night', '🌌 Night']];
+const GROUPS = [['all', 'All'], ['fav', '★ Mine'], ['light', '🌅 Light'], ['fog', '☁️ Fog'], ['water', '🪞 Water'], ['storm', '⚡ Storms'], ['winter', '❄️ Winter'], ['season', '🍂 Autumn'], ['night', '🌌 Night'], ['wildlife', '🦌 Wildlife']];
 let group = 'all';
 
 export function renderFeed(root) {
@@ -14,6 +14,7 @@ export function renderFeed(root) {
   let ops = feedOps({ min: 45, perSpotDay: 2 });
   if (group === 'fav') ops = ops.filter((o) => fav.has(o.spotId) || spotById(o.spotId)?.mine);
   else if (group !== 'all') ops = ops.filter((o) => TYPES[o.type]?.group === group);
+  else ops = ops.filter((o) => o.type !== 'wildlife' || o.score >= 80); // the Wildlife tab has the rest
   const now = new Date();
   const top = ops.slice(0, 60).sort((a, b) => a.start - b.start || b.score - a.score);
   const byDay = new Map();
@@ -49,7 +50,7 @@ function card(o, now) {
   const ph = s.photos?.find((p) => (TYPES[o.type].group === 'night' ? p.night : !p.night)) || s.photos?.[0];
   const dist = App.me ? ` · ${fmtKm(distance(App.me, s))}` : '';
   return `<button class="opcard" data-op data-spot="${esc(s.id)}">
-    <div class="ph" style="background-image:url('${esc(photoUrl(ph, 330))}')"><span class="ic">${TYPES[o.type].icon}</span></div>
+    <div class="ph" style="background-image:url('${esc(photoUrl(ph, 330))}')"><span class="ic">${o.icon || TYPES[o.type].icon}</span></div>
     <div class="bd">
       <div class="row sp"><span class="when">${esc(whenText(o, now))}</span><span class="score ${scoreClass(o.score)}" title="${scoreWord(o.score)}">${o.score}</span></div>
       <div class="t">${esc(o.title)}</div>

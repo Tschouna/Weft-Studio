@@ -19,7 +19,7 @@ const VARS = {
   precip: 'precipitation', pop: 'precipitation_probability', snow: 'snowfall', snowDepth: 'snow_depth',
   code: 'weather_code', cloud: 'cloud_cover', low: 'cloud_cover_low', mid: 'cloud_cover_mid', high: 'cloud_cover_high',
   wind: 'wind_speed_10m', windDir: 'wind_direction_10m', gust: 'wind_gusts_10m',
-  cape: 'cape', freezing: 'freezing_level_height', sun: 'sunshine_duration', vis: 'visibility',
+  cape: 'cape', freezing: 'freezing_level_height', sun: 'sunshine_duration', vis: 'visibility', pressure: 'pressure_msl',
 };
 // the minimum that every model run has, if the full request is refused
 const CORE = ['temp', 'rh', 'dew', 'precip', 'snow', 'code', 'cloud', 'low', 'mid', 'high', 'wind', 'windDir', 'gust', 'sun'];

@@ -17,6 +17,9 @@ let map = null, heat = null, pins = null, liveLayer = null, camLayer = null, lig
 let mode = getJSON('lb.mapMode', 'photo');
 let liveKind = getJSON('lb.mapLive', '');
 let showCams = getJSON('lb.mapCams', false), showLights = getJSON('lb.mapLights', false);
+const WILD_LAYERS = { game: ['ch.bafu.bundesinventare-jagdbanngebiete', 'Federal game reserves (ibex, chamois, deer)'], birds: ['ch.bafu.bundesinventare-vogelreservate', 'Water & migratory bird reserves'], rest: ['ch.bafu.wrz-wildruhezonen_portal', 'Wildlife rest zones (winter rules)'] };
+let wildOn = getJSON('lb.mapWild', {});
+const wildTiles = {};
 let baseKind = getJSON('lb.mapBase', 'dark');
 let tSel = null;
 
@@ -46,6 +49,8 @@ function build(root) {
       <h4>More</h4>
       <label><input type="checkbox" name="cams" ${showCams ? 'checked' : ''}>MeteoSwiss webcams</label>
       <label><input type="checkbox" name="lights" ${showLights ? 'checked' : ''}>Night lights (light pollution)</label>
+      <h4>Wildlife (swisstopo / FOEN)</h4>
+      ${Object.entries(WILD_LAYERS).map(([k, [, l]]) => `<label><input type="checkbox" name="wild" value="${k}" ${wildOn[k] ? 'checked' : ''}>${l}</label>`).join('')}
       <p class="tiny faint" style="margin:6px 0 4px">Long-press the map to add a spot.</p>
     </div>
     <div class="map-ui map-bottom">
@@ -76,6 +81,7 @@ function build(root) {
     if (t.name === 'live') { liveKind = t.value; setJSON('lb.mapLive', liveKind); drawLive(); }
     if (t.name === 'cams') { showCams = t.checked; setJSON('lb.mapCams', showCams); drawCams(); }
     if (t.name === 'lights') { showLights = t.checked; setJSON('lb.mapLights', showLights); drawLights(); }
+    if (t.name === 'wild') { wildOn = { ...wildOn, [t.value]: t.checked }; setJSON('lb.mapWild', wildOn); drawWild(); }
   });
   const slider = root.querySelector('#tslider');
   slider.addEventListener('input', () => { tSel = hourStart() + +slider.value * H; drawTime(); });
@@ -99,7 +105,7 @@ function build(root) {
   App.on('ops', () => { if (map) update(); });
   App.on('spots', () => { if (map) drawPins(); });
   App.on('me', () => drawMe());
-  setTimeout(() => { map.invalidateSize(); update(); drawLive(); drawCams(); drawLights(); drawMe(); }, 50);
+  setTimeout(() => { map.invalidateSize(); update(); drawLive(); drawCams(); drawLights(); drawWild(); drawMe(); }, 50);
 }
 
 const hourStart = () => Math.floor(Date.now() / H) * H;
@@ -187,12 +193,12 @@ function drawPins() {
     const o = bestFor(s.id, t - 1.5 * H, t + 1.5 * H);
     const cls = o ? scoreClass(o.score) : 's1';
     const colour = { s5: 'var(--s5)', s4: 'var(--s4)', s3: 'var(--s3)', s2: 'var(--s2)', s1: '#2a3550' }[cls];
-    const icon = L.divIcon({ className: '', html: `<div class="pin ${s.mine ? 'mine' : ''}" style="background:${colour}">${o ? TYPES[o.type].icon : ''}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+    const icon = L.divIcon({ className: '', html: `<div class="pin ${s.mine ? 'mine' : ''}" style="background:${colour}">${o ? o.icon || TYPES[o.type].icon : ''}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
     const m = L.marker([s.lat, s.lon], { icon, title: s.name, zIndexOffset: o ? o.score * 10 : 0 }).addTo(pins);
     const ph = s.photos?.[0];
     m.bindPopup(`<div style="width:200px">${ph ? `<img src="${esc(photoUrl(ph, 330))}" style="width:100%;border-radius:10px;display:block;margin-bottom:6px" alt="">` : ''}
       <b>${esc(s.name)}</b><div class="small muted">${s.elev ? Math.round(s.elev) + ' m' : ''}</div>
-      ${o ? `<div style="margin-top:4px">${TYPES[o.type].icon} ${esc(o.title)} <span class="score ${cls}" style="height:20px;min-width:30px">${o.score}</span></div>` : '<div class="small muted">Nothing special at this hour</div>'}
+      ${o ? `<div style="margin-top:4px">${o.icon || TYPES[o.type].icon} ${esc(o.title)} <span class="score ${cls}" style="height:20px;min-width:30px">${o.score}</span></div>` : '<div class="small muted">Nothing special at this hour</div>'}
       <button class="btn small primary" style="margin-top:8px;width:100%" data-open="${esc(s.id)}">Open</button></div>`);
     m.on('popupopen', (e) => { e.popup.getElement().querySelector('[data-open]')?.addEventListener('click', () => { map.closePopup(); openSpot(s.id); }); });
   }
@@ -234,6 +240,14 @@ function drawLights() {
   if (!showLights) return;
   lights = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png',
     { maxNativeZoom: 8, maxZoom: 17, opacity: 0.85, attribution: 'Night lights: NASA Black Marble 2016', className: 'tiles-lights' }).addTo(map);
+}
+
+function drawWild() {
+  for (const [k, [layer, label]] of Object.entries(WILD_LAYERS)) {
+    if (!map.getPane('wild')) map.createPane('wild').style.zIndex = 450; // above the forecast layer
+    if (wildOn[k] && !wildTiles[k]) wildTiles[k] = L.tileLayer(WMTS(layer, 'png'), { pane: 'wild', maxZoom: 18, maxNativeZoom: 17, opacity: 0.8, attribution: 'wildlife areas FOEN' }).addTo(map);
+    if (!wildOn[k] && wildTiles[k]) { map.removeLayer(wildTiles[k]); delete wildTiles[k]; }
+  }
 }
 
 function drawMe() {

@@ -1,6 +1,7 @@
 // Curated landscape spots. Photos are from Wikimedia Commons (see each photo's author and licence);
 // lat/lon is where the photographer stood when the camera recorded it, otherwise the classic viewpoint.
-// tags drive the opportunity detectors (see scoring.js); months = [from, to] when the place is normally reachable.
+// tags drive the opportunity detectors (see scoring.js); months = [from, to] when the place is normally reachable;
+// species = wildlife to look for there (see species.js and wildlife.js).
 export const SPOTS = [
  {
   "id": "seealpsee",
@@ -344,7 +345,11 @@ export const SPOTS = [
   "months": null,
   "blurb": "A 160 m rock amphitheatre. Its rim often sits just above the sea of fog over the lakes; ibex graze on the edge.",
   "access": "Hike about 1.5 h from Noiraigue or 30 min from the Ferme du Soliat car park (road closed in winter).",
-  "elev": 1401
+  "elev": 1401,
+  "species": [
+   "ibex",
+   "chamois"
+  ]
  },
  {
   "id": "silsersee",
@@ -459,7 +464,11 @@ export const SPOTS = [
   "months": null,
   "blurb": "The longest glacier in the Alps curving below you. The Aletsch forest larches glow in October.",
   "access": "Riederalp or Bettmeralp, then gondola to Moosfluh.",
-  "elev": 2297
+  "elev": 2297,
+  "species": [
+   "chamois",
+   "nutcracker"
+  ]
  },
  {
   "id": "lavertezzo",
@@ -883,7 +892,11 @@ export const SPOTS = [
   "months": null,
   "blurb": "Wide, shallow lake at 890 m: frost, hoarfrost and fog in winter, and it freezes in cold spells.",
   "access": "Train to Einsiedeln, then bus to Willerzell or Euthal.",
-  "elev": 892
+  "elev": 892,
+  "species": [
+   "waterbirds",
+   "heron"
+  ]
  },
  {
   "id": "cavloc",
@@ -1236,7 +1249,11 @@ export const SPOTS = [
   "months": null,
   "blurb": "3089 m balcony with the Matterhorn and 29 four-thousanders. Kulmhotel guests can shoot the night sky.",
   "access": "Gornergrat railway from Zermatt, all year.",
-  "elev": 3024
+  "elev": 3024,
+  "species": [
+   "ibex",
+   "chough"
+  ]
  },
  {
   "id": "montebre",
@@ -1374,5 +1391,507 @@ export const SPOTS = [
   "blurb": "The Gantrisch park works to keep its night dark; close to Bern yet one of the darkest skies on the north side of the Alps. Often above the fog.",
   "access": "Bus from Thurnen/Schwarzenburg to Gurnigel Berghaus.",
   "elev": 1594
+ },
+ {
+  "id": "augstmatthorn",
+  "name": "Augstmatthorn",
+  "region": "Harder ridge, Lake Brienz (BE)",
+  "lat": 46.74225,
+  "lon": 7.92861,
+  "photos": [
+   {
+    "file": "Steinbock auf dem Augstmatthorn.jpg",
+    "author": "Kathrin Eggä",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.5
+   },
+   {
+    "file": "Augstmatthorn ibex.jpg",
+    "author": "Ostaehli",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 0.668
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "peaks",
+   "fogsea",
+   "sunrise",
+   "alpenglow"
+  ],
+  "months": [
+   6,
+   10
+  ],
+  "blurb": "Grassy ridge between Lake Brienz and the Hohgant with a large ibex colony that grazes right beside the trail. Sunrise over the Bernese Alps and the lakes as a bonus.",
+  "access": "From Harder Kulm (funicular from Interlaken) about 3 h along the exposed ridge, or about 1.5 h from Lombachalp above Habkern. Only for sure-footed hikers.",
+  "species": [
+   "ibex",
+   "chamois",
+   "goldeneagle",
+   "chough"
+  ],
+  "elev": 2136
+ },
+ {
+  "id": "niederhorn",
+  "name": "Niederhorn",
+  "region": "Beatenberg, Lake Thun (BE)",
+  "lat": 46.71026,
+  "lon": 7.77426,
+  "photos": [
+   {
+    "file": "Steinbock Niederhorn.jpg",
+    "author": "Ostaehli",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.498
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "peaks",
+   "fogsea",
+   "sunset",
+   "lake"
+  ],
+  "months": null,
+  "blurb": "Ibex graze a few minutes from the gondola top station, especially early and late in the day, with Lake Thun and the Alps behind them.",
+  "access": "Gondola from Beatenberg. Stay on the paths along the ridge.",
+  "species": [
+   "ibex",
+   "chamois",
+   "chough",
+   "goldeneagle"
+  ],
+  "elev": 1934
+ },
+ {
+  "id": "pilatus",
+  "name": "Pilatus",
+  "region": "Lucerne (LU/OW/NW)",
+  "lat": 46.97948,
+  "lon": 8.25562,
+  "photos": [
+   {
+    "file": "Steinbock am Pilatus.jpg",
+    "author": "House2022",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 0.75
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "peaks",
+   "fogsea",
+   "sunset",
+   "sunrise"
+  ],
+  "months": null,
+  "blurb": "Ibex on the grassy slopes towards the Tomlishorn and flocks of alpine choughs around the summit terraces; often above the sea of fog.",
+  "access": "Cable car from Kriens all year, cogwheel railway from Alpnachstad in summer. Hotel on top for sunrise.",
+  "species": [
+   "ibex",
+   "chamois",
+   "chough"
+  ],
+  "elev": 2065
+ },
+ {
+  "id": "pontresina",
+  "name": "Pontresina & Alp Languard",
+  "region": "Upper Engadin (GR)",
+  "lat": 46.4878,
+  "lon": 9.92308,
+  "photos": [
+   {
+    "file": "Alp Languard 2021.jpg",
+    "author": "Tiia Monto",
+    "license": "CC BY-SA 3.0",
+    "night": false,
+    "ratio": 1.69
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "peaks",
+   "larch",
+   "darksky"
+  ],
+  "months": null,
+  "blurb": "Home of the large Piz Albris ibex colony. In April and May the ibex come down to the green slopes just above the village; in summer marmots and ibex around Alp Languard.",
+  "access": "Train to Pontresina; chair lift or about 1 h on foot to Alp Languard.",
+  "species": [
+   "ibex",
+   "chamois",
+   "marmot",
+   "beardedvulture",
+   "goldeneagle",
+   "nutcracker"
+  ],
+  "elev": 2339
+ },
+ {
+  "id": "trupchun",
+  "name": "Val Trupchun",
+  "region": "Swiss National Park (GR)",
+  "lat": 46.59543,
+  "lon": 10.07732,
+  "photos": [
+   {
+    "file": "Bergtocht van Prasüras, door het Val Trupchun naar Alp Purcher 18-09-2019. (actm.) 07.jpg",
+    "author": "Agnes Monkelbaan",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.566
+   },
+   {
+    "file": "Deer Swiss National Park.jpg",
+    "author": "MadGeographer",
+    "license": "CC BY-SA 3.0",
+    "night": false,
+    "ratio": 1.439
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "peaks",
+   "larch",
+   "darksky"
+  ],
+  "months": [
+   6,
+   10
+  ],
+  "blurb": "The classic valley of the National Park: red deer, chamois and ibex on the slopes, marmots by the path. In late September the red deer rut echoes through the valley.",
+  "access": "From the Prasüras car park above S-chanf about 2 to 2.5 h on foot to Alp Purcher and Alp Trupchun. National Park rules: stay on the path, no dogs.",
+  "species": [
+   "reddeer",
+   "ibex",
+   "chamois",
+   "marmot",
+   "beardedvulture",
+   "goldeneagle"
+  ],
+  "elev": 2036
+ },
+ {
+  "id": "margunet",
+  "name": "Margunet",
+  "region": "Swiss National Park, Ofen Pass (GR)",
+  "lat": 46.67637,
+  "lon": 10.24234,
+  "photos": [
+   {
+    "file": "Schweizer Nationalpark Margunet 2328m.jpg",
+    "author": "Freelecture",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.333
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "peaks",
+   "darksky"
+  ],
+  "months": [
+   6,
+   10
+  ],
+  "blurb": "Viewpoint in the heart of the National Park over the Val dal Fuorn: red deer at dawn and dusk, bearded vultures gliding along the slopes.",
+  "access": "About 1 h up from the Stabelchod car park on the Ofen Pass road (bus stop). Stay on the path.",
+  "species": [
+   "reddeer",
+   "chamois",
+   "beardedvulture",
+   "goldeneagle",
+   "marmot"
+  ],
+  "elev": 2324
+ },
+ {
+  "id": "spielboden",
+  "name": "Spielboden marmots",
+  "region": "Saas-Fee (VS)",
+  "lat": 46.09097,
+  "lon": 7.89845,
+  "photos": [
+   {
+    "file": "Alpine Marmot Family.jpg",
+    "author": "EpsilonEridani",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.561
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "peaks",
+   "glacier"
+  ],
+  "months": [
+   6,
+   10
+  ],
+  "blurb": "Marmots used to people live around the Spielboden, between the Fee glacier and the village, so you can photograph them close up.",
+  "access": "Gondola from Saas-Fee to Spielboden (summer), or a 1.5 h hike. Please do not feed them.",
+  "species": [
+   "marmot",
+   "chough",
+   "ibex"
+  ],
+  "elev": 2515
+ },
+ {
+  "id": "fanel",
+  "name": "Fanel",
+  "region": "Lake Neuchâtel (BE/NE)",
+  "lat": 47.0014,
+  "lon": 7.03971,
+  "photos": [
+   {
+    "file": "Fanel-vogelinseln.jpg",
+    "author": "Johannesvandergeest",
+    "license": "Public domain",
+    "night": false,
+    "ratio": 1.5
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "lake",
+   "lowland",
+   "mist",
+   "sunset"
+  ],
+  "months": null,
+  "blurb": "Bird reserve at the north-east end of Lake Neuchâtel with man-made islands for breeding gulls and terns, an observation tower and wintering waterbirds.",
+  "access": "From Gampelen (train) about 30 min on foot to the shore and the tower.",
+  "species": [
+   "waterbirds",
+   "waders",
+   "heron",
+   "kingfisher"
+  ],
+  "elev": 432
+ },
+ {
+  "id": "klingnau",
+  "name": "Klingnauer Stausee",
+  "region": "Aare, Klingnau (AG)",
+  "lat": 47.58423,
+  "lon": 8.23603,
+  "photos": [
+   {
+    "file": "Klingnauer Stausee 2008 10 17 000.JPG",
+    "author": "MichaelFrey und Sundance Raphael",
+    "license": "CC BY-SA 3.0",
+    "night": false,
+    "ratio": 1.5
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "lake",
+   "lowland",
+   "mist",
+   "reflection"
+  ],
+  "months": null,
+  "blurb": "Reservoir on the Aare and one of the best places in Switzerland for waterbirds in winter and waders on migration, with a path all round and an observation tower.",
+  "access": "Train to Döttingen or Klingnau, then walk the dam path.",
+  "species": [
+   "waterbirds",
+   "waders",
+   "heron",
+   "kingfisher"
+  ],
+  "elev": 319
+ },
+ {
+  "id": "bolle",
+  "name": "Bolle di Magadino",
+  "region": "Lake Maggiore (TI)",
+  "lat": 46.1625,
+  "lon": 8.853,
+  "photos": [
+   {
+    "file": "Bolle di Magadino 02.jpg",
+    "author": "Paebi",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.5
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "lake",
+   "lowland",
+   "mist"
+  ],
+  "months": null,
+  "blurb": "Wild river delta of the Ticino into Lake Maggiore: alluvial forest, reeds and lagoons, and a major stop for migrating birds in spring.",
+  "access": "From Magadino or Tenero; paths and observation points along the delta.",
+  "species": [
+   "waders",
+   "waterbirds",
+   "heron",
+   "kingfisher",
+   "songbirds"
+  ],
+  "elev": 193
+ },
+ {
+  "id": "ermatingen",
+  "name": "Ermatinger Becken",
+  "region": "Untersee, Lake Constance (TG)",
+  "lat": 47.66603,
+  "lon": 9.11037,
+  "photos": [
+   {
+    "file": "Rostgänse im Ermatinger Becken.jpg",
+    "author": "JoachimKohler-HB",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.6
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "lake",
+   "lowland",
+   "mist",
+   "hoarfrost"
+  ],
+  "months": null,
+  "blurb": "Shallow bay of the Untersee where tens of thousands of ducks, grebes and geese spend the winter, against the reeds and the low winter sun.",
+  "access": "Train to Triboltingen or Ermatingen, then the shore path.",
+  "species": [
+   "waterbirds",
+   "waders",
+   "heron"
+  ],
+  "elev": 396
+ },
+ {
+  "id": "neeracherried",
+  "name": "Neeracherried",
+  "region": "Zürich Unterland (ZH)",
+  "lat": 47.50227,
+  "lon": 8.47818,
+  "photos": [
+   {
+    "file": "Neeracherried 19 10 47 545000.jpeg",
+    "author": "Albinfo",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.778
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "lowland",
+   "mist"
+  ],
+  "months": null,
+  "blurb": "One of the largest fens of the Swiss lowlands, with a BirdLife nature centre and hides over the ponds. Best in spring.",
+  "access": "Bus to Neerach; the BirdLife centre and its hides are usually open from March to October.",
+  "species": [
+   "waders",
+   "heron",
+   "songbirds",
+   "waterbirds"
+  ],
+  "elev": 412
+ },
+ {
+  "id": "altreu",
+  "name": "Altreu storks",
+  "region": "Aare, Selzach (SO)",
+  "lat": 47.19356,
+  "lon": 7.44832,
+  "photos": [
+   {
+    "file": "Stork in Altreu Switzerland 01.jpg",
+    "author": "Matutinho",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 1.5
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "river",
+   "lowland",
+   "mist"
+  ],
+  "months": null,
+  "blurb": "The village where the white stork was brought back to Switzerland: dozens of nests on roofs and trees by the Aare.",
+  "access": "Bus to Altreu, or a boat on the Aare between Solothurn and Biel in summer.",
+  "species": [
+   "stork",
+   "heron",
+   "waterbirds",
+   "beaver"
+  ],
+  "elev": 430
+ },
+ {
+  "id": "goldau",
+  "name": "Tierpark Goldau",
+  "region": "Arth-Goldau (SZ)",
+  "lat": 47.04991,
+  "lon": 8.55706,
+  "photos": [
+   {
+    "file": "Chamois in Tierpark Goldau 02.jpg",
+    "author": "EconAmbiente",
+    "license": "CC BY-SA 4.0",
+    "night": false,
+    "ratio": 2.167
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "park"
+  ],
+  "months": null,
+  "blurb": "Wildlife park in the 1806 landslide boulders: deer and mouflons roam freely among visitors; bears, wolves, lynx and chamois in large enclosures.",
+  "access": "A few minutes from Arth-Goldau station. Entrance fee.",
+  "species": [
+   "park"
+  ],
+  "elev": 546
+ },
+ {
+  "id": "langenberg",
+  "name": "Wildnispark Langenberg",
+  "region": "Langnau am Albis (ZH)",
+  "lat": 47.289,
+  "lon": 8.534,
+  "photos": [
+   {
+    "file": "Lynx lynx carpathicus in Wildpark Langenberg.jpg",
+    "author": "kuhnmi",
+    "license": "CC BY 2.0",
+    "night": false,
+    "ratio": 1.333
+   }
+  ],
+  "tags": [
+   "wildlife",
+   "park"
+  ],
+  "months": null,
+  "blurb": "Large forest enclosures with native animals: lynx, wolves, bears, red deer, ibex and wild boar. Good for practising before going after the wild ones.",
+  "access": "S4 to Langnau-Gattikon, then about 15 min on foot. Free entry.",
+  "species": [
+   "park"
+  ],
+  "elev": 546
  }
 ];

@@ -31,6 +31,7 @@
   <main id="views">
     <section id="view-feed" class="view" data-view="feed"></section>
     <section id="view-map" class="view" data-view="map" hidden></section>
+    <section id="view-wild" class="view" data-view="wild" hidden></section>
     <section id="view-sky" class="view" data-view="sky" hidden></section>
     <section id="view-spots" class="view" data-view="spots" hidden></section>
   </main>
@@ -42,9 +43,12 @@
     <button role="tab" data-tab="map">
       <svg viewBox="0 0 24 24"><path fill="currentColor" d="m20.5 3-.16.03L15 5.1 9 3 3.36 4.9a.5.5 0 0 0-.36.48V20.5a.5.5 0 0 0 .5.5l.16-.03L9 18.9l6 2.1 5.64-1.9a.5.5 0 0 0 .36-.48V3.5a.5.5 0 0 0-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
       <span>Map</span></button>
+    <button role="tab" data-tab="wild">
+      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.35 3c1.18-.17 2.43 1.12 2.79 2.9.36 1.77-.29 3.35-1.47 3.53-1.17.18-2.43-1.11-2.8-2.89C6.5 4.77 7.17 3.19 8.35 3m7.15 0c1.19.19 1.85 1.77 1.5 3.54-.38 1.78-1.63 3.07-2.81 2.89-1.19-.18-1.84-1.76-1.47-3.53.36-1.78 1.61-3.07 2.78-2.9M3 7.6c1.14-.49 2.69.4 3.5 1.95.76 1.58.5 3.24-.63 3.73-1.13.49-2.67-.39-3.46-1.96C1.62 9.75 1.9 8.08 3 7.6m18 0c1.1.48 1.38 2.15.59 3.72-.79 1.57-2.33 2.45-3.46 1.96-1.13-.49-1.39-2.15-.63-3.73C18.31 8 19.86 7.11 21 7.6m-1.67 10.78c.04.94-.68 1.98-1.54 2.37-1.79.82-3.91-.88-5.9-.88-1.99 0-4.13 1.77-5.89.88-1-.49-1.69-1.79-1.56-2.87.18-1.49 1.97-2.29 3.03-3.38 1.41-1.41 2.41-4.06 4.42-4.06 2 0 3.06 2.61 4.41 4.06 1.11 1.22 2.96 2.25 3.03 3.88z"/></svg>
+      <span>Wildlife</span></button>
     <button role="tab" data-tab="sky">
       <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12.34 2.02a10 10 0 1 0 9.64 9.64 7.5 7.5 0 0 1-9.64-9.64zM18 2l.75 1.75L20.5 4.5l-1.75.75L18 7l-.75-1.75L15.5 4.5l1.75-.75L18 2zm3.5 5 .5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5.5-1z"/></svg>
-      <span>Night sky</span></button>
+      <span>Night</span></button>
     <button role="tab" data-tab="spots">
       <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
       <span>Spots</span></button>

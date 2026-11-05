@@ -7,6 +7,8 @@ import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
 import { lv95ToWgs, wgsToLv95, distance, bearing, compass, insidePolygon } from '../js/geo.js';
 import { CH_OUTLINE } from '../data/ch-outline.js';
+import { SPECIES } from '../data/species.js';
+import { wildlifeDay, approachTip, inSeason } from '../js/wildlife.js';
 
 const H = 3600e3;
 const spot = (id) => { const s = SPOTS.find((x) => x.id === id); return { ...s, horizon: HORIZONS[id] ? { alts: HORIZONS[id].alts } : null }; };
@@ -14,11 +16,11 @@ const spot = (id) => { const s = SPOTS.find((x) => x.id === id); return { ...s, 
 // An hourly forecast like the app gets from MeteoSwiss: two days back, five ahead.
 function fc(now, base, fn = () => ({})) {
   const t0 = localMidnight(now, -2).getTime(), s = { t: [] };
-  const keys = ['temp', 'rh', 'dew', 'precip', 'pop', 'snow', 'snowDepth', 'code', 'cloud', 'low', 'mid', 'high', 'wind', 'windDir', 'gust', 'cape', 'freezing', 'sun', 'vis'];
+  const keys = ['temp', 'rh', 'dew', 'precip', 'pop', 'snow', 'snowDepth', 'code', 'cloud', 'low', 'mid', 'high', 'wind', 'windDir', 'gust', 'cape', 'freezing', 'sun', 'vis', 'pressure'];
   for (const k of keys) s[k] = [];
   for (let i = 0; i < 24 * 7; i++) {
     const t = t0 + i * H, d = new Date(t), lh = (d.getUTCHours() + 1) % 24;
-    const row = { temp: 10, rh: 70, dew: 4, precip: 0, pop: 0, snow: 0, snowDepth: 0, code: 1, cloud: 10, low: 5, mid: 5, high: 5, wind: 8, windDir: 270, gust: 15, cape: 0, freezing: 2500, sun: lh > 8 && lh < 17 ? 3600 : 0, vis: 30000, ...base, ...fn(t, lh, i) };
+    const row = { temp: 10, rh: 70, dew: 4, precip: 0, pop: 0, snow: 0, snowDepth: 0, code: 1, cloud: 10, low: 5, mid: 5, high: 5, wind: 8, windDir: 270, gust: 15, cape: 0, freezing: 2500, sun: lh > 8 && lh < 17 ? 3600 : 0, vis: 30000, pressure: 1018, ...base, ...fn(t, lh, i) };
     s.t.push(t); for (const k of keys) s[k].push(row[k]);
   }
   return s;
@@ -185,9 +187,54 @@ test('photo weather number: sun beats rain', () => {
 test('every curated spot has a photo, tags and a sensible elevation', () => {
   for (const s of SPOTS) {
     assert.ok(s.photos.length && s.tags.length, s.id);
-    assert.ok(s.elev > 200 && s.elev < 3500, `${s.id} ${s.elev}`);
+    assert.ok(s.elev > 150 && s.elev < 3500, `${s.id} ${s.elev}`); // Lake Maggiore is at 193 m
     assert.ok(insidePolygon(s.lat, s.lon, CH_OUTLINE), `${s.id} outside Switzerland`);
   }
+});
+
+console.log('wildlife');
+const wild = (id, iso, base = {}, fn) => { const now = new Date(iso); return opportunitiesFor(spot(id), fc(now, base, fn), makeContext({ now })).filter((o) => o.type === 'wildlife'); };
+test('ibex rut on the Niederhorn in December', () => {
+  const o = wild('niederhorn', '2026-12-10T06:00:00Z', { temp: -3, wind: 4, gust: 8, cloud: 20 })[0];
+  assert.ok(o && /ibex rut/i.test(o.title) && o.score >= 70, JSON.stringify(o));
+  assert.equal(o.species, 'ibex');
+});
+test('no marmots while they hibernate', () => {
+  const ops = wild('spielboden', '2027-01-15T06:00:00Z', { temp: -8 });
+  assert.ok(!ops.some((o) => o.species === 'marmot'), JSON.stringify(ops.map((o) => o.title)));
+});
+test('marmots on a sunny July morning, in the morning', () => {
+  const o = wild('spielboden', '2026-07-08T03:00:00Z', { temp: 9, wind: 5, cloud: 10 })[0];
+  assert.ok(o && o.species === 'marmot' && o.score >= 60, JSON.stringify(o));
+  const h = +new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Europe/Zurich' }).format(o.peak);
+  assert.ok(h >= 7 && h <= 11, `peak hour ${h}`);
+});
+test('rain all day cuts the chances', () => {
+  const dry = wild('trupchun', '2026-09-26T04:00:00Z', { cloud: 30 })[0];
+  const wet = wild('trupchun', '2026-09-26T04:00:00Z', { cloud: 100, low: 100, precip: 3, sun: 0 })[0];
+  assert.ok(dry && (!wet || wet.score < dry.score - 15), `${dry && dry.score} vs ${wet && wet.score}`);
+});
+test('red deer rut in Val Trupchun at dawn or dusk', () => {
+  const o = wild('trupchun', '2026-09-26T04:00:00Z', { cloud: 30, temp: 4 })[0];
+  assert.ok(o && /red deer rut/i.test(o.title), JSON.stringify(o));
+  const h = +new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Europe/Zurich' }).format(o.peak);
+  assert.ok(h <= 9 || h >= 17, `peak hour ${h}`);
+});
+test('wintering waterbirds at the Ermatinger Becken in January', () => {
+  const o = wild('ermatingen', '2027-01-12T06:00:00Z', { temp: 1, cloud: 60 })[0];
+  assert.ok(o && /waterbirds/i.test(o.title) && o.score >= 60, JSON.stringify(o));
+});
+test('wildlife parks never outscore the wild', () => {
+  for (const o of wild('goldau', '2026-10-10T06:00:00Z', { cloud: 20 })) assert.ok(o.score <= 75, `${o.score}`);
+});
+test('scent tip: wind from the south-west means approach from the north-east', () => {
+  assert.match(approachTip(225, 12, Date.now(), true), /approach from the northeast/);
+  assert.match(approachTip(0, 1, new Date('2026-07-08T05:00:00Z').getTime(), true), /come from below/);
+});
+test('every spot species is known, every species has 12 months', () => {
+  for (const s of SPOTS) for (const id of s.species || []) assert.ok(SPECIES[id], `${s.id}: ${id}`);
+  for (const [id, sp] of Object.entries(SPECIES)) assert.equal(sp.season.length, 12, id);
+  assert.ok(inSeason(spot('trupchun'), new Date('2026-09-26T10:00:00Z'))[0].events.length);
 });
 
 console.log('app shell');
