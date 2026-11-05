@@ -4,12 +4,13 @@ import { $, $$, toast, sheetOpen, status } from './ui.js';
 import { renderFeed } from './views/feed.js';
 import { renderMap, focusSpot } from './views/map.js';
 import { renderSky, showSkyFor } from './views/sky.js';
+import { renderWildlife, showWildFor } from './views/wildlife.js';
 import { renderSpots } from './views/spots.js';
 import { openSpot } from './views/spot.js';
 import { openSettings } from './views/settings.js';
 import { getJSON, setJSON } from './store.js';
 
-const VIEWS = { feed: renderFeed, map: renderMap, sky: renderSky, spots: renderSpots };
+const VIEWS = { feed: renderFeed, map: renderMap, wild: renderWildlife, sky: renderSky, spots: renderSpots };
 let current = getJSON('lb.tab', 'feed');
 
 function show(tab) {
@@ -33,6 +34,7 @@ App.on('error', rerender);
 App.on('loading', (on) => { $('#btn-refresh').classList.toggle('spin', on); if (on && !App.ops.length) rerender(); });
 App.on('goto', (tab) => show(tab));
 App.on('show-sky', (id) => { showSkyFor(id); show('sky'); });
+App.on('show-wild', (id) => { showWildFor(id); show('wild'); });
 App.on('show-map', (id) => { show('map'); setTimeout(() => focusSpot(id), 100); });
 App.on('locate', (explicit) => locate(explicit));
 

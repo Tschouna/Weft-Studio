@@ -44,7 +44,7 @@ const best = topOpportunities(ops, { min, perSpotDay: 1 }).filter((o) => o.peak.
 if (!best.length) { console.log(`Nothing at ${min}+ in the next 36 hours.`); process.exit(0); }
 const name = (id) => spots.find((s) => s.id === id)?.name || id;
 const day = (d) => { const n = Math.round((localMidnight(d) - localMidnight(now)) / 864e5); return n === 0 ? 'today' : n === 1 ? 'tomorrow' : weekday(d); };
-const lines = best.map((o) => `${TYPES[o.type].icon} ${o.score} · ${o.title} · ${name(o.spotId)} · ${day(o.peak)} ${hhmm(o.peak)}`);
+const lines = best.map((o) => `${o.icon || TYPES[o.type].icon} ${o.score} · ${o.title} · ${name(o.spotId)} · ${day(o.peak)} ${hhmm(o.peak)}`);
 const title = `${best.length} photo chance${best.length > 1 ? 's' : ''}: ${best[0].title} at ${name(best[0].spotId)}`;
 const body = `${lines.join('\n')}\n\nMeteoSwiss forecast, ${hhmm(now)}.`;
 console.log(title + '\n' + body);

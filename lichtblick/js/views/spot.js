@@ -10,6 +10,7 @@ import { live, webcams, LIVE } from '../sources/meteoswiss.js';
 import { horizonFor } from '../sources/swisstopo.js';
 import { seeingPage } from '../sources/meteoblue.js';
 import { meteogram, panorama, sunPath } from './charts.js';
+import { inSeason } from '../wildlife.js';
 
 export const TAG_LABELS = {
   lake: 'Lake or pond', reflection: 'Mirror reflections', peaks: 'Mountain view', alpenglow: 'Alpenglow peaks', fogsea: 'Above the sea of fog',
@@ -56,6 +57,7 @@ export function openSpot(id) {
           <a class="btn small" href="https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lon}" target="_blank" rel="noopener">Directions</a>
           <a class="btn small" href="https://map.geo.admin.ch/?lang=en&E=${Math.round(e)}&N=${Math.round(n)}&zoom=9&crosshair=marker" target="_blank" rel="noopener">swisstopo map</a>
           <button class="btn small" data-act="sky">🌌 Night sky</button>
+          ${spot.species && spot.species.length ? '<button class="btn small" data-act="wild">🦌 Wildlife</button>' : ''}
           ${spot.mine ? '<button class="btn small" data-act="edit">Edit</button>' : ''}
         </div>
         ${spot.blurb ? `<p>${esc(spot.blurb)}</p>` : ''}
@@ -64,7 +66,7 @@ export function openSpot(id) {
         ${spot.note ? `<p class="small">${esc(spot.note)}</p>` : ''}
 
         <div class="section"><h3>Coming up here</h3>
-          ${upcoming.length ? `<div class="oplist">${upcoming.map((o) => `<div class="opline"><div class="ic">${TYPES[o.type].icon}</div>
+          ${upcoming.length ? `<div class="oplist">${upcoming.map((o) => `<div class="opline"><div class="ic">${o.icon || TYPES[o.type].icon}</div>
             <div><div class="when">${esc(whenText(o))}</div><b>${esc(o.title)}</b><ul>${o.why.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div>
             <span class="score ${scoreClass(o.score)}" title="${scoreWord(o.score)}">${o.score}</span></div>`).join('')}</div>`
             : `<div class="notice">${App.loading ? 'Loading the forecast…' : 'Nothing special in the next five days here.'}</div>`}
@@ -95,6 +97,8 @@ export function openSpot(id) {
           <p class="tiny faint">Mountains from swisstopo elevation profiles out to 60 km (Swiss terrain only). Yellow: the sun's path today, with times.</p>
         </div>
 
+        ${spot.species && spot.species.length ? `<div class="section"><h3>Wildlife here</h3><div class="oplist">${inSeason(spot, new Date()).map((x) => `<div class="opline"><div class="ic">${x.sp.icon}</div><div><b>${esc(x.sp.name)}</b> <span class="small muted">${x.season >= 0.85 ? 'best time of year' : x.season >= 0.6 ? 'good time' : x.season > 0.05 ? 'possible' : 'not now'}</span>${x.events.length ? `<div class="small" style="color:var(--gold2)">${esc(x.events.map((e) => e.title).join(' · '))}</div>` : ''}</div><span></span></div>`).join('')}</div>
+          <button class="btn small" data-act="wild" style="margin-top:8px">Plan: activity, light & wind ›</button></div>` : ''}
         <div class="section"><h3>Live at MeteoSwiss stations nearby</h3><div id="live" class="kv"><div class="skeleton" style="height:52px"></div></div></div>
         <div class="section"><h3>Webcams nearby</h3><div id="cams" class="oplist"><div class="skeleton" style="height:70px"></div></div></div>
 
@@ -110,6 +114,7 @@ export function openSpot(id) {
       const f = favourites(); f.has(id) ? f.delete(id) : f.add(id); setFavourites(f); render(root); App.emit('spots');
     });
     root.querySelector('[data-act="sky"]').addEventListener('click', () => { closeSheet(); App.emit('show-sky', id); });
+    root.querySelectorAll('[data-act="wild"]').forEach((b) => b.addEventListener('click', () => { closeSheet(); App.emit('show-wild', id); }));
     root.querySelector('[data-act="edit"]')?.addEventListener('click', async () => { const m = await import('./spots.js'); m.editSpot(spot); });
     root.querySelector('[data-act="delete"]')?.addEventListener('click', async () => {
       if (!confirm(`Delete "${spot.name}"?`)) return;

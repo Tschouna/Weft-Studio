@@ -63,6 +63,6 @@ function weather(lat, lon, elev, rel, lh, k) {
     precipitation: +precip.toFixed(1), precipitation_probability: precip > 0 ? 80 : 5, snowfall: +snow.toFixed(1), snow_depth: 0,
     weather_code: code, cloud_cover: Math.round(cloud), cloud_cover_low: Math.round(low), cloud_cover_mid: Math.round(mid), cloud_cover_high: Math.round(high),
     wind_speed_10m: +wind.toFixed(1), wind_direction_10m: 250, wind_gusts_10m: +gust.toFixed(1), cape: ticino && day === 2 ? 1200 : 0,
-    freezing_level_height: 2600, sunshine_duration: dark || low > 80 || precip > 0 ? 0 : 3600 * (1 - cloud / 140), visibility: low > 90 ? 200 : 40000,
+    freezing_level_height: 2600, pressure_msl: day <= 0 ? 1021 : day === 1 ? 1021 - (lh / 24) * 9 : day === 2 ? 1009 : 1017, sunshine_duration: dark || low > 80 || precip > 0 ? 0 : 3600 * (1 - cloud / 140), visibility: low > 90 ? 200 : 40000,
   };
 }

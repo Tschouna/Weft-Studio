@@ -8,6 +8,7 @@ import { searchPlaces, height, horizonFor } from '../sources/swisstopo.js';
 import { distance, fmtKm } from '../geo.js';
 import { readExif, shrinkPhoto } from '../exif.js';
 import { openSpot, TAG_LABELS } from './spot.js';
+import { SPECIES } from '../../data/species.js';
 
 let filter = '';
 const EDITABLE_TAGS = ['lake', 'reflection', 'peaks', 'alpenglow', 'fogsea', 'mist', 'lowland', 'larch', 'beech', 'chestnut', 'vineyard', 'waterfall', 'river', 'glacier', 'darksky', 'city', 'lightning', 'frozen', 'snow', 'hoarfrost'];
@@ -41,7 +42,7 @@ function row(s) {
   return `<button class="spotrow" data-spot="${esc(s.id)}">
     <div class="th" style="${ph ? `background-image:url('${esc(photoUrl(ph, 250))}')` : ''}">${ph ? '' : '📍'}</div>
     <div style="min-width:0"><div class="nm">${esc(s.name)}</div><div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.region || '')}${s.elev ? ` · ${Math.round(s.elev)} m` : ''}${App.me ? ` · ${fmtKm(distance(App.me, s))}` : ''}</div>
-      ${o ? `<div class="small" style="margin-top:2px">${TYPES[o.type].icon} ${esc(o.title)}</div>` : ''}</div>
+      ${o ? `<div class="small" style="margin-top:2px">${o.icon || TYPES[o.type].icon} ${esc(o.title)}</div>` : ''}</div>
     ${o ? `<span class="score ${scoreClass(o.score)}">${o.score}</span>` : '<span></span>'}</button>`;
 }
 
@@ -119,6 +120,8 @@ function editor(spot, isNew, photo, taken) {
       <div class="small muted" id="ewhere">${spot.lat.toFixed(5)}° N, ${spot.lon.toFixed(5)}° E · <span id="eelev">${spot.elev ? `${spot.elev} m` : 'height…'}</span>${spot.heading != null ? ` · camera looked ${Math.round(spot.heading)}°` : ''}${taken ? ` · photo taken ${esc(taken.slice(0, 10).replace(/:/g, '-'))}` : ''}</div>
       <label class="field">What is it good for? (drives the alerts)</label>
       <div class="tagpick" id="etags">${EDITABLE_TAGS.map((t) => `<label><input type="checkbox" value="${t}" ${spot.tags.includes(t) ? 'checked' : ''}>${esc(TAG_LABELS[t])}</label>`).join('')}</div>
+      <label class="field">Wildlife here (for the Wildlife tab)</label>
+      <div class="tagpick" id="especies">${Object.entries(SPECIES).filter(([k]) => k !== 'park').map(([k, sp]) => `<label><input type="checkbox" value="${k}" ${(spot.species || []).includes(k) ? 'checked' : ''}>${sp.icon} ${esc(sp.name)}</label>`).join('')}</div>
       <label class="field">Notes<textarea id="enote" rows="3" placeholder="Parking, best angle, what to bring…">${esc(spot.blurb || '')}</textarea></label>
       ${!photoBlob && isNew ? '<label class="btn small ghost" style="position:relative;overflow:hidden">Add a photo<input type="file" accept="image/*" id="ephoto" style="position:absolute;inset:0;opacity:0"></label>' : ''}
       <div class="btns" style="margin-top:14px"><button class="btn primary" id="esave">Save spot</button><button class="btn ghost" data-close>Cancel</button></div>
@@ -135,6 +138,7 @@ function editor(spot, isNew, photo, taken) {
     root.querySelector('#esave').addEventListener('click', async () => {
       spot.name = root.querySelector('#ename').value.trim() || 'My spot';
       spot.tags = [...root.querySelectorAll('#etags input:checked')].map((i) => i.value);
+      spot.species = [...root.querySelectorAll('#especies input:checked')].map((i) => i.value);
       spot.blurb = root.querySelector('#enote').value.trim();
       if (photoBlob) { const key = `${spot.id}-${Date.now().toString(36)}`; await kvSet(`photo:${key}`, photoBlob.blob); spot.photos = [{ local: key, ratio: photoBlob.ratio }, ...(spot.photos || [])]; }
       if (!spot.elev) spot.elev = await height(spot.lat, spot.lon).catch(() => null);

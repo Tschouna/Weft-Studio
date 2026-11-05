@@ -5,6 +5,7 @@ import { sunAt, moonAt, coreAt, galacticAt, dayEvents, localMidnight, localHour,
 import { distance, destination, compass, compassWords } from './geo.js';
 import { PHENO_STATIONS, PHENO_TREND } from '../data/phenology.js';
 import { at as mbAt, seeingWords } from './sources/meteoblue.js';
+import { wildlifeOps } from './wildlife.js';
 
 const H = 3600e3;
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -33,6 +34,7 @@ export const TYPES = {
   meteors: { label: 'Meteor shower', icon: '🌠', group: 'night' },
   aurora: { label: 'Northern lights', icon: '🟢', group: 'night' },
   bluehour: { label: 'Blue hour', icon: '🏙️', group: 'light' },
+  wildlife: { label: 'Wildlife', icon: '🦌', group: 'wildlife' },
 };
 
 // Lowland reference points for the sea of fog: Mittelland, Rhine and Rhône valleys, Ticino.
@@ -503,7 +505,7 @@ export function opportunitiesFor(spot, fc, ctx, { mb = null, days: nDays = 5 } =
     ...goldenHours(spot, fc, ctx, days), ...seaOfFog(spot, fc, ctx, days), ...mistAndFog(spot, fc, ctx, days),
     ...mirror(spot, fc, ctx, days, ice), ...storms(spot, fc, ctx, days), ...snowAndIce(spot, fc, ctx, days, ice),
     ...autumn(spot, fc, ctx, days), ...waterfalls(spot, fc, ctx, days), ...foehn(spot, fc, ctx, days),
-    ...nightSky(spot, fc, ctx, days, mb, ice),
+    ...nightSky(spot, fc, ctx, days, mb, ice), ...wildlifeOps(spot, fc, ctx, days),
   ];
   const now = ctx.now.getTime();
   const inSeason = !spot.months || (() => { const m = zurichParts(ctx.now).m, [a, b] = spot.months; return a <= b ? m >= a && m <= b : m >= a || m <= b; })();

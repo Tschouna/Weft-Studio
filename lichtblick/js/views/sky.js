@@ -68,7 +68,7 @@ export function renderSky(root) {
         <div class="small muted">${n.darkStart ? 'astronomical night (sun 18° below the horizon)' : 'Short summer night: twilight all night'}</div></div></div>
       <p style="margin:12px 0 4px">🌙 ${esc(n.moon.name)}. ${moonLine}</p>
       <p style="margin:4px 0">🌌 ${mwLine}</p>
-      ${ops.length ? `<div class="oplist" style="margin-top:10px">${ops.slice(0, 3).map((o) => `<div class="opline"><div class="ic">${TYPES[o.type].icon}</div><div><b>${esc(o.title)}</b><ul>${o.why.slice(0, 3).map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div><span class="score ${scoreClass(o.score)}">${o.score}</span></div>`).join('')}</div>`
+      ${ops.length ? `<div class="oplist" style="margin-top:10px">${ops.slice(0, 3).map((o) => `<div class="opline"><div class="ic">${o.icon || TYPES[o.type].icon}</div><div><b>${esc(o.title)}</b><ul>${o.why.slice(0, 3).map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div><span class="score ${scoreClass(o.score)}">${o.score}</span></div>`).join('')}</div>`
         : `<p class="small muted" style="margin:8px 0 0">${fc ? 'No clear-sky chance in the MeteoSwiss forecast for this night.' : 'Forecast beyond five days: astronomy only.'}</p>`}
     </div>
 

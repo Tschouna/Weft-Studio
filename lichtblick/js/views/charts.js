@@ -54,7 +54,7 @@ export function meteogram(fc, spot, ops = [], { hours = 120, now = Date.now(), p
   for (const o of ops.slice(0, 40)) {
     const k = (o.peak - fc.t[i0]) / H;
     if (k < 0 || k > n) continue;
-    g += `<text x="${x(k)}" y="${top - 5}" font-size="12" text-anchor="middle">${TYPES[o.type]?.icon || '•'}</text>`;
+    g += `<text x="${x(k)}" y="${top - 5}" font-size="12" text-anchor="middle">${o.icon || TYPES[o.type]?.icon || '•'}</text>`;
   }
   // labels
   const lab = `<g font-size="9" fill="#8796b3"><text x="2" y="${top + 11}">high</text><text x="2" y="${top + band + 11}">mid</text><text x="2" y="${top + 2 * band + 11}">low</text><text x="2" y="${pr + prH - 2}">rain</text><text x="2" y="${wy + wH - 2}">wind</text></g>`;
