@@ -17,6 +17,7 @@ export function status(msg) { const el = $('#status'); if (el) el.textContent = 
 
 // ---- bottom sheets ----
 const stack = [];
+let ignorePop = 0; // our own history.back() calls, not the user's back gesture
 export function openSheet(render, { onClose } = {}) {
   const sheet = $('#sheet'), inner = sheet.querySelector('.sheet-inner');
   if (stack.length) stack[stack.length - 1].scroll = inner.scrollTop;
@@ -35,7 +36,7 @@ export function closeSheet(fromHistory = false) {
   if (top && top.onClose) top.onClose();
   if (stack.length) { inner.innerHTML = ''; stack[stack.length - 1].render(inner); inner.scrollTop = stack[stack.length - 1].scroll || 0; }
   else { sheet.hidden = true; inner.innerHTML = ''; }
-  if (!fromHistory) history.back();
+  if (!fromHistory) { ignorePop++; history.back(); }
 }
 export const sheetOpen = () => stack.length > 0;
 export function rerenderSheet() {
@@ -43,7 +44,7 @@ export function rerenderSheet() {
   const inner = $('#sheet .sheet-inner'), y = inner.scrollTop;
   inner.innerHTML = ''; stack[stack.length - 1].render(inner); inner.scrollTop = y;
 }
-window.addEventListener('popstate', () => { if (stack.length) closeSheet(true); });
+window.addEventListener('popstate', () => { if (ignorePop) { ignorePop--; return; } if (stack.length) closeSheet(true); });
 document.addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
 
 export const sheetHead = (title = '') => `<div class="grab"></div><div class="sheet-head"><b>${esc(title)}</b><button class="iconbtn" data-close aria-label="Close"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7a1 1 0 0 0-1.4 1.4l4.9 4.9-4.9 4.9a1 1 0 1 0 1.4 1.4l4.9-4.9 4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4z"/></svg></button></div>`;

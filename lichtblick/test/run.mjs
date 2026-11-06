@@ -1,17 +1,19 @@
 // Checks for the opportunity detectors, with made-up forecasts of exactly the weather each one is about.
 //   node test/run.mjs
 import assert from 'node:assert/strict';
-import { opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
+import { openAt, opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
 import { localMidnight, nightInfo, dayEvents, hhmm, moonAt } from '../js/astro.js';
 import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
+import { SKY } from '../data/sky.js';
 import { lv95ToWgs, wgsToLv95, distance, bearing, compass, insidePolygon } from '../js/geo.js';
 import { CH_OUTLINE } from '../data/ch-outline.js';
 import { SPECIES } from '../data/species.js';
 import { wildlifeDay, approachTip, inSeason } from '../js/wildlife.js';
 
 const H = 3600e3;
-const spot = (id) => { const s = SPOTS.find((x) => x.id === id); return { ...s, horizon: HORIZONS[id] ? { alts: HORIZONS[id].alts } : null }; };
+const localHourOf = (d) => +new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Europe/Zurich' }).format(d);
+const spot = (id) => { const s = SPOTS.find((x) => x.id === id); return { ...s, sky: SKY[id] || null, horizon: HORIZONS[id] ? { alts: HORIZONS[id].alts } : null }; };
 
 // An hourly forecast like the app gets from MeteoSwiss: two days back, five ahead.
 function fc(now, base, fn = () => ({})) {
@@ -160,9 +162,9 @@ test('northern lights only with a strong storm and a clear sky', () => {
   const now = new Date('2026-11-12T16:00:00Z');
   const t0 = localMidnight(now).getTime();
   const kp = [{ t: t0 + 21 * H, kp: 8.3 }, { t: t0 + 24 * H, kp: 8.0 }];
-  const o = best(opportunitiesFor(spot('weissenstein'), fc(now, { cloud: 0 }), makeContext({ now, kp })), 'aurora');
-  assert.ok(o && o.score >= 70, JSON.stringify(o));
-  assert.equal(best(opportunitiesFor(spot('weissenstein'), fc(now, { cloud: 0 }), makeContext({ now, kp: [{ t: t0 + 21 * H, kp: 4 }] })), 'aurora'), undefined);
+  const o = best(opportunitiesFor(spot('creuxduvan'), fc(now, { cloud: 0 }), makeContext({ now, kp })), 'aurora');
+  assert.ok(o && o.score >= 65, JSON.stringify(o));
+  assert.equal(best(opportunitiesFor(spot('creuxduvan'), fc(now, { cloud: 0 }), makeContext({ now, kp: [{ t: t0 + 21 * H, kp: 4 }] })), 'aurora'), undefined);
 });
 test('every opportunity has real Date times and a reason', () => {
   const now = new Date('2026-07-14T16:00:00Z');
@@ -190,6 +192,39 @@ test('every curated spot has a photo, tags and a sensible elevation', () => {
     assert.ok(s.elev > 150 && s.elev < 3500, `${s.id} ${s.elev}`); // Lake Maggiore is at 193 m
     assert.ok(insidePolygon(s.lat, s.lon, CH_OUTLINE), `${s.id} outside Switzerland`);
   }
+});
+
+console.log('access and darkness');
+test('every curated spot has a measured sky and a night-access class', () => {
+  for (const s of SPOTS) {
+    assert.ok(SKY[s.id] && SKY[s.id].bortle >= 1 && SKY[s.id].bortle <= 9, s.id);
+    assert.ok(['free', 'hike', 'stay', 'closed', 'reserve'].includes(s.night), `${s.id}: ${s.night}`);
+  }
+  assert.ok(SKY.margunet.bortle <= 3 && SKY.luzern.bortle >= 8 && SKY.uetliberg.bortle >= 8, 'National Park dark, cities bright');
+});
+test('Blausee: nothing before opening or at night', () => {
+  const now = new Date('2026-07-14T16:00:00Z');
+  const ops = opportunitiesFor(spot('blausee'), fc(now, { cloud: 0, wind: 1, gust: 2 }), makeContext({ now }));
+  for (const o of ops) { const h = localHourOf(o.peak); assert.ok(h >= 9 && h < 21, `${o.type} at ${h}`); assert.ok(localHourOf(o.start) >= 9, `${o.type} starts ${o.start}`); }
+  assert.ok(!ops.some((o) => ['stars', 'milkyway', 'meteors'].includes(o.type)));
+});
+test('no Milky Way from the city', () => {
+  const now = new Date('2026-07-14T16:00:00Z');
+  for (const id of ['luzern', 'uetliberg']) assert.ok(!opportunitiesFor(spot(id), fc(now, { cloud: 0, rh: 50 }), makeContext({ now })).some((o) => o.type === 'milkyway'), id);
+});
+test('dark sites beat bright ones on the same starry night', () => {
+  const now = new Date('2026-08-20T16:00:00Z'), f = fc(now, { cloud: 0, rh: 50 });
+  const stars = (id) => best(opportunitiesFor(spot(id), f, makeContext({ now })), 'stars')?.score || 0;
+  assert.ok(stars('grimsel') > stars('rigi') && stars('rigi') > stars('uetliberg'), `${stars('grimsel')} ${stars('rigi')} ${stars('uetliberg')}`);
+});
+test('opening hours: Neeracherried on a Wednesday afternoon, not on a Monday, only the 2nd Sunday in winter', () => {
+  const s = spot('neeracherried');
+  assert.ok(openAt(s, new Date('2026-05-13T14:00:00Z')));   // Wed 16:00
+  assert.ok(!openAt(s, new Date('2026-05-13T08:00:00Z')));  // Wed 10:00
+  assert.ok(!openAt(s, new Date('2026-05-11T14:00:00Z')));  // Monday
+  assert.ok(openAt(s, new Date('2026-12-13T10:00:00Z')));   // 2nd Sunday of December, 11:00
+  assert.ok(!openAt(s, new Date('2026-12-20T10:00:00Z')));  // 3rd Sunday
+  assert.ok(!openAt(spot('goldau'), new Date('2026-12-01T17:30:00Z')) && openAt(spot('goldau'), new Date('2026-07-01T15:30:00Z')));
 });
 
 console.log('wildlife');

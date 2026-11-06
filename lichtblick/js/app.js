@@ -1,6 +1,8 @@
 // The app's state: the spots, their forecasts, and the opportunities computed from them.
 import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
+import { SKY } from '../data/sky.js';
+import { measureSky, browserTile } from './lightpollution.js';
 import { CH_OUTLINE } from '../data/ch-outline.js';
 import { forecast, gridForecast } from './sources/meteoswiss.js';
 import { kpForecast } from './sources/spaceweather.js';
@@ -20,11 +22,13 @@ export const App = {
 
 export async function loadSpots() {
   const hidden = hiddenSpots();
-  const curated = SPOTS.filter((s) => !hidden.has(s.id)).map((s) => ({ ...s, curated: true, horizon: HORIZONS[s.id] ? { alts: HORIZONS[s.id].alts } : null }));
+  const curated = SPOTS.filter((s) => !hidden.has(s.id)).map((s) => ({ ...s, curated: true, sky: SKY[s.id] || null, horizon: HORIZONS[s.id] ? { alts: HORIZONS[s.id].alts } : null }));
   const mine = await Promise.all(mySpots().map(async (s) => ({ ...s, mine: true, horizon: await horizonIfKnown(s) })));
   App.spots = [...mine, ...(settings().showCurated ? curated : [])];
   App.byId = new Map([...App.spots, ...curated].map((s) => [s.id, s]));
   await loadLocalPhotos(mine);
+  // your own spots: measure the sky darkness once, in the background
+  for (const s of mine.filter((x) => !x.sky)) measureSky(s, browserTile).then((sky) => { updateMySpot(s.id, { sky }); s.sky = sky; }).catch(() => {});
   // the service worker reads this copy for background checks
   kvSet('mirror:spots', mine.map(({ horizon, ...s }) => s));
   App.emit('spots');

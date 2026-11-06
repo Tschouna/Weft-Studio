@@ -6,10 +6,10 @@ const SHELL = [
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'vendor/astronomy.mjs',
   'vendor/leaflet/images/layers.png', 'vendor/leaflet/images/layers-2x.png', 'vendor/leaflet/images/marker-icon.png',
-  'js/main.js', 'js/app.js', 'js/wildlife.js', 'js/ui.js', 'js/store.js', 'js/geo.js', 'js/astro.js', 'js/scoring.js', 'js/exif.js',
+  'js/main.js', 'js/app.js', 'js/wildlife.js', 'js/lightpollution.js', 'js/ui.js', 'js/store.js', 'js/geo.js', 'js/astro.js', 'js/scoring.js', 'js/exif.js',
   'js/sources/meteoswiss.js', 'js/sources/meteoblue.js', 'js/sources/swisstopo.js', 'js/sources/spaceweather.js',
-  'js/views/feed.js', 'js/views/wildlife.js', 'js/sources/inaturalist.js', 'js/views/map.js', 'js/views/sky.js', 'js/views/spots.js', 'js/views/spot.js', 'js/views/settings.js', 'js/views/charts.js',
-  'data/spots.js', 'data/species.js', 'data/horizons.js', 'data/phenology.js', 'data/ch-outline.js',
+  'js/views/feed.js', 'js/views/wildlife.js', 'js/sources/inaturalist.js', 'js/views/map.js', 'js/views/sky.js', 'js/views/spots.js', 'js/views/spot.js', 'js/views/settings.js', 'js/views/charts.js', 'js/views/terrain3d.js', 'js/sources/terrain.js',
+  'data/spots.js', 'data/species.js', 'data/sky.js', 'data/horizons.js', 'data/phenology.js', 'data/ch-outline.js',
 ];
 
 self.addEventListener('install', (e) => {

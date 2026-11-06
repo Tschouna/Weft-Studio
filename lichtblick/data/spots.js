@@ -1,7 +1,8 @@
 // Curated landscape spots. Photos are from Wikimedia Commons (see each photo's author and licence);
 // lat/lon is where the photographer stood when the camera recorded it, otherwise the classic viewpoint.
 // tags drive the opportunity detectors (see scoring.js); months = [from, to] when the place is normally reachable;
-// species = wildlife to look for there (see species.js and wildlife.js).
+// species = wildlife to look for there (see species.js and wildlife.js); night = free | hike | stay | closed | reserve
+// (can you be there in the dark?), open = opening hours where access is restricted, lit = artificial light on site.
 export const SPOTS = [
  {
   "id": "seealpsee",
@@ -29,7 +30,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Small lake below the Alpstein cliffs. Still mornings give a full mirror; autumn mist hangs over the water.",
   "access": "About 1 h on foot from Wasserauen (train). Winter path usually open, check conditions.",
-  "elev": 1142
+  "elev": 1142,
+  "night": "free",
+  "nightNote": "About 1 h on foot from Wasserauen; inns at the lake for an early start."
  },
  {
   "id": "oeschinensee",
@@ -66,7 +69,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Turquoise lake under the Blüemlisalp walls. The view from the Heuberg trail above the lake is the classic; at night the Milky Way rises over the water.",
   "access": "Gondola from Kandersteg, then 20 min. In midwinter the lake freezes and is used for skating.",
-  "elev": 1940
+  "elev": 1940,
+  "night": "stay",
+  "nightNote": "The gondola runs by day only. For sunrise or the night, stay at one of the inns at the lake or walk up from Kandersteg (about 1.5 h)."
  },
  {
   "id": "bachalpsee",
@@ -95,7 +100,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Mirror lake facing the Schreckhorn and Finsteraarhorn. Best at dawn when the wind is still asleep.",
   "access": "About 50 min walk from the First gondola top station. Winter hiking trail in the cold season.",
-  "elev": 2268
+  "elev": 2268,
+  "night": "stay",
+  "nightNote": "The First gondola runs by day. For sunrise or the night, stay at the Berggasthaus First (50 min from the lake) or hike up."
  },
  {
   "id": "riffelsee",
@@ -134,7 +141,9 @@ export const SPOTS = [
   ],
   "blurb": "The Matterhorn upside down. Sunrise turns the peak pink while the lake is usually still calm.",
   "access": "Gornergrat railway to Rotenboden, then 5 min down. First train is too late for sunrise in summer: stay at Riffelhaus or hike up.",
-  "elev": 2759
+  "elev": 2759,
+  "night": "stay",
+  "nightNote": "Trains run from early morning to the evening; for night shots stay at the Riffelberg hotels, about 20 min away."
  },
  {
   "id": "stellisee",
@@ -172,7 +181,9 @@ export const SPOTS = [
   ],
   "blurb": "Wide mirror with the Matterhorn on the horizon; one of the darkest easy-to-reach skies near Zermatt.",
   "access": "Sunnegga-Blauherd lifts, then 15 min walk. Out of lift hours: about 2.5 h from Zermatt.",
-  "elev": 2538
+  "elev": 2538,
+  "night": "stay",
+  "nightNote": "The lifts run by day; the Berghaus Fluhalp, about 20 min away, is the place to sleep for sunrise and the night."
  },
  {
   "id": "lauterbrunnen",
@@ -193,14 +204,15 @@ export const SPOTS = [
    "waterfall",
    "valley",
    "peaks",
-   "darksky",
    "mist",
    "snow"
   ],
   "months": null,
   "blurb": "A 300 m waterfall falling off a sheer wall. Strongest after rain and in early summer snow-melt; valley fog in autumn.",
   "access": "Train to Lauterbrunnen, the falls are a few minutes from the station.",
-  "elev": 811
+  "elev": 811,
+  "night": "free",
+  "nightNote": "Village lights: walk out into the meadows for a darker sky."
  },
  {
   "id": "iseltwald",
@@ -228,7 +240,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Turquoise Lake Brienz with a little jetty. Calm, misty autumn mornings are the magic moment.",
   "access": "Bus from Interlaken Ost. The jetty can charge a small entrance fee.",
-  "elev": 564
+  "elev": 564,
+  "night": "free",
+  "nightNote": "Village lights around the jetty."
  },
  {
   "id": "merligen",
@@ -257,7 +271,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "The perfect pyramid of the Niesen across Lake Thun. Still water doubles it; summer storms over the lake are spectacular from here.",
   "access": "Bus from Thun to Merligen, shore path.",
-  "elev": 562
+  "elev": 562,
+  "night": "free",
+  "nightNote": "Lakeside path, lights of Thun and the lake shore."
  },
  {
   "id": "lavaux",
@@ -285,7 +301,10 @@ export const SPOTS = [
   "months": null,
   "blurb": "Terraced vineyards over Lake Geneva (UNESCO). The vines turn gold in late October; sunsets over the lake all year.",
   "access": "Train to Chexbres or Epesses, walk the vineyard paths.",
-  "elev": 460
+  "elev": 460,
+  "night": "free",
+  "nightNote": "Vineyard paths, with the lights of the villages and Lausanne.",
+  "lit": true
  },
  {
   "id": "chillon",
@@ -313,9 +332,11 @@ export const SPOTS = [
    "lowland"
   ],
   "months": null,
-  "blurb": "Lake castle with the snowy Dents du Midi behind. Lit up at blue hour; flat water gives a reflection.",
+  "blurb": "Lake castle with the snowy Dents du Midi behind. Blue hour over the lake; flat water gives a reflection.",
   "access": "Bus or 45 min walk along the shore from Montreux.",
-  "elev": 373
+  "elev": 373,
+  "night": "free",
+  "nightNote": "The castle is a museum with daytime hours and an entrance fee (10:00-17:00 in winter, 9:00-19:00 in summer); the shore path with the classic view is public at any hour."
  },
  {
   "id": "creuxduvan",
@@ -349,7 +370,9 @@ export const SPOTS = [
   "species": [
    "ibex",
    "chamois"
-  ]
+  ],
+  "night": "free",
+  "nightNote": "Open at any hour; in winter the Soliat road is closed, then about 1.5 h on foot from Noiraigue."
  },
  {
   "id": "silsersee",
@@ -378,7 +401,8 @@ export const SPOTS = [
   "months": null,
   "blurb": "Large high lake framed by larches. Golden in the second half of October; frozen and snow-covered in winter.",
   "access": "Bus to Sils Maria; shore paths and the Chastè peninsula.",
-  "elev": 1796
+  "elev": 1796,
+  "night": "free"
  },
  {
   "id": "palpuogna",
@@ -408,7 +432,9 @@ export const SPOTS = [
   ],
   "blurb": "Small lake ringed by larches, often voted the prettiest place in Switzerland. Peak gold mid to late October.",
   "access": "Albula pass road above Preda (closed in winter), or 30 min walk from Preda station.",
-  "elev": 1918
+  "elev": 1918,
+  "night": "free",
+  "nightNote": "Pass road in summer only."
  },
  {
   "id": "saoseo",
@@ -437,7 +463,9 @@ export const SPOTS = [
   ],
   "blurb": "Deep blue lake with pine islands. Calm mornings for the reflection, larches in October.",
   "access": "Bus to Sfazù, then about 1.5 h on foot (summer minibus to Alp Camp).",
-  "elev": 2029
+  "elev": 2029,
+  "night": "hike",
+  "nightNote": "About 1.5 h on foot from Sfazù; the Rifugio Saoseo nearby for sunrise."
  },
  {
   "id": "aletsch",
@@ -468,7 +496,9 @@ export const SPOTS = [
   "species": [
    "chamois",
    "nutcracker"
-  ]
+  ],
+  "night": "stay",
+  "nightNote": "Gondolas run by day; Riederalp and Bettmeralp are about 1 h below."
  },
  {
   "id": "lavertezzo",
@@ -494,7 +524,8 @@ export const SPOTS = [
   "months": null,
   "blurb": "Double-arched stone bridge over emerald water. Soft light early, chestnut colours in November.",
   "access": "Bus from Tenero/Locarno to Lavertezzo. Busy midday in summer.",
-  "elev": 529
+  "elev": 529,
+  "night": "free"
  },
  {
   "id": "caumasee",
@@ -520,7 +551,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Turquoise forest lake, brightest under a high midday sun; autumn colours around it in October.",
   "access": "20 min walk from Flims Waldhaus (or the lake lift in summer).",
-  "elev": 1004
+  "elev": 1004,
+  "night": "free",
+  "nightNote": "Forest paths from Flims."
  },
  {
   "id": "gelmersee",
@@ -548,8 +581,10 @@ export const SPOTS = [
    10
   ],
   "blurb": "Wild granite reservoir reached by one of the steepest funiculars in Europe.",
-  "access": "Gelmerbahn from Handegg (summer), or a steep hike.",
-  "elev": 1859
+  "access": "Gelmerbahn from Handegg, roughly June to October, by day (about 9:00-16:00), or a steep hike of about 1.5 h. The dam walkway may be closed for construction.",
+  "elev": 1859,
+  "night": "hike",
+  "nightNote": "The Gelmerbahn runs only by day in summer; at night about 1.5 h on foot from Handegg."
  },
  {
   "id": "grimsel",
@@ -579,7 +614,9 @@ export const SPOTS = [
   ],
   "blurb": "High pass with dark skies and lakes, a favourite for the Milky Way over granite.",
   "access": "Pass road, open roughly June to October. Bus in summer.",
-  "elev": 2160
+  "elev": 2160,
+  "night": "free",
+  "nightNote": "Pass road roughly June to October; hotel at the pass."
  },
  {
   "id": "landwasser",
@@ -606,7 +643,8 @@ export const SPOTS = [
   "months": null,
   "blurb": "The curved Rhaetian Railway viaduct running straight into a tunnel. Larches in autumn, snow in winter.",
   "access": "Viewing platform on the signposted trail from Filisur station (about 25 min).",
-  "elev": 1097
+  "elev": 1097,
+  "night": "free"
  },
  {
   "id": "rheinfall",
@@ -632,8 +670,11 @@ export const SPOTS = [
   ],
   "months": null,
   "blurb": "Europe's most powerful waterfall. Highest flow in early summer and after heavy rain.",
-  "access": "Train to Neuhausen Rheinfall or Schloss Laufen am Rheinfall.",
-  "elev": 359
+  "access": "Train to Neuhausen Rheinfall (free bank) or Schloss Laufen am Rheinfall (platforms, CHF 5).",
+  "elev": 359,
+  "night": "free",
+  "nightNote": "Open around the clock and floodlit after dark. The Schloss Laufen side (platforms, CHF 5) keeps daytime hours; the Neuhausen side is free.",
+  "lit": true
  },
  {
   "id": "blausee",
@@ -658,9 +699,18 @@ export const SPOTS = [
    "reflection"
   ],
   "months": null,
-  "blurb": "Tiny crystal-clear blue lake in a forest of boulders. Snowy mornings and autumn leaves are the best moments.",
-  "access": "Bus stop Blausee. Entrance fee to the nature park.",
-  "elev": 887
+  "blurb": "Tiny crystal-clear blue lake in a forest of boulders, inside a private nature park. Snowy mornings (after opening) and autumn leaves are the best moments.",
+  "access": "Bus stop Blausee. Entrance about CHF 8-10, opens at 09:00.",
+  "elev": 887,
+  "night": "closed",
+  "nightNote": "Private nature park: opens at 09:00 and closes in the evening, with lit paths and a hotel. Not a place for sunrise or the night sky.",
+  "open": {
+   "hours": [
+    9,
+    21
+   ]
+  },
+  "lit": true
  },
  {
   "id": "arnisee",
@@ -689,7 +739,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Lake on a balcony above the Reuss valley, facing the Uri Alps. Valley fog below, colours in October.",
   "access": "Cable car from Amsteg or Intschi.",
-  "elev": 1393
+  "elev": 1393,
+  "night": "hike",
+  "nightNote": "The cable cars run by day; otherwise a long hike up."
  },
  {
   "id": "luzern",
@@ -717,7 +769,10 @@ export const SPOTS = [
   "months": null,
   "blurb": "The wooden bridge and water tower. Blue hour with the lights on, foggy mornings, storms over the lake.",
   "access": "5 min from Lucerne station.",
-  "elev": 434
+  "elev": 434,
+  "night": "free",
+  "nightNote": "City centre, lit at night.",
+  "lit": true
  },
  {
   "id": "faelensee",
@@ -745,7 +800,9 @@ export const SPOTS = [
   ],
   "blurb": "Fjord-like lake squeezed between limestone walls. Still mornings give a perfect reflection.",
   "access": "About 2.5 h hike from Brülisau/Hoher Kasten.",
-  "elev": 1503
+  "elev": 1503,
+  "night": "stay",
+  "nightNote": "About 2.5 h on foot; the Bollenwees inn at the lake for sunrise."
  },
  {
   "id": "moiry",
@@ -775,7 +832,9 @@ export const SPOTS = [
   ],
   "blurb": "Milky-turquoise reservoir with the Moiry glacier at the end. Very dark skies.",
   "access": "Road from Grimentz (summer), bus to the dam.",
-  "elev": 2610
+  "elev": 2610,
+  "night": "free",
+  "nightNote": "Road in summer."
  },
  {
   "id": "lacbleu",
@@ -806,7 +865,9 @@ export const SPOTS = [
   ],
   "blurb": "Small clear lake among larches and stone pines with a waterfall behind.",
   "access": "About 45 min from La Gouille (bus from Sion).",
-  "elev": 2106
+  "elev": 2106,
+  "night": "free",
+  "nightNote": "45 min on foot from La Gouille."
  },
  {
   "id": "truebsee",
@@ -833,7 +894,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Lake under the Titlis. Mirror in summer, snowfield in winter; reachable by gondola all year.",
   "access": "Gondola from Engelberg to Trübsee.",
-  "elev": 1764
+  "elev": 1764,
+  "night": "stay",
+  "nightNote": "The gondola runs by day; the hotel on the shore for sunrise and the night."
  },
  {
   "id": "susten",
@@ -863,7 +926,9 @@ export const SPOTS = [
   ],
   "blurb": "Glacier lake with the Stein glacier; very dark and quiet at night.",
   "access": "Susten pass road, open roughly June to October.",
-  "elev": 1932
+  "elev": 1932,
+  "night": "free",
+  "nightNote": "Pass road in summer."
  },
  {
   "id": "sihlsee",
@@ -896,7 +961,8 @@ export const SPOTS = [
   "species": [
    "waterbirds",
    "heron"
-  ]
+  ],
+  "night": "free"
  },
  {
   "id": "cavloc",
@@ -925,7 +991,9 @@ export const SPOTS = [
   ],
   "blurb": "Quiet lake with Piz Forno behind, framed by larches.",
   "access": "About 1 h walk from Maloja.",
-  "elev": 1907
+  "elev": 1907,
+  "night": "hike",
+  "nightNote": "About 1 h on foot from Maloja."
  },
  {
   "id": "engstlensee",
@@ -954,7 +1022,9 @@ export const SPOTS = [
   ],
   "blurb": "Alpine lake mirroring the Wendenstöcke; calm mornings and autumn colour.",
   "access": "Road from Innertkirchen (summer), or gondola via Melchsee-Frutt and a hike.",
-  "elev": 1850
+  "elev": 1850,
+  "night": "free",
+  "nightNote": "Road in summer; hotel at the lake."
  },
  {
   "id": "salanfe",
@@ -983,7 +1053,9 @@ export const SPOTS = [
   ],
   "blurb": "High reservoir under the Dents du Midi and Tour Sallière. Dark skies, hut nearby.",
   "access": "About 2 h hike from Van d'en Haut.",
-  "elev": 1908
+  "elev": 1908,
+  "night": "stay",
+  "nightNote": "About 2 h on foot; the Auberge de Salanfe for sunrise and the night."
  },
  {
   "id": "diavolezza",
@@ -1011,7 +1083,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "At almost 3000 m, facing Piz Palü and Bernina. Alpenglow at sunrise and a superb dark sky.",
   "access": "Cable car from Bernina Diavolezza station (all year). Stay at the Berghaus for night shots.",
-  "elev": 2959
+  "elev": 2959,
+  "night": "stay",
+  "nightNote": "The cable car runs by day; stay at the Berghaus Diavolezza for the night and sunrise."
  },
  {
   "id": "golzernsee",
@@ -1041,7 +1115,9 @@ export const SPOTS = [
   ],
   "blurb": "Green-blue lake in a hanging valley under the Bristen.",
   "access": "Cable car Bristen-Golzern, then 20 min.",
-  "elev": 1411
+  "elev": 1411,
+  "night": "hike",
+  "nightNote": "The small cable car from Bristen runs by day; otherwise about 1.5 h on foot."
  },
  {
   "id": "fuorcla",
@@ -1071,7 +1147,9 @@ export const SPOTS = [
   ],
   "blurb": "Pass facing Piz Roseg and Piz Bernina head-on: alpenglow and a small reflecting lake.",
   "access": "Corvatsch cable car to Murtèl, then about 45 min.",
-  "elev": 2755
+  "elev": 2755,
+  "night": "stay",
+  "nightNote": "The Corvatsch cable car runs by day; the Berghaus Fuorcla Surlej is at the pass."
  },
  {
   "id": "maerjelensee",
@@ -1100,7 +1178,9 @@ export const SPOTS = [
   ],
   "blurb": "Glacier lake at the edge of the Aletsch, far from any lights.",
   "access": "About 1.5 h from Fiescheralp through the Tälli tunnel.",
-  "elev": 2301
+  "elev": 2301,
+  "night": "stay",
+  "nightNote": "About 1.5 h from Fiescheralp; the Gletscherstube hut is nearby."
  },
  {
   "id": "lauenensee",
@@ -1130,7 +1210,8 @@ export const SPOTS = [
   ],
   "blurb": "Moor lake with reeds and the Spitzhorn behind; misty mornings and autumn colour.",
   "access": "Bus from Gstaad to Lauenensee (summer).",
-  "elev": 1380
+  "elev": 1380,
+  "night": "free"
  },
  {
   "id": "rigi",
@@ -1166,7 +1247,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "The \"queen of the mountains\" between three lakes. When the lowlands are under fog, you stand on an island in a white sea.",
   "access": "Cogwheel railway from Vitznau or Arth-Goldau, or cable car from Weggis.",
-  "elev": 1797
+  "elev": 1797,
+  "night": "stay",
+  "nightNote": "The railways run until the evening; hotels at Rigi Kulm for sunrise."
  },
  {
   "id": "uetliberg",
@@ -1193,7 +1276,10 @@ export const SPOTS = [
   "months": null,
   "blurb": "Zürich's hill. When the fog top is below about 850 m, the tower sticks out above a sea of fog.",
   "access": "S10 train from Zürich HB to Uetliberg, 10 min walk.",
-  "elev": 864
+  "elev": 864,
+  "night": "free",
+  "nightNote": "The S10 runs until late at night; city glow all around.",
+  "lit": true
  },
  {
   "id": "weissenstein",
@@ -1221,7 +1307,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Jura ridge with the whole Alpine chain across the fog-filled Mittelland.",
   "access": "Gondola from Oberdorf (SO).",
-  "elev": 1284
+  "elev": 1284,
+  "night": "stay",
+  "nightNote": "The gondola runs by day; the hotel at the top for sunrise."
  },
  {
   "id": "gornergrat",
@@ -1253,7 +1341,9 @@ export const SPOTS = [
   "species": [
    "ibex",
    "chough"
-  ]
+  ],
+  "night": "stay",
+  "nightNote": "Trains from early morning; the Kulmhotel at the top for night shots."
  },
  {
   "id": "montebre",
@@ -1280,7 +1370,10 @@ export const SPOTS = [
   "months": null,
   "blurb": "High above Lake Lugano. In summer, thunderstorms roll over the lake at night: a front-row seat for lightning.",
   "access": "Funicular from Lugano-Cassarate.",
-  "elev": 928
+  "elev": 928,
+  "night": "free",
+  "nightNote": "Road and funicular; Lugano lights below.",
+  "lit": true
  },
  {
   "id": "lagobianco",
@@ -1307,7 +1400,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Pass lake at 2234 m, frozen and snow-covered from about December to May. Bernina express trains run along it.",
   "access": "Train to Ospizio Bernina, all year.",
-  "elev": 2304
+  "elev": 2304,
+  "night": "free",
+  "nightNote": "Pass road and train all year."
  },
  {
   "id": "bluemlisalp",
@@ -1335,7 +1430,9 @@ export const SPOTS = [
   ],
   "blurb": "Mountain hut at 2840 m above Oeschinensee: glaciers, no lights, Milky Way overhead.",
   "access": "About 4 h from Oeschinensee over the Hohtürli. Book the hut.",
-  "elev": 2842
+  "elev": 2842,
+  "night": "stay",
+  "nightNote": "Mountain hut, book ahead."
  },
  {
   "id": "lejdastaz",
@@ -1363,7 +1460,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "Moor lake in a larch and pine forest between St. Moritz and Pontresina.",
   "access": "30 min walk from St. Moritz Bad or Pontresina.",
-  "elev": 1814
+  "elev": 1814,
+  "night": "free",
+  "nightNote": "30 min on foot from St. Moritz or Pontresina."
  },
  {
   "id": "gurnigel",
@@ -1390,7 +1489,9 @@ export const SPOTS = [
   "months": null,
   "blurb": "The Gantrisch park works to keep its night dark; close to Bern yet one of the darkest skies on the north side of the Alps. Often above the fog.",
   "access": "Bus from Thurnen/Schwarzenburg to Gurnigel Berghaus.",
-  "elev": 1594
+  "elev": 1594,
+  "night": "free",
+  "nightNote": "Road over the Gurnigel pass."
  },
  {
   "id": "augstmatthorn",
@@ -1433,7 +1534,9 @@ export const SPOTS = [
    "goldeneagle",
    "chough"
   ],
-  "elev": 2136
+  "elev": 2136,
+  "night": "hike",
+  "nightNote": "Exposed ridge: only for sure-footed hikers, not in the dark."
  },
  {
   "id": "niederhorn",
@@ -1466,7 +1569,9 @@ export const SPOTS = [
    "chough",
    "goldeneagle"
   ],
-  "elev": 1934
+  "elev": 1934,
+  "night": "stay",
+  "nightNote": "The gondola runs by day; the Berghaus at the top for sunrise."
  },
  {
   "id": "pilatus",
@@ -1498,7 +1603,9 @@ export const SPOTS = [
    "chamois",
    "chough"
   ],
-  "elev": 2065
+  "elev": 2065,
+  "night": "stay",
+  "nightNote": "Hotel Pilatus-Kulm at the top for sunrise and the night."
  },
  {
   "id": "pontresina",
@@ -1532,7 +1639,8 @@ export const SPOTS = [
    "goldeneagle",
    "nutcracker"
   ],
-  "elev": 2339
+  "elev": 2339,
+  "night": "free"
  },
  {
   "id": "trupchun",
@@ -1576,7 +1684,9 @@ export const SPOTS = [
    "beardedvulture",
    "goldeneagle"
   ],
-  "elev": 2036
+  "elev": 2036,
+  "night": "reserve",
+  "nightNote": "Swiss National Park: stay on the marked path, no camping or bivouac, no dogs."
  },
  {
   "id": "margunet",
@@ -1611,7 +1721,9 @@ export const SPOTS = [
    "goldeneagle",
    "marmot"
   ],
-  "elev": 2324
+  "elev": 2324,
+  "night": "reserve",
+  "nightNote": "Swiss National Park: stay on the marked path, no camping or bivouac, no dogs."
  },
  {
   "id": "spielboden",
@@ -1644,7 +1756,9 @@ export const SPOTS = [
    "chough",
    "ibex"
   ],
-  "elev": 2515
+  "elev": 2515,
+  "night": "hike",
+  "nightNote": "The gondola runs by day in summer; otherwise about 1.5 h on foot from Saas-Fee."
  },
  {
   "id": "fanel",
@@ -1677,7 +1791,9 @@ export const SPOTS = [
    "heron",
    "kingfisher"
   ],
-  "elev": 432
+  "elev": 432,
+  "night": "reserve",
+  "nightNote": "Nature reserve: stay on the paths and at the tower."
  },
  {
   "id": "klingnau",
@@ -1710,7 +1826,8 @@ export const SPOTS = [
    "heron",
    "kingfisher"
   ],
-  "elev": 319
+  "elev": 319,
+  "night": "free"
  },
  {
   "id": "bolle",
@@ -1743,7 +1860,9 @@ export const SPOTS = [
    "kingfisher",
    "songbirds"
   ],
-  "elev": 193
+  "elev": 193,
+  "night": "free",
+  "nightNote": "Paths through the reserve; stay on them."
  },
  {
   "id": "ermatingen",
@@ -1775,7 +1894,8 @@ export const SPOTS = [
    "waders",
    "heron"
   ],
-  "elev": 396
+  "elev": 396,
+  "night": "free"
  },
  {
   "id": "neeracherried",
@@ -1799,14 +1919,40 @@ export const SPOTS = [
   ],
   "months": null,
   "blurb": "One of the largest fens of the Swiss lowlands, with a BirdLife nature centre and hides over the ponds. Best in spring.",
-  "access": "Bus to Neerach; the BirdLife centre and its hides are usually open from March to October.",
+  "access": "Bus to Neerach. BirdLife centre and hides on Wednesday afternoon and at weekends from late March to October (see the hours); entrance CHF 8.",
   "species": [
    "waders",
    "heron",
    "songbirds",
    "waterbirds"
   ],
-  "elev": 412
+  "elev": 412,
+  "night": "closed",
+  "nightNote": "The reserve is fenced. The BirdLife centre and its hides open late March to October on Wednesday 14-20, Saturday 10-18 and Sunday 8-18; in winter only on the second Sunday of the month, 9-17. Entrance CHF 8.",
+  "open": {
+   "months": [
+    3,
+    10
+   ],
+   "dayHours": {
+    "0": [
+     8,
+     18
+    ],
+    "3": [
+     14,
+     20
+    ],
+    "6": [
+     10,
+     18
+    ]
+   },
+   "winterSecondSunday": [
+    9,
+    17
+   ]
+  }
  },
  {
   "id": "altreu",
@@ -1838,7 +1984,8 @@ export const SPOTS = [
    "waterbirds",
    "beaver"
   ],
-  "elev": 430
+  "elev": 430,
+  "night": "free"
  },
  {
   "id": "goldau",
@@ -1861,11 +2008,23 @@ export const SPOTS = [
   ],
   "months": null,
   "blurb": "Wildlife park in the 1806 landslide boulders: deer and mouflons roam freely among visitors; bears, wolves, lynx and chamois in large enclosures.",
-  "access": "A few minutes from Arth-Goldau station. Entrance fee.",
+  "access": "A few minutes from Arth-Goldau station. Entrance CHF 26.",
   "species": [
    "park"
   ],
-  "elev": 546
+  "elev": 546,
+  "night": "closed",
+  "nightNote": "Open 9:00-18:00 from April to October and 9:00-17:00 from November to March. Entrance CHF 26, no dogs.",
+  "open": {
+   "hours": [
+    9,
+    18
+   ],
+   "winterHours": [
+    9,
+    17
+   ]
+  }
  },
  {
   "id": "langenberg",
@@ -1888,10 +2047,12 @@ export const SPOTS = [
   ],
   "months": null,
   "blurb": "Large forest enclosures with native animals: lynx, wolves, bears, red deer, ibex and wild boar. Good for practising before going after the wild ones.",
-  "access": "S4 to Langnau-Gattikon, then about 15 min on foot. Free entry.",
+  "access": "S4 to Langnau-Gattikon, then about 15 min on foot. Free entry; the eastern park is open around the clock.",
   "species": [
    "park"
   ],
-  "elev": 546
+  "elev": 546,
+  "night": "free",
+  "nightNote": "Langenberg Ost is open all year, around the clock, free; the western part and the buildings keep daytime hours."
  }
 ];
