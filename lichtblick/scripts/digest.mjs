@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
+import { SKY } from '../data/sky.js';
 import { forecast, gridForecast } from '../js/sources/meteoswiss.js';
 import { kpForecast } from '../js/sources/spaceweather.js';
 import { opportunitiesFor, makeContext, LOWLAND_REFS, topOpportunities, TYPES } from '../js/scoring.js';
@@ -23,7 +24,7 @@ const only = (process.env.LICHTBLICK_ONLY || '').split(',').map((s) => s.trim())
 
 const mineFile = fileURLToPath(new URL('../data/my-spots.json', import.meta.url));
 const mine = existsSync(mineFile) ? (JSON.parse(readFileSync(mineFile, 'utf8')).spots || []) : [];
-let spots = [...mine, ...SPOTS.map((s) => ({ ...s, horizon: HORIZONS[s.id] ? { alts: HORIZONS[s.id].alts } : null }))];
+let spots = [...mine, ...SPOTS.map((s) => ({ ...s, sky: SKY[s.id] || null, horizon: HORIZONS[s.id] ? { alts: HORIZONS[s.id].alts } : null }))];
 if (only.length) spots = spots.filter((s) => only.includes(s.id));
 
 const pts = [...spots, ...LOWLAND_REFS].map((s) => ({ lat: s.lat, lon: s.lon, elev: s.elev }));

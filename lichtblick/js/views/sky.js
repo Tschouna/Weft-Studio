@@ -10,7 +10,7 @@ import { settings, getJSON, setJSON, favourites } from '../store.js';
 import { compassWords } from '../geo.js';
 import { panorama, dome, corePath } from './charts.js';
 import { openSettings } from './settings.js';
-import { openSpot } from './spot.js';
+import { openSpot, skyLine } from './spot.js';
 
 const H = 3600e3;
 let spotId = getJSON('lb.skySpot', null);
@@ -53,11 +53,13 @@ export function renderSky(root) {
       : `Up ${hhmm(moonTimes[0].t)}–${hhmm(moonTimes[moonTimes.length - 1].t)}, ${Math.round(n.moon.illum * 100)}% lit.`;
 
   const nights = Array.from({ length: 14 }, (_, i) => localMidnight(new Date(), i));
-  const options = [...App.spots].sort((a, b) => (b.tags?.includes('darksky') ? 1 : 0) - (a.tags?.includes('darksky') ? 1 : 0) || a.name.localeCompare(b.name));
+  // darkest skies first; places closed at night last
+  const rank = (s) => (s.night === 'closed' ? 20 : 0) + (s.sky ? s.sky.bortle : s.tags?.includes('darksky') ? 3 : 6);
+  const options = [...App.spots].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 
   root.innerHTML = `<div class="wrap">
     <div class="row sp" style="margin-bottom:10px;gap:8px">
-      <select class="spotpick" id="skyspot" aria-label="Spot">${options.map((s) => `<option value="${esc(s.id)}" ${s.id === spot.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
+      <select class="spotpick" id="skyspot" aria-label="Spot">${options.map((s) => `<option value="${esc(s.id)}" ${s.id === spot.id ? 'selected' : ''}>${esc(s.name)}${s.sky ? ` · dark ${10 - s.sky.bortle}/9` : ''}${s.night === 'closed' ? ' · closed at night' : ''}</option>`).join('')}</select>
       <button class="btn small ghost" id="skyopen">Spot ›</button>
     </div>
     <div class="chips">${nights.map((d, i) => `<button class="chip" data-night="${i}" aria-pressed="${i === nightOffset}">${i === 0 ? 'Tonight' : i === 1 ? 'Tomorrow' : `${weekday(d)} ${zurichParts(d).d}`}</button>`).join('')}</div>
@@ -68,6 +70,8 @@ export function renderSky(root) {
         <div class="small muted">${n.darkStart ? 'astronomical night (sun 18° below the horizon)' : 'Short summer night: twilight all night'}</div></div></div>
       <p style="margin:12px 0 4px">🌙 ${esc(n.moon.name)}. ${moonLine}</p>
       <p style="margin:4px 0">🌌 ${mwLine}</p>
+      ${spot.sky ? `<p class="small muted" style="margin:6px 0 0">Sky darkness: ${esc(skyLine(spot))}.</p>` : ''}
+      ${spot.night === 'closed' ? `<p class="small" style="margin:6px 0 0;color:#ffb3a1">⛔ ${esc(spot.nightNote || 'Closed at night.')}</p>` : spot.nightNote && ['hike', 'stay', 'reserve'].includes(spot.night) ? `<p class="small muted" style="margin:6px 0 0">${esc(spot.nightNote)}</p>` : ''}
       ${ops.length ? `<div class="oplist" style="margin-top:10px">${ops.slice(0, 3).map((o) => `<div class="opline"><div class="ic">${o.icon || TYPES[o.type].icon}</div><div><b>${esc(o.title)}</b><ul>${o.why.slice(0, 3).map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div><span class="score ${scoreClass(o.score)}">${o.score}</span></div>`).join('')}</div>`
         : `<p class="small muted" style="margin:8px 0 0">${fc ? 'No clear-sky chance in the MeteoSwiss forecast for this night.' : 'Forecast beyond five days: astronomy only.'}</p>`}
     </div>

@@ -25,9 +25,15 @@ const wildSpots = () => App.spots.filter((s) => s.species && s.species.length);
 
 export function renderWildlife(root) {
   const spots = wildSpots();
-  if (dayOffset == null) dayOffset = localHour(new Date()) >= 19 ? 1 : 0;
+  if (dayOffset == null) {
+    // today, unless today's chances are all over: then tomorrow
+    const end = localMidnight(new Date(), 1).getTime();
+    const left = App.ops.some((o) => o.type === 'wildlife' && o.end.getTime() > Date.now() && o.start.getTime() < end);
+    if (App.ops.length) dayOffset = left ? 0 : 1;
+  }
+  const offset = dayOffset ?? (localHour(new Date()) >= 17 ? 1 : 0);
   if (!spotId || !spotById(spotId)) spotId = spots[0]?.id;
-  const day = localMidnight(new Date(), dayOffset);
+  const day = localMidnight(new Date(), offset);
   const dayEnd = day.getTime() + 24 * H;
   // the best of the day, at most two per species so the list shows the variety
   const per = new Map();
@@ -42,8 +48,8 @@ export function renderWildlife(root) {
   ];
   root.innerHTML = `<div class="wrap">
     <div class="hero-line"><h2>Wildlife</h2><span class="small muted">${spots.length} spots · animal activity, light & wind</span></div>
-    <div class="chips">${days.map((d, i) => `<button class="chip" data-day="${i}" aria-pressed="${i === dayOffset}">${esc(relDay(d))}</button>`).join('')}</div>
-    <div class="day-head">Best chances ${dayOffset === 0 ? 'today' : esc(relDay(day).toLowerCase())}</div>
+    <div class="chips">${days.map((d, i) => `<button class="chip" data-day="${i}" aria-pressed="${i === offset}">${esc(relDay(d))}</button>`).join('')}</div>
+    <div class="day-head">Best chances ${offset === 0 ? 'today' : esc(relDay(day).toLowerCase())}</div>
     ${App.loading && !App.ops.length ? `<div class="cards">${'<div class="skeleton"></div>'.repeat(3)}</div>`
       : ops.length ? `<div class="cards">${ops.slice(0, 8).map((o) => card(o)).join('')}</div>` : '<div class="notice">No forecast for this day yet, or nothing promising.</div>'}
 

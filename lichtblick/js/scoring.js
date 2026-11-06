@@ -6,6 +6,7 @@ import { distance, destination, compass, compassWords } from './geo.js';
 import { PHENO_STATIONS, PHENO_TREND } from '../data/phenology.js';
 import { at as mbAt, seeingWords } from './sources/meteoblue.js';
 import { wildlifeOps } from './wildlife.js';
+import { darkFactor, BORTLE_WORDS } from './lightpollution.js';
 
 const H = 3600e3;
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -184,7 +185,7 @@ function goldenHours(spot, fc, ctx, days) {
     if (has(spot, 'city', 'bluehour', 'castle') && d.blueEveningStart && idx(fc, d.blueEveningStart.getTime()) >= 0) {
       const t = d.blueEveningStart.getTime(), rain = acc(fc, 'precip', t) || 0, c = val(fc, 'cloud', t) ?? 50;
       const s = 62 - rain * 15 + (c > 20 && c < 80 ? 6 : 0);
-      out.push(op('bluehour', spot, t, (d.civilDusk || d.blueEveningStart).getTime() + 15 * 60e3, s, 'Blue hour with the lights on', [`Blue hour from ${hhmm(d.blueEveningStart)}`, rain > 0.2 ? 'Wet streets: reflections' : '']));
+      out.push(op('bluehour', spot, t, (d.civilDusk || d.blueEveningStart).getTime() + 15 * 60e3, s, has(spot, 'city') || spot.lit ? 'Blue hour with the lights on' : 'Blue hour', [`Blue hour from ${hhmm(d.blueEveningStart)}`, rain > 0.2 ? 'Wet ground: reflections' : '']));
     }
   }
   return out;
@@ -420,7 +421,13 @@ function foehn(spot, fc, ctx, days) {
 // the night sky: clouds from MeteoSwiss (and meteoblue when you have a key), moon, Milky Way, meteors, aurora
 function nightSky(spot, fc, ctx, days, mb, ice) {
   const out = [];
-  const dark = has(spot, 'darksky') ? 1 : has(spot, 'city') ? 0.55 : (spot.elev || 0) > 1500 ? 0.9 : 0.8;
+  if (spot.night === 'closed') return out; // fenced or closed at night
+  // measured sky darkness (NASA night lights) when known, otherwise a guess from the tags
+  const bortle = spot.sky ? spot.sky.bortle : has(spot, 'city') ? 8 : has(spot, 'darksky') ? 3 : (spot.elev || 0) > 1500 ? 4 : 5;
+  const dark = darkFactor(bortle) * (spot.lit ? 0.7 : 1);
+  const glow = spot.sky && spot.sky.glow && spot.sky.glow.share > 0.2 && bortle >= 3 ? `glow of ${spot.sky.glow.name} in the ${compassWords(spot.sky.glow.az)}` : '';
+  const skyNote = `Sky: ${BORTLE_WORDS[bortle]} (Bortle ~${bortle})${glow ? `, ${glow}` : ''}${spot.lit ? '; lights on site' : ''}`;
+  const accessNote = spot.nightNote && ['hike', 'stay', 'reserve'].includes(spot.night) ? `Getting there at night: ${spot.nightNote}` : '';
   for (const d of days) {
     const samples = nightSamples(ctx, spot, d.day).filter((s) => s.sunAlt <= -18);
     if (!samples.length) continue;
@@ -452,20 +459,20 @@ function nightSky(spot, fc, ctx, days, mb, ice) {
     if (starScore >= 35 && darkMoonless.length) {
       out.push(op('stars', spot, darkMoonless[0].t, darkMoonless[darkMoonless.length - 1].t, starScore, lakeNight ? 'Stars mirrored in the lake' : 'Clear, dark sky',
         [`${Math.round(clearDark * 100) >= 85 ? 'Clear' : 'Mostly clear'} in the dark hours (${Math.round((1 - (avg(darkMoonless.map((s) => cloudAt(s.t))) ?? 0) / 100) * 100)} % clear)`, moonTxt,
-          rh != null && rh > 90 ? 'Humid: some haze and dew on the lens' : '', mbNote, has(spot, 'darksky') ? 'Dark site, little light pollution' : ''], { peak: darkMoonless[Math.floor(darkMoonless.length / 2)].t }));
+          rh != null && rh > 90 ? 'Humid: some haze and dew on the lens' : '', mbNote, skyNote, accessNote], { peak: darkMoonless[Math.floor(darkMoonless.length / 2)].t }));
     }
     // the core of the Milky Way
-    const core = pts.filter((s) => moonOk(s) && coreClear(s) > 3);
+    const core = bortle >= 7 ? [] : pts.filter((s) => moonOk(s) && coreClear(s) > 3); // city glow drowns the Milky Way
     if (core.length >= 2) {
       const best = core.reduce((a, b) => (b.coreAlt > a.coreAlt ? b : a));
       const clr = avg(core.map((s) => clearAt(s.t))) ?? 0;
       const sc = 100 * clr * dark * transp * lerp(best.coreAlt, 4, 16, 0.6, 1) * lerp(core.length, 2, 10, 0.75, 1);
       if (sc >= 35) out.push(op('milkyway', spot, core[0].t, core[core.length - 1].t + 15 * 60e3, sc, lakeNight ? 'Milky Way over still water' : 'Milky Way core',
         [`Core visible ${hhmm(new Date(core[0].t))}–${hhmm(new Date(core[core.length - 1].t + 15 * 60e3))}`, `Highest at ${hhmm(new Date(best.t))}: ${fists(best.coreAlt)} in the ${compassWords(best.coreAz)} (${Math.round(best.coreAlt)}°)`,
-          `${Math.round(clr * 100)} % clear sky then`, moonTxt, hz ? 'Mountain horizon taken into account' : '', mbNote], { peak: best.t, az: best.coreAz, alt: best.coreAlt }));
+          `${Math.round(clr * 100)} % clear sky then`, moonTxt, hz ? 'Mountain horizon taken into account' : '', skyNote, mbNote, accessNote], { peak: best.t, az: best.coreAz, alt: best.coreAlt }));
     }
     // the summer Milky Way arching overhead (Cygnus), visible even where mountains hide the core
-    const band = pts.filter((s) => moonOk(s) && s.bandAlt > 50);
+    const band = bortle >= 7 ? [] : pts.filter((s) => moonOk(s) && s.bandAlt > 50);
     const coreOp = out.find((o) => o.type === 'milkyway' && o.start.getTime() >= start && o.end.getTime() <= end + H);
     if (band.length >= 4 && (!coreOp || coreOp.score < 60)) {
       const clr = avg(band.map((s) => clearAt(s.t))) ?? 0;
@@ -473,21 +480,21 @@ function nightSky(spot, fc, ctx, days, mb, ice) {
       const hidden = pts.some((s) => moonOk(s) && s.coreAlt > 3) && !core.length;
       if (sc >= 35) out.push(op('milkyway', spot, band[0].t, band[band.length - 1].t + 15 * 60e3, sc, lakeNight ? 'Milky Way arch over still water' : 'Milky Way arch overhead',
         [`The Milky Way runs high across the sky ${hhmm(new Date(band[0].t))}–${hhmm(new Date(band[band.length - 1].t + 15 * 60e3))}`,
-          hidden ? 'The bright core stays behind the mountains here: frame the arch vertically' : '', `${Math.round(clr * 100)} % clear`, moonTxt, mbNote], { peak: band[Math.floor(band.length / 2)].t, az: band[Math.floor(band.length / 2)].bandAz, alt: band[Math.floor(band.length / 2)].bandAlt }));
+          hidden ? 'The bright core stays behind the mountains here: frame the arch vertically' : '', `${Math.round(clr * 100)} % clear`, moonTxt, skyNote, mbNote, accessNote], { peak: band[Math.floor(band.length / 2)].t, az: band[Math.floor(band.length / 2)].bandAz, alt: band[Math.floor(band.length / 2)].bandAlt }));
     }
     // meteor showers
     for (const sh of meteorShowersNear(d.day, 0)) {
       if (Math.abs(sh.daysToPeak) > sh.span) continue;
       const sc = 100 * clearAll * lerp(sh.zhr, 10, 120, 0.5, 1) * (0.45 + 0.55 * moonFrac) * dark * lerp(Math.abs(sh.daysToPeak), sh.span, 0, 0.6, 1);
       if (sc >= 35) out.push(op('meteors', spot, start, end, sc, `${sh.name}${sh.daysToPeak === 0 ? ' peak night' : ''}`,
-        [`Up to ~${sh.zhr} meteors per hour under ideal skies`, sh.note, moonTxt, `${Math.round(clearAll * 100)} % clear`], { peak: pts[Math.floor(pts.length * 0.7)].t }));
+        [`Up to ~${sh.zhr} meteors per hour under ideal skies`, sh.note, moonTxt, `${Math.round(clearAll * 100)} % clear`, skyNote, accessNote], { peak: pts[Math.floor(pts.length * 0.7)].t }));
     }
     // northern lights
     if (ctx.kp && ctx.kp.length) {
       const kpMax = Math.max(0, ...ctx.kp.filter((k) => k.t >= start - 3 * H && k.t <= end).map((k) => k.kp));
       const north = hz ? Math.max(horizonAlt(hz, 340), horizonAlt(hz, 0), horizonAlt(hz, 20)) : 0;
       if (kpMax >= 6.3) {
-        const sc = lerp(kpMax, 6.3, 9, 45, 95) * clearAll * (north > 8 ? 0.6 : 1);
+        const sc = lerp(kpMax, 6.3, 9, 45, 95) * clearAll * (north > 8 ? 0.6 : 1) * Math.min(1, dark + 0.2);
         if (sc >= 30) out.push(op('aurora', spot, start, end, sc, `Northern lights possible (Kp ${kpMax.toFixed(0)})`,
           [`Geomagnetic storm forecast: Kp ${kpMax.toFixed(1)} (NOAA)`, 'From Switzerland: a red-green glow low in the north, often only visible to the camera', north > 8 ? 'Mountains block much of the northern horizon here' : 'Open view to the north', `${Math.round(clearAll * 100)} % clear`], { peak: start + (end - start) / 2, az: 0 }));
       }
@@ -508,11 +515,41 @@ export function opportunitiesFor(spot, fc, ctx, { mb = null, days: nDays = 5 } =
     ...nightSky(spot, fc, ctx, days, mb, ice), ...wildlifeOps(spot, fc, ctx, days),
   ];
   const now = ctx.now.getTime();
+  const NIGHT_TYPES = new Set(['stars', 'milkyway', 'meteors', 'aurora']);
   const inSeason = !spot.months || (() => { const m = zurichParts(ctx.now).m, [a, b] = spot.months; return a <= b ? m >= a && m <= b : m >= a || m <= b; })();
-  return all.filter((o) => o.end.getTime() >= now && o.score > 0).map((o) => {
+  return all.filter((o) => o.end.getTime() >= now && o.score > 0 && openAt(spot, o.peak)).map((o) => {
+    clipToOpen(spot, o);
     if (!inSeason) { o.score = Math.round(o.score * 0.55); o.why.unshift('Out of season: the way up is usually closed now'); }
+    // first light at places where the lifts have not started yet
+    if (!NIGHT_TYPES.has(o.type) && spot.nightNote && ['stay', 'hike'].includes(spot.night) && localHour(o.peak) < 8.5) o.why.push(`Before the first lift: ${spot.nightNote}`);
     return o;
   }).sort((a, b) => b.score - a.score);
+}
+
+// opening hours of the local day containing `date`: [from, to] in hours, or null when there are none
+function hoursOn(spot, date) {
+  const o = spot.open;
+  if (!o) return null;
+  const p = zurichParts(date), dow = new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay();
+  if (o.months && !(p.m >= o.months[0] && p.m <= o.months[1])) return o.winterSecondSunday && dow === 0 && p.d >= 8 && p.d <= 14 ? o.winterSecondSunday : null;
+  if (o.dayHours) return o.dayHours[dow] || null;
+  return o.winterHours && (p.m >= 11 || p.m <= 3) ? o.winterHours : o.hours || null;
+}
+// trim a time window to the opening hours of its day
+function clipToOpen(spot, o) {
+  const h = hoursOn(spot, o.peak);
+  if (!h) return;
+  const d0 = localMidnight(o.peak).getTime();
+  const from = new Date(d0 + h[0] * H), to = new Date(d0 + h[1] * H);
+  if (o.start < from) o.start = from;
+  if (o.end > to) o.end = to;
+}
+
+// is the place open at that time? (only for spots with opening hours: parks, fenced reserves)
+export function openAt(spot, date) {
+  if (!spot.open) return true;
+  const d = date instanceof Date ? date : new Date(date), h = hoursOn(spot, d), p = zurichParts(d), hour = p.h + p.min / 60;
+  return !!h && hour >= h[0] && hour < h[1];
 }
 
 // the best few per spot and day, for the feed

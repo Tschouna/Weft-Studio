@@ -33,6 +33,12 @@ Every opportunity has a score from 0 to 100 and the reasons in plain words ("Low
 - **Night sky:** for any spot and any of the next 14 nights: darkness, the moon, and **where the Milky Way stands, drawn over the real mountain horizon** as a panorama (or the whole sky), with a time slider and heights in fists at arm's length, no coordinates. Hour-by-hour clouds (MeteoSwiss), and with a meteoblue key meteoblue's cloud layers, fog, visibility and, with the Seeing package, seeing (″ and indices), jet stream and the bad layer. A 5-week moon calendar marks the Milky Way nights. Meteor showers and the northern-lights forecast.
 - **Spots:** the 47 curated spots and yours. Each spot page has the photo (with credit), what is coming up there, a five-day cloud-layer chart, today's sun and moon times (including when the sun really rises over the ridge), the horizon with the sun's path, the nearest live MeteoSwiss measurements and webcams, directions and a link to the swisstopo map.
 
+**3D view and shadows:** every spot page has a *3D view & shadows* button: swisstopo's swissALTIRegio terrain (10 m, including the border regions) draped with the SWISSIMAGE aerial photo or the national map, 18 km across or a 5 km close-up, lit from where the sun really stands. Slide through the day or press *Play the day* to watch the shadows move; jump to sunrise, the first and last sun on the spot, noon and sunset; pick today, tomorrow, the longest or shortest day, the equinox or any date. It tells you when the spot itself has direct sun (using the mountains up to 60 km away). Only the few tiles around the spot are downloaded (about 1-3 MB), then kept on the phone.
+
+**Can you be there?** Every spot says whether you can be there in the dark (open at night, on foot only, stay overnight up there, closed at night, or protected area rules), with opening hours where access is limited (Blausee, Tierpark Goldau, the Neeracherried centre) and whether there are artificial lights on site. Chances outside the opening hours are not shown, and places closed at night get no night-sky chances.
+
+**How dark is the sky?** Measured for every spot from NASA's satellite night lights (Black Marble): all the lit pixels within 100 km, fading with distance, with a bonus for high viewpoints above the hazy air. Shown as a Bortle-like class and the town whose glow dominates ("glow of Lucerne in the north-east"). The night-sky scores use it, the Milky Way is not suggested from city skies, and the Night tab lists the darkest spots first. Your own spots are measured on the phone the same way.
+
 **Your own spots:** search a place (swisstopo), use where you stand, long-press the map, or **pick a photo**: the app reads the GPS position and compass direction from the photo, makes a spot there and uses the photo as its picture. It suggests what the place is good for (lake, above the fog, larches, dark sky…) and you can tick the wildlife found there; those decide which opportunities are looked for. Everything stays on your phone; *Settings → Export my spots* makes a backup.
 
 ## Getting it on your phone
@@ -80,6 +86,9 @@ Try it from the *Actions* tab with *Run workflow*. Without the secret the job do
 | Species seasons and behaviour | `data/species.js`, written for this app from Swiss field knowledge (rut, young, hibernation, migration) |
 | Sun, moon, Milky Way | computed on the phone with [Astronomy Engine](https://github.com/cosinekitty/astronomy) (MIT) |
 | Maps, place search, heights, mountain horizons | swisstopo (geo.admin.ch); horizons from elevation profiles out to 60 km |
+| 3D terrain and imagery | swisstopo swissALTIRegio (cloud-optimised GeoTIFF, read by range requests), SWISSIMAGE and the national map in the Swiss grid; rendered with three.js (MIT) |
+| Sky darkness | NASA Black Marble 2016 night lights, measured per spot (`scripts/darkness.mjs`, `js/lightpollution.js`) |
+| Opening hours | the official websites of Blausee, Tierpark Goldau, Wildnispark Zürich, BirdLife Neeracherried, Château de Chillon, Rheinfall and Grimselwelt (checked November 2026) |
 | Night lights | NASA Black Marble (VIIRS, 2016) |
 | Northern lights | NOAA Space Weather Prediction Center, 3-day Kp forecast |
 | Spot photos | Wikimedia Commons; author and licence on each spot. The spot position is where the camera recorded it when the file says so, otherwise the classic viewpoint. |
@@ -97,6 +106,7 @@ Plain HTML and JavaScript modules, no build step. Node 22 for the checks and scr
 | `node test/ui.cjs` | Clicks through the app in a phone-sized Chromium (with a made-up forecast) and saves screenshots in `test/out/` |
 | `node scripts/phenology.mjs` | Rebuild `data/phenology.js` from MeteoSwiss open data |
 | `node scripts/horizons.mjs` | Compute the mountain horizon of new curated spots (`--all` for all) |
+| `node scripts/darkness.mjs` | Measure the sky darkness of the curated spots into `data/sky.js` |
 | `DRY_RUN=1 node scripts/digest.mjs` | Print the push-alert digest instead of sending it |
 
 | Path | What it is |
@@ -105,12 +115,14 @@ Plain HTML and JavaScript modules, no build step. Node 22 for the checks and scr
 | `js/main.js`, `js/app.js` | Start-up, tabs, the app's state: spots, forecasts, opportunities |
 | `js/scoring.js` | The opportunity detectors |
 | `js/wildlife.js` | The wildlife activity model (season, rhythm, weather, light, scent) |
+| `js/lightpollution.js` | Sky darkness from NASA night lights |
+| `js/views/terrain3d.js`, `js/sources/terrain.js` | The 3D view: swissALTIRegio reader (BigTIFF, LZW), imagery, three.js scene with sun and shadows |
 | `js/astro.js` | Sun, moon, twilight, Milky Way, meteor showers |
 | `js/sources/` | MeteoSwiss, meteoblue, swisstopo, NOAA, iNaturalist |
 | `js/views/` | The tabs, the spot page, settings, charts |
 | `js/store.js` | Settings and your spots (localStorage), caches and photos (IndexedDB) |
 | `js/exif.js` | Reads the GPS position from photos |
-| `data/` | Curated spots, their horizons, the species guide, the autumn-colour climatology, Switzerland's outline |
+| `data/` | Curated spots (with night access, opening hours, lights), their horizons and sky darkness, the species guide, the autumn-colour climatology, Switzerland's outline |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline and install |
 | `scripts/` | Data builders, the push digest, the local server |
 | `../.github/workflows/lichtblick.yml` | Checks, GitHub Pages, scheduled push alerts |
@@ -119,4 +131,4 @@ When you add a file under `js/` or `data/`, also list it in `sw.js` (a check rem
 
 ## Licences
 
-Leaflet (BSD-2-Clause) and Astronomy Engine (MIT) are in `vendor/`. Spot photos keep their Wikimedia Commons licences (CC BY, CC BY-SA, GFDL, public domain), credited in the app. MeteoSwiss data CC BY 4.0, swisstopo open data, NASA imagery public domain.
+Leaflet (BSD-2-Clause), Astronomy Engine (MIT) and three.js (MIT) are in `vendor/`. Spot photos keep their Wikimedia Commons licences (CC BY, CC BY-SA, GFDL, public domain), credited in the app. MeteoSwiss data CC BY 4.0, swisstopo open data, NASA imagery public domain.

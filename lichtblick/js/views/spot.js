@@ -11,6 +11,14 @@ import { horizonFor } from '../sources/swisstopo.js';
 import { seeingPage } from '../sources/meteoblue.js';
 import { meteogram, panorama, sunPath } from './charts.js';
 import { inSeason } from '../wildlife.js';
+import { BORTLE_WORDS } from '../lightpollution.js';
+
+const NIGHT_WORDS = { free: '🌙 Open at night', hike: '🥾 Night: on foot only', stay: '🛏️ Night: stay up there', closed: '⛔ Closed at night', reserve: '🛡️ Protected area at night' };
+export function skyLine(spot) {
+  if (!spot.sky) return '';
+  const g = spot.sky.glow && spot.sky.glow.share > 0.2 && spot.sky.bortle >= 3 ? `, main light glow from ${spot.sky.glow.name} in the ${compassWords(spot.sky.glow.az)}` : '';
+  return `${BORTLE_WORDS[spot.sky.bortle]} (Bortle ~${spot.sky.bortle})${g}${spot.lit ? '; artificial lights on site' : ''}`;
+}
 
 export const TAG_LABELS = {
   lake: 'Lake or pond', reflection: 'Mirror reflections', peaks: 'Mountain view', alpenglow: 'Alpenglow peaks', fogsea: 'Above the sea of fog',
@@ -63,6 +71,9 @@ export function openSpot(id) {
         ${spot.blurb ? `<p>${esc(spot.blurb)}</p>` : ''}
         ${spot.access ? `<p class="small muted"><b>Getting there:</b> ${esc(spot.access)}</p>` : ''}
         ${spot.months ? `<p class="small muted"><b>Season:</b> usually reachable ${monthName(spot.months[0])} to ${monthName(spot.months[1])}.</p>` : ''}
+        ${spot.night ? `<p class="small muted"><b>${NIGHT_WORDS[spot.night] || ''}</b>${spot.nightNote ? `: ${esc(spot.nightNote)}` : ''}</p>` : ''}
+        ${spot.sky ? `<p class="small muted"><b>Night sky:</b> ${esc(skyLine(spot))}. <span class="faint">Measured from NASA satellite night lights.</span></p>` : ''}
+        <div class="btns" style="margin:10px 0"><button class="btn primary small" data-act="3d">⛰️ 3D view &amp; shadows</button></div>
         ${spot.note ? `<p class="small">${esc(spot.note)}</p>` : ''}
 
         <div class="section"><h3>Coming up here</h3>
@@ -114,6 +125,7 @@ export function openSpot(id) {
       const f = favourites(); f.has(id) ? f.delete(id) : f.add(id); setFavourites(f); render(root); App.emit('spots');
     });
     root.querySelector('[data-act="sky"]').addEventListener('click', () => { closeSheet(); App.emit('show-sky', id); });
+    root.querySelector('[data-act="3d"]')?.addEventListener('click', async () => { const m = await import('./terrain3d.js'); m.open3D(spotById(id)); });
     root.querySelectorAll('[data-act="wild"]').forEach((b) => b.addEventListener('click', () => { closeSheet(); App.emit('show-wild', id); }));
     root.querySelector('[data-act="edit"]')?.addEventListener('click', async () => { const m = await import('./spots.js'); m.editSpot(spot); });
     root.querySelector('[data-act="delete"]')?.addEventListener('click', async () => {
