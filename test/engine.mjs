@@ -11,7 +11,7 @@
 //     supports and a peak with a cone underside needs none, relief covers the whole ball; the glow test
 //     strip is closed
 // 10. faceted wall planters: every tilt, depth, diamond shape and rim builds closed, with no overhangs, a
-//     flat foot on the bed, a flat back on the wall and a keyhole through it, and upright sides
+//     flat foot on the bed, a flat back on the wall with two screw holes, and upright sides
 import { generate, makeProfile, easeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
@@ -346,8 +346,8 @@ if (!gOk) fail('glow test');
 // ---------------------------------------------------------------- 10
 if (run(10)) {
 console.log('10. faceted wall planters');
-const cases = [['cube', {}], ['tall diamond', { facetStretch: 1.5 }], ['squat diamond', { facetStretch: 0.75 }], ['shallow', { facetDepth: 0.62 }],
-  ['raised rim', { facetRim: 45 }], ['rim cut low', { facetRim: -30 }], ['tall, shallow, raised rim', { facetStretch: 1.3, facetDepth: 0.7, facetRim: 25 }], ['small, thin wall', {}, { diameter: 90, wall: 1.6 }]];
+const cases = [['as measured', {}], ['tall', { facetHeight: 1.6 }], ['low', { facetHeight: 0.8 }], ['deep sides', { facetDepth: 0.75 }],
+  ['sharp point', { facetPoint: 0.38 }], ['flat front', { facetPoint: 0.04 }], ['diamond to the rim', { facetGap: 0 }], ['diamond low', { facetGap: 0.35 }], ['small, thin wall', {}, { diameter: 90, wall: 1.6 }]];
 for (const [name, ex, fo] of cases) {
   const d = design({ object: 'wall', form: { diameter: 160, wall: 3, floor: 3, ...(fo || {}) }, extras: { wallStyle: 'facet', ...ex } });
   const r = generate(d, 1), p = r.parts[0], P = p.position, I = p.index, g = facetedWall(d.form, d.extras);
@@ -363,8 +363,8 @@ for (const [name, ex, fo] of cases) {
     if (Math.abs(nx) > 0.9999 * 2 * area && Math.abs(Math.abs(P[a]) - d.form.diameter / 2) < 1e-3) sides += area;
   }
   const open = openEdges(p), bb = p.stats.bbox;
-  const ok = !open && vol > 0 && p.stats.overhang < 1 && foot > 60 && back > 500 && sides > 100 && Math.abs(bb[2]) < 1e-3 && Math.abs(bb[4]) < 1e-3 && g.keyhole !== null && Math.abs(bb[3] - bb[0] - d.form.diameter) < 0.01 && !r.checks.some((c) => c.level === 'bad');
-  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${p.stats.tris} tris, ${open} open edges, ${(vol / 1000).toFixed(0)} cm³, ${Math.round(bb[5])} mm tall, ${Math.round(-bb[1])} mm out, foot ${foot.toFixed(0)} mm², back ${(back / 100).toFixed(0)} cm², sides ${(sides / 100).toFixed(0)} cm², overhang ${p.stats.overhang.toFixed(1)} mm²${g.keyhole === null ? ', no keyhole' : ''}`);
+  const ok = !open && vol > 0 && p.stats.overhang < 1 && foot > 60 && back > 500 && sides > 100 && Math.abs(bb[2]) < 1e-3 && Math.abs(bb[4]) < 1e-3 && g.holes === 2 && Math.abs(bb[3] - bb[0] - d.form.diameter) < 0.01 && !r.checks.some((c) => c.level === 'bad');
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${p.stats.tris} tris, ${open} open edges, ${(vol / 1000).toFixed(0)} cm³, ${Math.round(bb[5])} mm tall, ${Math.round(-bb[1])} mm out, foot ${foot.toFixed(0)} mm², back ${(back / 100).toFixed(0)} cm², sides ${(sides / 100).toFixed(0)} cm², overhang ${p.stats.overhang.toFixed(1)} mm²${g.holes !== 2 ? `, ${g.holes} screw holes` : ''}`);
   if (!ok) fail(`faceted ${name}`);
 }
 }

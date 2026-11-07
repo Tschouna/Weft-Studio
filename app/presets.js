@@ -15,7 +15,7 @@ export const BASE = {
   },
   extras: {
     drain: 0, base: 'none', sleeveH: 0.38, sleeveTilt: 18, gap: 1.0, lid: true, knob: 'ball', knobSize: 26, lidOverhang: 0.6,
-    clearance: 0.35, plugDepth: 6, socket: 40, opening: 92, globeTop: 'round', globeUnder: 'round', wallStyle: 'round', facetDepth: 0.87, facetRim: 0, facetStretch: 1, vaseMode: false, reservoir: 14, slots: true, stand: 'none', standLift: 70, standHug: 0.35, standLeg: 12, candle: 'tealight', edgeBoth: true, innerChamfer: 0, baseH: 55, cord: true, hangers: 3, back: 0.3,
+    clearance: 0.35, plugDepth: 6, socket: 40, opening: 92, globeTop: 'round', globeUnder: 'round', wallStyle: 'round', facetDepth: 0.38, facetPoint: 0.15, facetHeight: 1.11, facetGap: 0.08, vaseMode: false, reservoir: 14, slots: true, stand: 'none', standLift: 70, standHug: 0.35, standLeg: 12, candle: 'tealight', edgeBoth: true, innerChamfer: 0, baseH: 55, cord: true, hangers: 3, back: 0.3,
   },
   finish: {
     color: '#22211f', color2: '#eeebe4', color3: '#22211f', material: 'matte',
@@ -473,19 +473,19 @@ export const COLLECTION = [
     surface: { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 },
     extras: { socket: 40, baseH: 45, cord: true, opening: 84, globeTop: 'peak', globeUnder: 'cone' },
     finish: { color: '#d9a79a', color2: '#eeebe4', material: 'translucent' },
-  }),  // faceted wall planters: the bottom half of a cube stood on its corner, with upright walls to the rim
+  }),  // faceted wall planters: the geometric planter, with a steep diamond facet over a keeled bottom
   design({
     name: 'Facet', object: 'wall',
-    form: { height: 123, diameter: 160, section: 'round', twist: 0, inset: 0, wall: 3, floor: 3 },
+    form: { height: 178, diameter: 160, section: 'round', twist: 0, inset: 0, wall: 3, floor: 3 },
     surface: { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 },
-    extras: { wallStyle: 'facet', facetStretch: 1, facetDepth: 0.87, facetRim: 0, drain: 0 },
+    extras: { wallStyle: 'facet', facetDepth: 0.38, facetPoint: 0.15, facetHeight: 1.11, facetGap: 0.08, drain: 0 },
     finish: { color: '#3a3b3d', material: 'matte' },
   }),
   design({
     name: 'Prism', object: 'wall',
     form: { height: 160, diameter: 150, section: 'round', twist: 0, inset: 0, wall: 3, floor: 3 },
     surface: { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 },
-    extras: { wallStyle: 'facet', facetStretch: 1.15, facetDepth: 0.8, facetRim: 20, drain: 0 },
+    extras: { wallStyle: 'facet', facetDepth: 0.5, facetPoint: 0.22, facetHeight: 0.95, facetGap: 0.04, drain: 0 },
     finish: { color: '#c9b8a3', material: 'satin' },
   }),
 ];

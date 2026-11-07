@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.7.2
+
+- **Faceted wall planters, measured from the real one:**
+  - Rebuilt from your slicer views of the actual model, which is not a cube on its corner.
+  - Upright walls round an opening that is almost a rectangle: straight sides out from the wall, and two front faces meeting in a shallow point.
+  - A bottom of two slopes meeting in a keel that runs straight out from the wall.
+  - A steep diamond facet in front, from the keel's front end up past the side corners to the front edge, just under the rim.
+  - Two screw holes near the top corners of the back (Ø 4.8 mm, with a small point on top so they print cleanly), as on the original.
+  - Proportions as measured: as tall as it is wide, sides 0.38 and the front point 0.15 of the width, and the diamond's top 0.08 under the rim. The bottom slopes are 45° instead of the original's 39°, so it prints upright with no supports, on a flat strip along the keel.
+  - Form → Facets: **Height**, **Sides**, **Front point**, **Diamond under the rim**, plus Width and Wall thickness.
+
 ## 2.7.1
 
 - **Faceted wall planters, reshaped to match the real thing:**
