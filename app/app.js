@@ -1871,7 +1871,7 @@ function renderObject() {
     opts.push(chipsCtl('Style', [{ value: 'round', label: 'Rounded', title: 'A D shape with any silhouette and pattern' }, { value: 'facet', label: 'Faceted', title: 'A cube stood on its corner and halved by the wall' }], () => X.wallStyle || 'round', (v) => { X.wallStyle = v; }, { structural: true }));
   }
   if (isFacet(d)) {
-    opts.push(h('p', { class: 'note' }, 'A cube stood on its corner and halved by the wall: a diamond face in front, crisp facets all round, and a flat back with a keyhole for one screw (head up to 8 mm). Shape it under Form. Every face keeps within 45°, so it prints upright with no supports, on a small foot cut off the lowest corner. No drainage hole: water sparingly, or stand a nursery pot inside.'));
+    opts.push(h('p', { class: 'note' }, 'The classic geometric wall planter: the bottom half of a cube stood on its corner, with upright walls rising to the rim. A diamond face in front, crisp facets, and a flat back with a keyhole for one screw (head up to 8 mm). Shape it under Form. Every face keeps within 45°, so it prints upright with no supports, on a small foot cut off the lowest corner. No drainage hole: water sparingly, or stand a nursery pot inside.'));
   } else if (d.object === 'wall') {
     opts.push(sliderCtl('x-back', 'Depth from the wall', { min: 0.1, max: 0.6, step: 0.01, fmt: (v) => `${Math.round((d.form.diameter / 2) * (1 + v))} mm` }, () => X.back ?? 0.3, (v) => { X.back = v; }));
     opts.push(sliderCtl('x-wdrain', 'Drainage hole', { min: 0, max: 20, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
@@ -2036,12 +2036,11 @@ function facetForm(d) {
   const F = d.form, X = d.extras, info = facetedWall(F, X);
   const sizeNote = `${Math.round(info.W)} mm wide, ${Math.round(info.height)} mm tall and ${Math.round(info.depth)} mm out from the wall.`;
   return [
-    group('Facets', 'A square stood on its corner, tilted to face a little downward',
-      sliderCtl('x-ftilt', 'Tilt', { min: 5, max: 44, step: 1, fmt: (v) => `${v}°` }, () => X.facetTilt ?? 35, (v) => { X.facetTilt = v; }),
-      sliderCtl('x-fstretch', 'Diamond', { min: 0.7, max: 1.6, step: 0.01, fmt: (v) => (Math.abs(v - 1) < 0.005 ? 'square' : `${(+v).toFixed(2)}×`) }, () => X.facetStretch ?? 1, (v) => { X.facetStretch = v; }),
-      sliderCtl('x-fdepth', 'Depth', { min: 0.6, max: 1.4, step: 0.01, fmt: (v) => (Math.abs(v - 1) < 0.005 ? 'level' : pct(v)) }, () => X.facetDepth ?? 1, (v) => { X.facetDepth = v; }),
-      sliderCtl('x-frim', 'Rim', { min: -40, max: 40, step: 1, fmt: (v) => (v ? `${v > 0 ? '+' : ''}${v} mm` : 'corner') }, () => X.facetRim ?? 0, (v) => { X.facetRim = v; }),
-      h('p', { class: 'note' }, 'Tilt leans the front face down; at 35° with a square diamond the whole thing is a cube on its corner. Diamond makes the front face taller than it is wide (above 1×) or wider (below). Depth sets how far it reaches out: at "level" the front\'s top corner sits level with the side corners at the wall, like the classic geometric planter. Rim raises or lowers the opening from that top corner.')),
+    group('Facets', 'The bottom half of a cube stood on its corner, with upright walls above it',
+      sliderCtl('x-fstretch', 'Diamond', { min: 0.72, max: 1.6, step: 0.01, fmt: (v) => (Math.abs(v - 1) < 0.005 ? 'cube' : `${(+v).toFixed(2)}×`) }, () => X.facetStretch ?? 1, (v) => { X.facetStretch = v; }),
+      sliderCtl('x-fdepth', 'Depth', { min: 0.62, max: 0.87, step: 0.01, fmt: (v) => `${Math.round(v * (F.diameter || 160))} mm` }, () => Math.min(0.87, X.facetDepth ?? 0.87), (v) => { X.facetDepth = v; }),
+      sliderCtl('x-frim', 'Rim', { min: -40, max: 60, step: 1, fmt: (v) => (v ? `${v > 0 ? '+' : ''}${v} mm` : 'corner') }, () => X.facetRim ?? 0, (v) => { X.facetRim = v; }),
+      h('p', { class: 'note' }, 'Diamond stretches the cube upright for a taller diamond (1.00 is a true cube). Depth is how far the front corner stands out from the wall; at its deepest the sides run straight back to it. Rim at "corner" puts the diamond\'s top corner on the rim; raise it for upright walls above the diamond.')),
     group('Size', sizeNote,
       sliderCtl('f-diam', 'Width', { min: 80, max: 260, step: 1, fmt: (v) => `${v} mm` }, () => F.diameter, (v) => { F.diameter = v; })),
     group('Walls', null,
@@ -2377,7 +2376,7 @@ function refreshListing() {
     d.object === 'planter' && d.extras.drain && d.extras.base !== 'insert' ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
     d.object === 'planter' && d.extras.base === 'sleeve' ? '• Print the sleeve in a second colour for a two-tone look.' : null,
     d.object === 'hanging' ? `• Hangs from ${d.extras.hangers || 3} cords through teardrop holes under the rim (cord up to Ø 4 mm).${d.extras.drain ? ` Ø ${d.extras.drain} mm drainage hole.` : ' No drainage hole, so it never drips.'}` : null,
-    d.object === 'wall' ? `• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports${facet ? ', on a small foot cut off its lowest corner: use a 5–8 mm brim. A cube stood on its corner and halved by the wall; no drainage hole' : ''}.` : null,
+    d.object === 'wall' ? `• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports${facet ? ', on a small foot cut off its lowest corner: use a 5–8 mm brim. The bottom half of a cube stood on its corner, with upright walls to the rim; no drainage hole' : ''}.` : null,
     d.object === 'orchid' ? `• Open walls for air at the roots${d.extras.drain ? `, Ø ${d.extras.drain} mm drainage hole` : ''}${d.extras.base === 'saucer' ? ', saucer included' : ''}.` : null,
     d.object === 'lantern' ? '• For LED tealights only. Never use a real flame.' : null,
     d.object === 'candle' ? `• A ${({ tealight: 'tealight', maxi: 'maxi tealight', taper: 'taper candle' })[d.extras.candle] || 'tealight'} sits in a pocket in the top. Print solid with 15% infill; LED candles are safest.` : null,
@@ -2992,7 +2991,7 @@ function shuffleShape(d) {
   if (obj === 'wall') {
     F.section = 'round'; F.twist = 0; X.back = +rnd(0.15, 0.45).toFixed(2);
     X.wallStyle = Math.random() < 0.25 ? 'facet' : 'round';
-    if (X.wallStyle === 'facet') { X.facetTilt = Math.round(rnd(25, 42)); X.facetDepth = +rnd(0.8, 1.15).toFixed(2); X.facetRim = pick([0, 0, 0, Math.round(rnd(-15, 15))]); F.diameter = Math.round(rnd(120, 200)); }
+    if (X.wallStyle === 'facet') { X.facetStretch = pick([1, 1, +rnd(0.85, 1.3).toFixed(2)]); X.facetDepth = pick([0.87, 0.87, +rnd(0.7, 0.87).toFixed(2)]); X.facetRim = pick([0, 0, Math.round(rnd(5, 30))]); F.diameter = Math.round(rnd(120, 200)); }
   }
   if (obj === 'hanging') { X.hangers = pick([3, 3, 4]); }
   if (obj === 'hanging' || obj === 'wall') F.bottom = pick(['flat', 'flat', 'round']);

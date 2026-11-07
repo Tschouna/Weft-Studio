@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.7.1
+
+- **Faceted wall planters, reshaped to match the real thing:**
+  - 2.7.0 tilted a square prism, which only looked right from straight in front. The classic geometric planter is the bottom half of a cube stood on its corner, with upright walls rising from it to the rim. That is what Faceted builds now.
+  - The result: a diamond in front whose top corner sits on the rim, two upright triangles above it, upright sides square to the wall, and a five-sided opening.
+  - The cube's lower faces lean only 35°, so it prints upright with no supports and no stretching, on a small foot cut off its lowest corner.
+  - Form → Facets:
+    - **Diamond** stretches the cube upright for a taller diamond (1.00 is a true cube).
+    - **Depth** is how far the front corner stands out from the wall; at its deepest the sides run straight back to it.
+    - **Rim** at "corner" puts the diamond's top corner on the rim; raise it for upright walls above the diamond.
+  - Facet (a true cube) and Prism (taller, with a raised rim) in the Collection follow the new shape.
+
 ## 2.7.0
 
 - **Faceted wall planters (new style):**

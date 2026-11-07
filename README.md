@@ -91,7 +91,7 @@ Requirements: Node.js 22 and npm.
 7. Shuffled designs print without supports. It uses the studio's own shuffle code, read out of `app/app.js` by `test/shuffle-lib.mjs`.
 8. Lids on twisted, shaped boxes keep the box's outline and still pass the opening.
 9. Globe lamps: every top, underside, outline and pattern builds closed; a round globe says it needs supports, and a peak top with a cone underside prints without any. A relief stands out at full depth near the top, round the middle and underneath. The glow test strip is closed.
-10. Faceted wall planters: every tilt, depth, diamond shape and rim builds closed with no overhangs, on a flat foot, with a flat back and a keyhole through it.
+10. Faceted wall planters: every diamond shape, depth and rim builds closed with no overhangs, on a flat foot, with a flat back, upright sides and a keyhole through the back.
 
 `ONLY=3,5 npm test` runs just those sections.
 

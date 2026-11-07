@@ -2039,28 +2039,50 @@ function keyholeOutline(R = 4.6, w = 2.3, L = 9) {
 }
 
 export function facetedWall(F, X = {}) {
-  const W = clamp(F.diameter || 160, 60, 400), h = W / 2, s = W / Math.SQRT2;
-  const tilt = clamp(X.facetTilt ?? 35, 5, 44), al = (tilt * Math.PI) / 180, ca = Math.cos(al), sa = Math.sin(al);
-  // the diamond can be taller than it is wide (its lower faces then get steeper); a squat one is kept no
-  // flatter than its lower faces can print at 45°
-  const v = h * clamp(X.facetStretch ?? 1, Math.sqrt(Math.max(0, 2 * ca * ca - 1)) + 0.02, 1.8);
-  // depth along the tilted axis; 1 puts the front's top corner level with the side corners at the wall
-  const L = clamp((X.facetDepth ?? 1) * (v / Math.tan(al)), v * Math.tan(al) + 15, 1.6 * Math.max(s, v * Math.SQRT2));
+  const W = clamp(F.diameter || 160, 60, 400);
+  // A cube stood on its corner (body diagonal upright) with one lower face, the diamond, to the front. Its
+  // lower half is the planter's bottom; above it the walls rise straight up from its middle zigzag to the
+  // rim. That gives two upright triangles over the diamond, sides square to the wall, and a five-sided
+  // opening. The cube's lower faces lean 35° from upright, so it prints with no supports; Diamond stretches
+  // it upright (or squats it, down to where those faces would pass 45°).
+  const k = clamp(X.facetStretch ?? 1, 0.72, 1.6);
+  const rho = W / Math.sqrt(3), dd = W * Math.sqrt(1.5) * k; // the corners' radius round the diagonal; the diagonal
+  // Depth: from the wall to the front corner, in widths. 0.87 is the classic: the wall runs through the
+  // cube's two back corners at rim height, so the sides go straight back to it.
+  // (no shallower than keeps the cube's lowest corner, its foot, in front of the wall)
+  const yW = Math.max(clamp(X.facetDepth ?? 0.87, 0.62, 0.87) * W - rho, 6);
   const t = clamp(F.wall || 3, 1.2, 8), tb = Math.max(t, 3), fl = clamp(F.floor || 3, 1.2, 8), foot = 8;
-  const a = [0, -ca, -sa], e1 = [1, 0, 0], e2 = [0, -sa, ca];
-  const zFrontTop = -L * sa + v * ca, zLow = -L * sa - v * ca, zWallTop = v / ca;
-  const zTop = clamp(zFrontTop + (X.facetRim ?? 0), Math.max(zLow + foot + 25, zFrontTop - 0.45 * v), zWallTop - 0.15 * v);
-  const zFoot = zLow + foot;
+  // the rim, from the diamond's top corner; the foot, a small flat cut off the lowest corner
+  const zCorner = dd / 6, zLow = -dd / 2;
+  const zTop = clamp(zCorner + (X.facetRim ?? 0), -dd / 6 + 20, dd / 2 + 0.4 * W), zFoot = zLow + foot;
+  const at = (deg, z) => [rho * Math.cos((deg * Math.PI) / 180), rho * Math.sin((deg * Math.PI) / 180) - yW, z];
+  const cube = [[0, -yW, dd / 2], [0, -yW, -dd / 2], at(-90, dd / 6), at(30, dd / 6), at(150, dd / 6), at(-150, -dd / 6), at(-30, -dd / 6), at(90, -dd / 6)];
+  // the cube and the same corners lifted to the rim: their convex hull is the cube with its walls run up
+  const pts = [...cube, ...cube.map((p) => [p[0], p[1], zTop])], hull = [];
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) for (let q = j + 1; q < pts.length; q++) {
+    const A = pts[i], B = pts[j], C = pts[q];
+    const raw = cross3([B[0] - A[0], B[1] - A[1], B[2] - A[2]], [C[0] - A[0], C[1] - A[1], C[2] - A[2]]);
+    if (Math.hypot(...raw) < 1e-6) continue;
+    let n = unit3(raw), d = dot3(n, A);
+    let above = 0, below = 0;
+    for (const P of pts) { const e = dot3(n, P) - d; if (e > 1e-6) above++; else if (e < -1e-6) below++; }
+    if (above && below) continue;
+    if (above) { n = n.map((c) => -c); d = -d; }
+    if (n[2] > 0.999999 || n[1] > 0.999999) continue; // the rim and the wall, added below
+    if (!hull.some((pl) => dot3(pl.n, n) > 1 - 1e-9 && Math.abs(pl.d - d) < 1e-6)) hull.push({ n, d });
+  }
   const planes = (inset, back, top, bottom) => [
-    // |x1| / h + |x2| / v <= 1 across the axis
-    ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([p, q]) => {
-      const raw = [p * e1[0] / h + q * e2[0] / v, p * e1[1] / h + q * e2[1] / v, p * e1[2] / h + q * e2[2] / v], len = Math.hypot(...raw);
-      return { n: raw.map((c) => c / len), d: 1 / len - inset };
-    }),
-    { n: a, d: L - inset }, { n: [0, 1, 0], d: -back }, { n: [0, 0, 1], d: top }, { n: [0, 0, -1], d: -bottom },
+    ...hull.map((pl) => ({ n: pl.n, d: pl.d - inset })),
+    { n: [0, 1, 0], d: -back }, { n: [0, 0, 1], d: top }, { n: [0, 0, -1], d: -bottom },
   ];
+  // keep only the planes that bound the outside below the rim: one that only touches it at a corner or an
+  // edge (the cube's top faces, above the rim) would, moved in by the wall, cut a ceiling into the cavity
+  const polyArea = (f) => { let ax = 0, ay = 0, az = 0; for (let i = 0; i < f.length; i++) { const c = cross3(f[i], f[(i + 1) % f.length]); ax += c[0]; ay += c[1]; az += c[2]; } return Math.hypot(ax, ay, az) / 2; };
+  const first = convexFromPlanes(planes(0, 0, zTop, zFoot)).faces;
+  const keep = hull.filter((_, q) => first[q] && polyArea(first[q]) > 1);
+  hull.length = 0; hull.push(...keep);
+  const BACK = hull.length, TOP = hull.length + 1;
   const Po = convexFromPlanes(planes(0, 0, zTop, zFoot)), Pi = convexFromPlanes(planes(t, tb, zTop, zFoot + fl));
-  const BACK = 5, TOP = 6;
   // where the keyhole goes: centred, as high in the back as the cavity allows
   const key = keyholeOutline(), backIn = Pi.faces[BACK].map((v) => [v[0], v[2]]);
   const inside = (pt, poly, margin) => { for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], ex = q[0] - p[0], ey = q[1] - p[1], l = Math.hypot(ex, ey) || 1; if ((ex * (pt[1] - p[1]) - ey * (pt[0] - p[0])) / l < margin) return false; } return true; };
@@ -2116,7 +2138,7 @@ export function facetedWall(F, X = {}) {
   const Pz = mesh.P;
   for (let q = 2; q < Pz.n; q += 3) Pz.a[q] -= zFoot;
   const depth = Math.max(...Po.V.map((v) => -v[1]));
-  return { mesh, W, height: zTop - zFoot, depth, tilt, keyhole: hole ? zKey - zFoot : null, wall: t, back: tb, L, zFrontTop: zFrontTop - zFoot };
+  return { mesh, W, height: zTop - zFoot, depth, stretch: k, keyhole: hole ? zKey - zFoot : null, wall: t, back: tb };
 }
 
 export const WATERTIGHT = new Set(['planter', 'vase', 'hanging', 'wall', 'candle']);
@@ -2131,11 +2153,11 @@ function generateFaceted(P) {
   else checks.push({ level: g.wall < 2 ? 'warn' : 'ok', text: `Wall ${g.wall.toFixed(1)} mm ≈ ${loops} wall loop${loops > 1 ? 's' : ''} at 0.45 mm line width${g.wall < 2 ? '. It can flex: 3 mm makes a sturdy planter' : ''}.` });
   const over = m.stats.overhang, area = m.stats.area;
   if (over / area > 0.01 || over > 500) checks.push({ level: 'bad', text: `${(over / 100).toFixed(1)} cm² overhangs past 46°. It is striped on the model; add supports or change the shape.` });
-  else checks.push({ level: 'ok', text: `Every face keeps within 45°: it prints upright, as it hangs, with no supports. It stands on a small flat foot cut off its lowest corner: add a 5–8 mm brim so it holds the bed.` });
+  else checks.push({ level: 'ok', text: 'Every face keeps within 45°: it prints upright, as it hangs, with no supports, standing on a flat strip along its bottom edge. A 5 mm brim helps it hold the bed.' });
   if (g.keyhole !== null) checks.push({ level: 'ok', text: 'The flat back has a keyhole for a screw with a head up to 8 mm. Leave the head 4 mm out of the wall and hook the planter over it.' });
   else checks.push({ level: 'warn', text: 'The back is too small for a keyhole: make it wider, or hang it with strong mounting tape.' });
   checks.push({ level: 'ok', text: 'No drainage hole, so it never drips: water sparingly, or stand a small nursery pot inside it.' });
-  return { parts, checks, info: { cell: 0, NU: 0, rows: 0, mainKey: 'pot', eased: 0, lift: 0, colorChanges: [], wallY: 0, hangers: null, stand: null, globe: null, facet: { height: g.height, depth: g.depth, width: g.W, tilt: g.tilt } } };
+  return { parts, checks, info: { cell: 0, NU: 0, rows: 0, mainKey: 'pot', eased: 0, lift: 0, colorChanges: [], wallY: 0, hangers: null, stand: null, globe: null, facet: { height: g.height, depth: g.depth, width: g.W, stretch: g.stretch } } };
 }
 
 export function generate(P, quality = 1) {
