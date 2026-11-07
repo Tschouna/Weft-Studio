@@ -1,0 +1,11 @@
+{
+  "name": "lichtblick",
+  "private": true,
+  "type": "module",
+  "description": "Lichtblick: landscape and astro photo opportunities in Switzerland (PWA)",
+  "scripts": {
+    "test": "node test/run.mjs",
+    "serve": "node scripts/serve.mjs",
+    "phenology": "node scripts/phenology.mjs"
+  }
+}
