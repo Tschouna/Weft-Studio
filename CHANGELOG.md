@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.7.0
+
+- **Faceted wall planters (new style):**
+  - Object → Wall planter → Style: **Faceted**. It is a square stood on its corner, so the front is a diamond, tilted to face a little downward and cut flat against the wall and level at the top. At 35° it is literally a cube on its corner, halved by the wall: the classic geometric wall planter.
+  - Form → Facets:
+    - **Tilt** leans the front face down.
+    - **Diamond** makes it taller than it is wide, or wider.
+    - **Depth** sets how far it reaches out. At "level", the front's top corner sits level with the side corners at the wall.
+    - **Rim** raises or lowers the opening.
+    - **Width** and **Wall thickness** are under Size and Walls.
+  - Every face keeps within 45°, so it prints upright, as it hangs, with no supports. It stands on a small flat foot cut off its lowest corner, so use a brim.
+  - The flat back has the same keyhole as the rounded wall planter, placed as high as the back allows. No drainage hole.
+  - The facets shade crisp in the preview. The readout gives width × height × depth from the wall.
+  - New in the Collection: **Facet** (the cube) and **Prism** (a taller diamond). Shuffled wall planters come out faceted about a quarter of the time.
+
 ## 2.6.1
 
 - **Globe patterns cover the whole ball:**

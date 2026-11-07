@@ -1955,9 +1955,191 @@ function maxRelief(S) {
 }
 
 // Pieces that hold soil or water never get cut-through patterns.
+// ---------------------------------------------------------------- faceted wall planters
+// A square prism stood on its corner (a diamond seen from the front), tilted so its front faces a little
+// downward, cut off flat against the wall behind and level at the top. At about 35° of tilt it is a cube
+// stood on its corner and halved by the wall. Every face keeps within 45°, so it prints upright, as it
+// hangs, with no supports, on a small flat foot cut off its lowest corner. The wall is the plane y = 0 and
+// the planter reaches toward -y. It is built as solid minus cavity: both are convex, cut by the same planes
+// (the cavity's moved in by the wall thickness), so every face is a flat polygon.
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit3 = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+// the corners of a convex body { p : n·p <= d for every plane }, and each plane's face as a ring of corners
+// in order, anticlockwise seen from outside
+function convexFromPlanes(planes) {
+  const V = [], m = planes.length;
+  for (let i = 0; i < m; i++) for (let j = i + 1; j < m; j++) for (let k = j + 1; k < m; k++) {
+    const A = planes[i].n, B = planes[j].n, C = planes[k].n, det = dot3(A, cross3(B, C));
+    if (Math.abs(det) < 1e-9) continue;
+    const bc = cross3(B, C), ca = cross3(C, A), ab = cross3(A, B), di = planes[i].d, dj = planes[j].d, dk = planes[k].d;
+    const p = [0, 1, 2].map((q) => (di * bc[q] + dj * ca[q] + dk * ab[q]) / det);
+    if (planes.some((pl) => dot3(pl.n, p) > pl.d + 1e-6)) continue;
+    if (!V.some((v) => Math.hypot(v[0] - p[0], v[1] - p[1], v[2] - p[2]) < 1e-5)) V.push(p);
+  }
+  const faces = planes.map((pl) => {
+    const on = V.filter((v) => Math.abs(dot3(pl.n, v) - pl.d) < 1e-5);
+    if (on.length < 3) return null;
+    const c = [0, 1, 2].map((q) => on.reduce((a, v) => a + v[q], 0) / on.length);
+    const u = unit3(Math.abs(pl.n[2]) < 0.9 ? cross3([0, 0, 1], pl.n) : cross3([1, 0, 0], pl.n)), w = cross3(pl.n, u);
+    const ang = (v) => { const r = [v[0] - c[0], v[1] - c[1], v[2] - c[2]]; return Math.atan2(dot3(r, w), dot3(r, u)); };
+    return on.sort((p, q) => ang(p) - ang(q));
+  });
+  return { V, faces };
+}
+// Ear clipping of a simple polygon given as 2D points (anticlockwise); bridged holes appear as repeated points.
+function earClip(pts) {
+  const n = pts.length, idx = pts.map((_, i) => i), out = [];
+  const area2 = (a, b, c) => (pts[b][0] - pts[a][0]) * (pts[c][1] - pts[a][1]) - (pts[c][0] - pts[a][0]) * (pts[b][1] - pts[a][1]);
+  const same = (p, q) => Math.abs(pts[p][0] - pts[q][0]) < 1e-9 && Math.abs(pts[p][1] - pts[q][1]) < 1e-9;
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 4 * n * n) {
+    let cut = false;
+    for (let k = 0; k < idx.length; k++) {
+      const a = idx[(k + idx.length - 1) % idx.length], b = idx[k], c = idx[(k + 1) % idx.length];
+      if (area2(a, b, c) <= 1e-10) continue;
+      let blocked = false;
+      for (const p of idx) {
+        if (p === a || p === b || p === c || same(p, a) || same(p, b) || same(p, c)) continue;
+        if (area2(a, b, p) >= 0 && area2(b, c, p) >= 0 && area2(c, a, p) >= 0) { blocked = true; break; }
+      }
+      if (blocked) continue;
+      out.push([a, b, c]); idx.splice(k, 1); cut = true; break;
+    }
+    if (!cut) break;
+  }
+  if (idx.length === 3) out.push([idx[0], idx[1], idx[2]]);
+  return out;
+}
+// one hole (clockwise) joined into a convex outline (anticlockwise) by a bridge from the hole's rightmost point
+function bridgeHole(outer, hole) {
+  let mi = 0;
+  for (let i = 1; i < hole.length; i++) if (hole[i][0] > hole[mi][0]) mi = i;
+  const M = hole[mi], n = outer.length;
+  let best = Infinity, bi = 0;
+  for (let i = 0; i < n; i++) {
+    const a = outer[i], b = outer[(i + 1) % n];
+    if ((a[1] - M[1]) * (b[1] - M[1]) > 0 || a[1] === b[1]) continue;
+    const x = a[0] + ((M[1] - a[1]) / (b[1] - a[1])) * (b[0] - a[0]);
+    if (x >= M[0] && x < best) { best = x; bi = a[0] > b[0] ? i : (i + 1) % n; }
+  }
+  const res = outer.slice(0, bi + 1);
+  for (let k = 0; k <= hole.length; k++) res.push(hole[(mi + k) % hole.length]);
+  res.push(outer[bi], ...outer.slice(bi + 1));
+  return res;
+}
+const signedArea2D = (pts) => { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
+// the keyhole as an outline (x across, y up from the centre of its round opening), anticlockwise:
+// the same shape as holeField's keyhole, a teardrop with a narrow slot rising to a pointed top
+function keyholeOutline(R = 4.6, w = 2.3, L = 9) {
+  const yT = (R - 0.766 * w) / 0.643, top = L + (0.766 * w) / 0.643, pts = [[0, top], [-w, L], [-w, yT]];
+  for (let k = 0; k <= 24; k++) { const a = ((140 + (260 * k) / 24) * Math.PI) / 180; pts.push([R * Math.cos(a), R * Math.sin(a)]); }
+  pts.push([w, yT], [w, L]);
+  return pts;
+}
+
+export function facetedWall(F, X = {}) {
+  const W = clamp(F.diameter || 160, 60, 400), h = W / 2, s = W / Math.SQRT2;
+  const tilt = clamp(X.facetTilt ?? 35, 5, 44), al = (tilt * Math.PI) / 180, ca = Math.cos(al), sa = Math.sin(al);
+  // the diamond can be taller than it is wide (its lower faces then get steeper); a squat one is kept no
+  // flatter than its lower faces can print at 45°
+  const v = h * clamp(X.facetStretch ?? 1, Math.sqrt(Math.max(0, 2 * ca * ca - 1)) + 0.02, 1.8);
+  // depth along the tilted axis; 1 puts the front's top corner level with the side corners at the wall
+  const L = clamp((X.facetDepth ?? 1) * (v / Math.tan(al)), v * Math.tan(al) + 15, 1.6 * Math.max(s, v * Math.SQRT2));
+  const t = clamp(F.wall || 3, 1.2, 8), tb = Math.max(t, 3), fl = clamp(F.floor || 3, 1.2, 8), foot = 8;
+  const a = [0, -ca, -sa], e1 = [1, 0, 0], e2 = [0, -sa, ca];
+  const zFrontTop = -L * sa + v * ca, zLow = -L * sa - v * ca, zWallTop = v / ca;
+  const zTop = clamp(zFrontTop + (X.facetRim ?? 0), Math.max(zLow + foot + 25, zFrontTop - 0.45 * v), zWallTop - 0.15 * v);
+  const zFoot = zLow + foot;
+  const planes = (inset, back, top, bottom) => [
+    // |x1| / h + |x2| / v <= 1 across the axis
+    ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([p, q]) => {
+      const raw = [p * e1[0] / h + q * e2[0] / v, p * e1[1] / h + q * e2[1] / v, p * e1[2] / h + q * e2[2] / v], len = Math.hypot(...raw);
+      return { n: raw.map((c) => c / len), d: 1 / len - inset };
+    }),
+    { n: a, d: L - inset }, { n: [0, 1, 0], d: -back }, { n: [0, 0, 1], d: top }, { n: [0, 0, -1], d: -bottom },
+  ];
+  const Po = convexFromPlanes(planes(0, 0, zTop, zFoot)), Pi = convexFromPlanes(planes(t, tb, zTop, zFoot + fl));
+  const BACK = 5, TOP = 6;
+  // where the keyhole goes: centred, as high in the back as the cavity allows
+  const key = keyholeOutline(), backIn = Pi.faces[BACK].map((v) => [v[0], v[2]]);
+  const inside = (pt, poly, margin) => { for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], ex = q[0] - p[0], ey = q[1] - p[1], l = Math.hypot(ex, ey) || 1; if ((ex * (pt[1] - p[1]) - ey * (pt[0] - p[0])) / l < margin) return false; } return true; };
+  const ccw = signedArea2D(backIn) > 0 ? backIn : backIn.slice().reverse();
+  let zKey = null;
+  for (let z = zTop - 20; z > zFoot + 15; z -= 1) if (key.every(([x, y]) => inside([x, z + y], ccw, 3))) { zKey = z; break; }
+  const hole = zKey === null ? null : key.map(([x, y]) => [x, zKey + y]);
+
+  // every triangle gets corners of its own, so each facet shades flat and its edges stay crisp; the weld id
+  // (one per point in space) joins them back up for export
+  const mesh = new Mesh(), ids = new Map();
+  const wid = (p) => { const k = `${Math.round(p[0] * 1e4)},${Math.round(p[1] * 1e4)},${Math.round(p[2] * 1e4)}`; let w = ids.get(k); if (w === undefined) { w = ids.size; ids.set(k, w); } return w; };
+  const vtx = (p) => mesh.v(p[0], p[1], p[2], wid(p));
+  const tri = (p, q, r, want) => {
+    const nrm = cross3([q[0] - p[0], q[1] - p[1], q[2] - p[2]], [r[0] - p[0], r[1] - p[1], r[2] - p[2]]);
+    if (Math.hypot(nrm[0], nrm[1], nrm[2]) < 1e-10) return;
+    if (dot3(nrm, want) >= 0) mesh.tri(vtx(p), vtx(q), vtx(r)); else mesh.tri(vtx(p), vtx(r), vtx(q));
+  };
+  const fan = (poly, want) => { for (let k = 1; k + 1 < poly.length; k++) tri(poly[0], poly[k], poly[k + 1], want); };
+  // a flat face with a hole in it: 2D on the plane, bridged and ear-clipped, then back in 3D
+  const holed = (outer3, hole2, to2, to3, want) => {
+    let o = outer3.map(to2);
+    if (signedArea2D(o) < 0) o = o.reverse();
+    let hl = hole2.slice();
+    if (signedArea2D(hl) > 0) hl = hl.reverse();
+    const pts = bridgeHole(o, hl);
+    for (const [i, j, k] of earClip(pts)) tri(to3(pts[i]), to3(pts[j]), to3(pts[k]), want);
+  };
+  const po = planes(0, 0, zTop, zFoot), pi = planes(t, tb, zTop, zFoot + fl);
+  Po.faces.forEach((f, k) => {
+    if (!f || k === TOP) return;
+    if (k === BACK && hole) holed(f, hole, (v) => [v[0], v[2]], (q) => [q[0], 0, q[1]], po[k].n);
+    else fan(f, po[k].n);
+  });
+  Pi.faces.forEach((f, k) => {
+    if (!f || k === TOP) return;
+    const into = po[k].n.map((x) => -x);
+    if (k === BACK && hole) holed(f, hole, (v) => [v[0], v[2]], (q) => [q[0], -tb, q[1]], into);
+    else fan(f, into);
+  });
+  // the rim: a flat ring between the outside and the opening
+  holed(Po.faces[TOP], Pi.faces[TOP].map((v) => [v[0], v[1]]), (v) => [v[0], v[1]], (q) => [q[0], q[1], zTop], [0, 0, 1]);
+  // the keyhole's sides, through the back wall
+  if (hole) {
+    for (let k = 0; k < hole.length; k++) {
+      const A = hole[k], B = hole[(k + 1) % hole.length], into = [-(B[1] - A[1]), 0, B[0] - A[0]];
+      const want = signedArea2D(hole) > 0 ? into : into.map((x) => -x);
+      const a0 = [A[0], 0, A[1]], b0 = [B[0], 0, B[1]], a1 = [A[0], -tb, A[1]], b1 = [B[0], -tb, B[1]];
+      tri(a0, b0, b1, want); tri(a0, b1, a1, want);
+    }
+  }
+  // sit it on the bed
+  const Pz = mesh.P;
+  for (let q = 2; q < Pz.n; q += 3) Pz.a[q] -= zFoot;
+  const depth = Math.max(...Po.V.map((v) => -v[1]));
+  return { mesh, W, height: zTop - zFoot, depth, tilt, keyhole: hole ? zKey - zFoot : null, wall: t, back: tb, L, zFrontTop: zFrontTop - zFoot };
+}
+
 export const WATERTIGHT = new Set(['planter', 'vase', 'hanging', 'wall', 'candle']);
 
+// A faceted wall planter is a polyhedron of its own: no silhouette, outline or pattern.
+function generateFaceted(P) {
+  const F = P.form, X = P.extras, g = facetedWall(F, X);
+  const m = finish(g.mesh, { overhangLimit: 46, cutDepth: F.wall });
+  const parts = [{ key: 'pot', label: 'Pot', ...m, place: { z: 0, color: 0 } }];
+  const checks = [], loops = Math.max(1, Math.round(g.wall / 0.45));
+  if (g.wall < 0.8) checks.push({ level: 'bad', text: 'Walls under 0.8 mm are too thin for a 0.4 mm nozzle.' });
+  else checks.push({ level: g.wall < 2 ? 'warn' : 'ok', text: `Wall ${g.wall.toFixed(1)} mm ≈ ${loops} wall loop${loops > 1 ? 's' : ''} at 0.45 mm line width${g.wall < 2 ? '. It can flex: 3 mm makes a sturdy planter' : ''}.` });
+  const over = m.stats.overhang, area = m.stats.area;
+  if (over / area > 0.01 || over > 500) checks.push({ level: 'bad', text: `${(over / 100).toFixed(1)} cm² overhangs past 46°. It is striped on the model; add supports or change the shape.` });
+  else checks.push({ level: 'ok', text: `Every face keeps within 45°: it prints upright, as it hangs, with no supports. It stands on a small flat foot cut off its lowest corner: add a 5–8 mm brim so it holds the bed.` });
+  if (g.keyhole !== null) checks.push({ level: 'ok', text: 'The flat back has a keyhole for a screw with a head up to 8 mm. Leave the head 4 mm out of the wall and hook the planter over it.' });
+  else checks.push({ level: 'warn', text: 'The back is too small for a keyhole: make it wider, or hang it with strong mounting tape.' });
+  checks.push({ level: 'ok', text: 'No drainage hole, so it never drips: water sparingly, or stand a small nursery pot inside it.' });
+  return { parts, checks, info: { cell: 0, NU: 0, rows: 0, mainKey: 'pot', eased: 0, lift: 0, colorChanges: [], wallY: 0, hangers: null, stand: null, globe: null, facet: { height: g.height, depth: g.depth, width: g.W, tilt: g.tilt } } };
+}
+
 export function generate(P, quality = 1) {
+  if (P.object === 'wall' && P.extras.wallStyle === 'facet') return generateFaceted(P);
   // only hanging and wall planters can have a rounded bottom; it has no base chamfer
   if (P.form.bottom === 'round') P = { ...P, form: P.object === 'hanging' || P.object === 'wall' ? { ...P.form, inset: 0 } : { ...P.form, bottom: 'flat' } };
   const F = P.form, X = P.extras;

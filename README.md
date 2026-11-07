@@ -60,7 +60,7 @@ Requirements: Node.js 22 and npm.
 | `app/` | The studio itself, plain HTML and JavaScript modules. It is the same code in the desktop app and the browser. |
 | `app/index.html` | The Weft 2.0 page: layout and styles. |
 | `app/classic.html` | The classic (1.x) page. Both pages use the same element ids, so one `app.js` drives either. |
-| `app/engine.js` | The geometry engine: silhouettes, cross-sections (including the flat-backed D for wall planters), the 35 textures and swirl, the mesher, cord holes and keyholes, lids, saucers, sleeves, self-watering inserts, lamp bases, closed globes, the glow test strip, multicolour bands and overhang checks. Runs in a Web Worker. |
+| `app/engine.js` | The geometry engine: silhouettes, cross-sections (including the flat-backed D for wall planters), the 35 textures and swirl, the mesher, cord holes and keyholes, lids, saucers, sleeves, self-watering inserts, lamp bases, closed globes, the glow test strip, faceted wall planters (built as flat polygons, solid minus cavity), multicolour bands and overhang checks. Runs in a Web Worker. |
 | `app/presets.js` | Defaults, silhouettes and the starter collection. |
 | `app/app.js` | UI, 3D preview, drag handles, dimensions, size references, export (3MF, STL, PNG). |
 | `app/panel.js` | The panel engine: outlines, the 29 panel patterns, wave ribs, diffuser blocks with exact flat tops, tile planning, tabs, keys, back pockets, the two-tone split, and a mesher that clips a grid of triangles exactly against every boundary so tiles come out closed. Runs in `app/panel-worker.js`. |
@@ -91,6 +91,7 @@ Requirements: Node.js 22 and npm.
 7. Shuffled designs print without supports. It uses the studio's own shuffle code, read out of `app/app.js` by `test/shuffle-lib.mjs`.
 8. Lids on twisted, shaped boxes keep the box's outline and still pass the opening.
 9. Globe lamps: every top, underside, outline and pattern builds closed; a round globe says it needs supports, and a peak top with a cone underside prints without any. A relief stands out at full depth near the top, round the middle and underneath. The glow test strip is closed.
+10. Faceted wall planters: every tilt, depth, diamond shape and rim builds closed with no overhangs, on a flat foot, with a flat back and a keyhole through it.
 
 `ONLY=3,5 npm test` runs just those sections.
 

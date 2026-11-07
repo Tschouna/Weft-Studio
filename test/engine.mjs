@@ -10,7 +10,9 @@
 //  9. globe lamps: every top, underside, outline and pattern builds closed, a closed ball says it needs
 //     supports and a peak with a cone underside needs none, relief covers the whole ball; the glow test
 //     strip is closed
-import { generate, makeProfile, easeProfile, globeShape, glowTest, GLOW_STEPS, __test } from '../app/engine.js';
+// 10. faceted wall planters: every tilt, depth, diamond shape and rim builds closed, with no overhangs, a
+//     flat foot on the bed, a flat back on the wall and a keyhole through it
+import { generate, makeProfile, easeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
 const { buildSurface, sampleRows, cellFor, processRelief, makeSection } = __test;
@@ -339,6 +341,30 @@ const gt = glowTest(), gOpen = openEdges(gt);
 const gOk = !gOpen && gt.stats.volume > 3000 && gt.stats.overhang < 1 && GLOW_STEPS.length >= 5;
 console.log(`  ${gOk ? 'ok  ' : 'FAIL'} glow test: ${GLOW_STEPS.join(', ')} mm, ${(gt.stats.volume / 1000).toFixed(1)} cm³, ${gOpen} open edges`);
 if (!gOk) fail('glow test');
+}
+
+// ---------------------------------------------------------------- 10
+if (run(10)) {
+console.log('10. faceted wall planters');
+const cases = [['cube', {}], ['shallow tilt', { facetTilt: 15 }], ['steep tilt, raised rim', { facetTilt: 44, facetRim: 25 }], ['tall diamond', { facetStretch: 1.5, facetTilt: 30 }],
+  ['squat diamond', { facetStretch: 0.75 }], ['shallow, rim cut low', { facetDepth: 0.65, facetRim: -30 }], ['deep', { facetDepth: 1.35 }], ['small, thin wall', { facetTilt: 38 }, { diameter: 90, wall: 1.6 }]];
+for (const [name, ex, fo] of cases) {
+  const d = design({ object: 'wall', form: { diameter: 160, wall: 3, floor: 3, ...(fo || {}) }, extras: { wallStyle: 'facet', ...ex } });
+  const r = generate(d, 1), p = r.parts[0], P = p.position, I = p.index, g = facetedWall(d.form, d.extras);
+  let vol = 0, foot = 0, back = 0;
+  for (let t = 0; t < I.length; t += 3) {
+    const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+    vol += (P[a] * (P[b + 1] * P[c + 2] - P[b + 2] * P[c + 1]) - P[a + 1] * (P[b] * P[c + 2] - P[b + 2] * P[c]) + P[a + 2] * (P[b] * P[c + 1] - P[b + 1] * P[c])) / 6;
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, area = Math.hypot(nx, ny, nz) / 2;
+    if (nz < 0 && Math.max(P[a + 2], P[b + 2], P[c + 2]) < 1e-3) foot += area;
+    if (ny > 0 && Math.min(P[a + 1], P[b + 1], P[c + 1]) > -1e-3) back += area;
+  }
+  const open = openEdges(p), bb = p.stats.bbox;
+  const ok = !open && vol > 0 && p.stats.overhang < 1 && foot > 60 && back > 500 && Math.abs(bb[2]) < 1e-3 && Math.abs(bb[4]) < 1e-3 && g.keyhole !== null && Math.abs(bb[3] - bb[0] - d.form.diameter) < 0.01 && !r.checks.some((c) => c.level === 'bad');
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${p.stats.tris} tris, ${open} open edges, ${(vol / 1000).toFixed(0)} cm³, ${Math.round(bb[5])} mm tall, ${Math.round(-bb[1])} mm out, foot ${foot.toFixed(0)} mm², back ${(back / 100).toFixed(0)} cm², overhang ${p.stats.overhang.toFixed(1)} mm²${g.keyhole === null ? ', no keyhole' : ''}`);
+  if (!ok) fail(`faceted ${name}`);
+}
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

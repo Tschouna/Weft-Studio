@@ -1,7 +1,7 @@
 {
   "name": "weft-studio",
   "productName": "Weft Studio",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "description": "Parametric studio for 3D-printable homeware: planters, vases, bowls, trays, boxes, lamps, lanterns and more.",
   "main": "electron/main.js",
   "author": "Jonah Scherrer",

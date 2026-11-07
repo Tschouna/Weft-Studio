@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
-import { generate, swatch, makeProfile, easeProfile, makeSection, glowTest, GLOW_STEPS } from './engine.js';
+import { generate, swatch, makeProfile, easeProfile, makeSection, glowTest, GLOW_STEPS, facetedWall } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 import { initPanels } from './panels.js';
 
@@ -573,6 +573,8 @@ function hazardOverlay(geo, p, opts) {
   return mesh;
 }
 
+// a faceted wall planter is a polyhedron with no silhouette, outline or pattern
+const isFacet = (d) => d.object === 'wall' && d.extras.wallStyle === 'facet';
 // lamps and lanterns light up, and so does a candle holder's candle
 const hasLight = (obj) => !!(OBJECTS[obj].lamp || OBJECTS[obj].light);
 const WARMTH = { candle: 0xff9f4a, warm: 0xffc07a, neutral: 0xffe2c2, daylight: 0xfff4ea };
@@ -973,6 +975,13 @@ function refreshDimColor() {
 function dimLayout(minGap = 0) {
   const res = state.result, d = state.design, F = d.form, R = F.diameter / 2;
   const { w, h: ht } = assembledSize(res, d);
+  if (isFacet(d)) {
+    const g = Math.max(clamp(0.1 * Math.max(w, ht), 8, 22), minGap), uH = -(w / 2 + g), yl = ht + g;
+    return [
+      { key: 'height', value: ht, a: [uH, 0], b: [uH, ht], text: `${Math.round(ht)} mm`, ext: [[[-2, 0], [uH - 3, 0]], [[-w / 2 - 2, ht], [uH - 3, ht]]] },
+      { key: 'width', value: w, a: [-w / 2, yl], b: [w / 2, yl], text: `${Math.round(w)} mm`, ext: [[[-w / 2, ht * 0.6], [-w / 2, yl + 3]], [[w / 2, ht * 0.6], [w / 2, yl + 3]]] },
+    ];
+  }
   const pend = d.object === 'pendant', lift = res.info.lift || 0;
   const round = (F.section || 'round') === 'round';
   const yBot = pend ? pendantHang(d) : 0, yTop = yBot + ht;
@@ -1373,7 +1382,7 @@ function engineToWorld(d, r, z, out) {
 }
 const _hv = new THREE.Vector3();
 function updateHandles() {
-  const show = state.handles && state.view === 'studio' && !!state.result && state.design.object !== 'globe';
+  const show = state.handles && state.view === 'studio' && !!state.result && state.design.object !== 'globe' && !isFacet(state.design);
   handleState.group.visible = show;
   if (!show) return;
   const d = state.design, cam = stage.camera;
@@ -1616,10 +1625,12 @@ function updateReadout() {
   const tris = res.parts.reduce((a, p) => a + p.stats.tris, 0);
   const el = $('#readout');
   el.replaceChildren(
-    h('span', {}, 'Ø ', h('strong', {}, `${Math.round(w)}`), ' × ', h('strong', {}, `${Math.round(ht)}`), ' mm'),
+    // a faceted wall planter: width, height, and how far it reaches out from the wall
+    res.info.facet ? h('span', {}, h('strong', {}, `${Math.round(res.info.facet.width)}`), ' × ', h('strong', {}, `${Math.round(res.info.facet.height)}`), ' × ', h('strong', {}, `${Math.round(res.info.facet.depth)}`), ' mm')
+      : h('span', {}, 'Ø ', h('strong', {}, `${Math.round(w)}`), ' × ', h('strong', {}, `${Math.round(ht)}`), ' mm'),
     h('span', {}, h('strong', {}, `${Math.round(g)} g`), ' PLA'),
     h('span', {}, `${res.parts.length} part${res.parts.length > 1 ? 's' : ''}`),
-    h('span', {}, `${(tris / 1000).toFixed(0)}k triangles`),
+    h('span', {}, tris < 1000 ? `${tris} triangles` : `${(tris / 1000).toFixed(0)}k triangles`),
   );
   $('#status-weight').textContent = `${Math.round(g)} g · ${(g / 1.24 / 2.405).toFixed(1)} m`;
 }
@@ -1857,6 +1868,11 @@ function renderObject() {
     opts.push(h('p', { class: 'note' }, 'Teardrop holes under the rim take cords, chains or macramé up to Ø 4 mm; they print without support. Without a drainage hole it never drips, so water sparingly.'));
   }
   if (d.object === 'wall') {
+    opts.push(chipsCtl('Style', [{ value: 'round', label: 'Rounded', title: 'A D shape with any silhouette and pattern' }, { value: 'facet', label: 'Faceted', title: 'A cube stood on its corner and halved by the wall' }], () => X.wallStyle || 'round', (v) => { X.wallStyle = v; }, { structural: true }));
+  }
+  if (isFacet(d)) {
+    opts.push(h('p', { class: 'note' }, 'A cube stood on its corner and halved by the wall: a diamond face in front, crisp facets all round, and a flat back with a keyhole for one screw (head up to 8 mm). Shape it under Form. Every face keeps within 45°, so it prints upright with no supports, on a small foot cut off the lowest corner. No drainage hole: water sparingly, or stand a nursery pot inside.'));
+  } else if (d.object === 'wall') {
     opts.push(sliderCtl('x-back', 'Depth from the wall', { min: 0.1, max: 0.6, step: 0.01, fmt: (v) => `${Math.round((d.form.diameter / 2) * (1 + v))} mm` }, () => X.back ?? 0.3, (v) => { X.back = v; }));
     opts.push(sliderCtl('x-wdrain', 'Drainage hole', { min: 0, max: 20, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
     opts.push(h('p', { class: 'note' }, 'The back is flat and plain, with a keyhole for one screw (head up to 8 mm). The cross-section is always the D shape, and it does not twist.'));
@@ -1962,6 +1978,7 @@ function renderForm() {
   if (!wallObj) secKids.push(sliderCtl('f-twist', 'Twist over the height', { min: -180, max: 180, step: 1, fmt: (v) => (v ? `${v}°` : 'none') }, () => F.twist || 0, (v) => { F.twist = v; }));
   const sz = { min: 40, max: 320, step: 1, fmt: (v) => `${v} mm` };
   if (d.object === 'globe') { pane.replaceChildren(...globeForm(d, secKids, sz)); return; }
+  if (isFacet(d)) { pane.replaceChildren(...facetForm(d)); return; }
   pane.replaceChildren(...[
     groupAct('Silhouette', pend ? 'Shown hanging; printed crown-down' : null, diceBtn('shape', 'Shape'), sil,
       switchCtl('f-handles', 'Drag points on the model', () => state.handles, (v) => setHandles(v), { local: true }),
@@ -2011,6 +2028,25 @@ function globeForm(d, secKids, sz) {
     group('Wall', null,
       sliderCtl('f-wall', 'Wall thickness', { min: 0.8, max: 4, step: 0.05, fmt: (v) => `${v.toFixed(2)} mm · ${Math.max(1, Math.round(v / 0.44))} lines` }, () => F.wall, (v) => { F.wall = v; }),
       h('p', { class: 'note' }, 'With translucent filament: 2 lines (about 0.9 mm) is brightest but shows the bulb as a bright spot; 3 to 4 lines (1.3 to 1.8 mm) glows evenly; 3 mm and more is soft but noticeably dimmer. Light colours let more through than deep ones. Print the glow test under Object to see yours.')),
+  ];
+}
+
+// A faceted wall planter: width, tilt, depth and where the rim cuts it.
+function facetForm(d) {
+  const F = d.form, X = d.extras, info = facetedWall(F, X);
+  const sizeNote = `${Math.round(info.W)} mm wide, ${Math.round(info.height)} mm tall and ${Math.round(info.depth)} mm out from the wall.`;
+  return [
+    group('Facets', 'A square stood on its corner, tilted to face a little downward',
+      sliderCtl('x-ftilt', 'Tilt', { min: 5, max: 44, step: 1, fmt: (v) => `${v}°` }, () => X.facetTilt ?? 35, (v) => { X.facetTilt = v; }),
+      sliderCtl('x-fstretch', 'Diamond', { min: 0.7, max: 1.6, step: 0.01, fmt: (v) => (Math.abs(v - 1) < 0.005 ? 'square' : `${(+v).toFixed(2)}×`) }, () => X.facetStretch ?? 1, (v) => { X.facetStretch = v; }),
+      sliderCtl('x-fdepth', 'Depth', { min: 0.6, max: 1.4, step: 0.01, fmt: (v) => (Math.abs(v - 1) < 0.005 ? 'level' : pct(v)) }, () => X.facetDepth ?? 1, (v) => { X.facetDepth = v; }),
+      sliderCtl('x-frim', 'Rim', { min: -40, max: 40, step: 1, fmt: (v) => (v ? `${v > 0 ? '+' : ''}${v} mm` : 'corner') }, () => X.facetRim ?? 0, (v) => { X.facetRim = v; }),
+      h('p', { class: 'note' }, 'Tilt leans the front face down; at 35° with a square diamond the whole thing is a cube on its corner. Diamond makes the front face taller than it is wide (above 1×) or wider (below). Depth sets how far it reaches out: at "level" the front\'s top corner sits level with the side corners at the wall, like the classic geometric planter. Rim raises or lowers the opening from that top corner.')),
+    group('Size', sizeNote,
+      sliderCtl('f-diam', 'Width', { min: 80, max: 260, step: 1, fmt: (v) => `${v} mm` }, () => F.diameter, (v) => { F.diameter = v; })),
+    group('Walls', null,
+      sliderCtl('f-wall', 'Wall thickness', { min: 1.2, max: 6, step: 0.05, fmt: (v) => `${v.toFixed(2)} mm` }, () => F.wall, (v) => { F.wall = v; }),
+      h('p', { class: 'note' }, 'The back wall is at least 3 mm, for the keyhole.')),
   ];
 }
 
@@ -2077,6 +2113,10 @@ function renderSurface() {
   const d = state.design, S = d.surface;
   const P = PATTERNS[S.pattern];
   const pane = $('#pane-surface');
+  if (isFacet(d)) {
+    pane.replaceChildren(group('Surface', null, h('p', { class: 'note' }, 'A faceted wall planter is all flat faces: its facets are the pattern, and light and shadow do the rest. For a textured wall planter, choose the Rounded style under Object.')));
+    return;
+  }
   const grid = h('div', { class: 'patterns', role: 'group', 'aria-label': 'Pattern' });
   const tight = !!OBJECTS[d.object].watertight;
   for (const [k, p] of Object.entries(PATTERNS)) {
@@ -2295,7 +2335,7 @@ function renderAll() {
 function updateKind() {
   const d = state.design, S = d.surface;
   const P = PATTERNS[S.pattern];
-  const surf = S.pattern === 'smooth' ? 'Smooth' : `${P.label} ${S.mode === 'cut' ? 'openwork' : 'relief'}`;
+  const surf = isFacet(d) ? 'Faceted' : S.pattern === 'smooth' ? 'Smooth' : `${P.label} ${S.mode === 'cut' ? 'openwork' : 'relief'}`;
   $('#kind').textContent = `${OBJECTS[d.object].label} · ${surf}`;
 }
 
@@ -2307,7 +2347,8 @@ function refreshListing() {
   const { w, h: ht } = assembledSize(res, d);
   const g = Math.round(partsWeight(res, d));
   const P = PATTERNS[S.pattern];
-  const surf = S.pattern === 'smooth' ? 'smooth' : `${P.label.toLowerCase()} ${S.mode === 'cut' ? 'openwork' : 'relief'}`;
+  const facet = isFacet(d);
+  const surf = facet ? 'faceted' : S.pattern === 'smooth' ? 'smooth' : `${P.label.toLowerCase()} ${S.mode === 'cut' ? 'openwork' : 'relief'}`;
   const obj = OBJECTS[d.object].label.toLowerCase();
   const supportsNeeded = allChecks().some((c) => /^Needs supports/.test(c.text));
   const noSupports = !supportsNeeded && !allChecks().some((c) => c.level === 'bad');
@@ -2315,7 +2356,7 @@ function refreshListing() {
   const vase = d.object === 'vase' && d.extras.vaseMode && S.mode !== 'cut';
   const mc = state.multicolor && (res.parts.some((p) => p.regions) || res.info.colorChanges?.length);
   const fils = filamentList(d, res).length;
-  const title = `${d.name} ${OBJECTS[d.object].label}: ${P.label}${S.pattern === 'smooth' ? '' : S.mode === 'cut' ? ' Openwork' : ' Texture'}${mc ? ', Multicolor' : ''}${noSupports ? ', No Supports' : ''}`;
+  const title = `${d.name} ${OBJECTS[d.object].label}: ${facet ? 'Faceted Geometric' : `${P.label}${S.pattern === 'smooth' ? '' : S.mode === 'cut' ? ' Openwork' : ' Texture'}`}${mc ? ', Multicolor' : ''}${noSupports ? ', No Supports' : ''}`;
   const partList = res.parts.map((p) => p.label.replace(/ \(.*\)/, '')).join(', ');
   const lines = [
     title, '',
@@ -2336,13 +2377,13 @@ function refreshListing() {
     d.object === 'planter' && d.extras.drain && d.extras.base !== 'insert' ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
     d.object === 'planter' && d.extras.base === 'sleeve' ? '• Print the sleeve in a second colour for a two-tone look.' : null,
     d.object === 'hanging' ? `• Hangs from ${d.extras.hangers || 3} cords through teardrop holes under the rim (cord up to Ø 4 mm).${d.extras.drain ? ` Ø ${d.extras.drain} mm drainage hole.` : ' No drainage hole, so it never drips.'}` : null,
-    d.object === 'wall' ? '• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports.' : null,
+    d.object === 'wall' ? `• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports${facet ? ', on a small foot cut off its lowest corner: use a 5–8 mm brim. A cube stood on its corner and halved by the wall; no drainage hole' : ''}.` : null,
     d.object === 'orchid' ? `• Open walls for air at the roots${d.extras.drain ? `, Ø ${d.extras.drain} mm drainage hole` : ''}${d.extras.base === 'saucer' ? ', saucer included' : ''}.` : null,
     d.object === 'lantern' ? '• For LED tealights only. Never use a real flame.' : null,
     d.object === 'candle' ? `• A ${({ tealight: 'tealight', maxi: 'maxi tealight', taper: 'taper candle' })[d.extras.candle] || 'tealight'} sits in a pocket in the top. Print solid with 15% infill; LED candles are safest.` : null,
     res.info.stand ? `• Plant stand: two flat pieces, printed lying down with no supports, that slot together into a cross. The pot sits ${Math.round(res.info.stand.lift)} mm up.` : null,
     '',
-    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', supportsNeeded ? null : 'no supports', d.object === 'pendant' ? 'lamp shade' : null, d.object === 'globe' ? 'moon lamp' : null, d.object === 'globe' ? 'lamp shade' : null, d.finish.material === 'translucent' ? 'translucent' : null, ['planter', 'hanging', 'wall', 'orchid'].includes(d.object) ? 'plant pot' : null, d.object === 'hanging' ? 'hanging planter' : null, d.object === 'wall' ? 'wall planter' : null, d.object === 'orchid' ? 'orchid' : null, d.object === 'lantern' || d.object === 'candle' ? 'tealight holder' : null, d.object === 'candle' ? 'candle holder' : null, d.object === 'lantern' ? 'lantern' : null, d.object === 'ring' ? 'napkin ring' : null, d.object === 'tray' ? 'trinket tray' : null, res.info.stand ? 'plant stand' : null, res.info.stand ? 'mid century' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
+    `Tags: ${[obj, S.pattern === 'smooth' ? null : P.label.toLowerCase(), S.mode === 'cut' ? 'openwork' : 'texture', 'home decor', 'minimalist', supportsNeeded ? null : 'no supports', d.object === 'pendant' ? 'lamp shade' : null, d.object === 'globe' ? 'moon lamp' : null, d.object === 'globe' ? 'lamp shade' : null, d.finish.material === 'translucent' ? 'translucent' : null, ['planter', 'hanging', 'wall', 'orchid'].includes(d.object) ? 'plant pot' : null, d.object === 'hanging' ? 'hanging planter' : null, d.object === 'wall' ? 'wall planter' : null, facet ? 'geometric' : null, facet ? 'faceted' : null, d.object === 'orchid' ? 'orchid' : null, d.object === 'lantern' || d.object === 'candle' ? 'tealight holder' : null, d.object === 'candle' ? 'candle holder' : null, d.object === 'lantern' ? 'lantern' : null, d.object === 'ring' ? 'napkin ring' : null, d.object === 'tray' ? 'trinket tray' : null, res.info.stand ? 'plant stand' : null, res.info.stand ? 'mid century' : null, d.object === 'planter' && d.extras.base === 'insert' ? 'self-watering' : null, d.object === 'lamp' ? 'table lamp' : null, d.object === 'box' ? 'storage' : null, vase ? 'vase mode' : null, mc ? 'multicolor' : null, mc ? 'ams' : null, 'parametric'].filter(Boolean).join(', ')}`,
   ];
   ta.value = lines.filter((l) => l !== null).join('\n');
 }
@@ -2948,7 +2989,11 @@ function shuffleShape(d) {
   F.twist = shape === 'round' ? 0 : pick([0, 0, Math.round(rnd(-1, 1) * (shape === 'lobed' ? 30 : 55))]);
   // a third of rims get a shaped edge or line
   F.rimEdge = pick(['flat', 'flat', 'round', 'bevel', 'rolled']);
-  if (obj === 'wall') { F.section = 'round'; F.twist = 0; X.back = +rnd(0.15, 0.45).toFixed(2); }
+  if (obj === 'wall') {
+    F.section = 'round'; F.twist = 0; X.back = +rnd(0.15, 0.45).toFixed(2);
+    X.wallStyle = Math.random() < 0.25 ? 'facet' : 'round';
+    if (X.wallStyle === 'facet') { X.facetTilt = Math.round(rnd(25, 42)); X.facetDepth = +rnd(0.8, 1.15).toFixed(2); X.facetRim = pick([0, 0, 0, Math.round(rnd(-15, 15))]); F.diameter = Math.round(rnd(120, 200)); }
+  }
   if (obj === 'hanging') { X.hangers = pick([3, 3, 4]); }
   if (obj === 'hanging' || obj === 'wall') F.bottom = pick(['flat', 'flat', 'round']);
   if (obj === 'ring') { X.edgeBoth = true; X.innerChamfer = pick([0, 0, 1, 1.5]); }
