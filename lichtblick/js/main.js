@@ -1,6 +1,7 @@
 // Lichtblick: photo opportunities in Switzerland. Starts the app, switches tabs, keeps data fresh.
 import { App, loadSpots, refresh } from './app.js';
-import { $, $$, toast, sheetOpen, status } from './ui.js';
+import { $, $$, toast, sheetOpen, status, hydrateIcons } from './ui.js';
+import { applyTheme, themeAt } from './theme.js';
 import { renderFeed } from './views/feed.js';
 import { renderMap, focusSpot } from './views/map.js';
 import { renderSky, showSkyFor } from './views/sky.js';
@@ -9,6 +10,9 @@ import { renderSpots } from './views/spots.js';
 import { openSpot } from './views/spot.js';
 import { openSettings } from './views/settings.js';
 import { getJSON, setJSON } from './store.js';
+
+hydrateIcons();
+applyTheme();
 
 const VIEWS = { feed: renderFeed, map: renderMap, wild: renderWildlife, sky: renderSky, spots: renderSpots };
 let current = getJSON('lb.tab', 'feed');
@@ -43,7 +47,7 @@ function locate(explicit) {
   navigator.geolocation.getCurrentPosition((p) => {
     App.me = { lat: p.coords.latitude, lon: p.coords.longitude };
     setJSON('lb.me', { ...App.me, at: Date.now() });
-    App.emit('me'); rerender();
+    themeAt(App.me); App.emit('me'); rerender();
     if (explicit) toast('Distances from where you are');
   }, () => { if (explicit) toast('Location not allowed'); }, { timeout: 12000, maximumAge: 30 * 60e3 });
 }
@@ -56,7 +60,7 @@ window.addEventListener('online', () => refresh());
 
 async function start() {
   const me = getJSON('lb.me', null);
-  if (me) App.me = me;
+  if (me) { App.me = me; themeAt(me); }
   if (navigator.permissions) navigator.permissions.query({ name: 'geolocation' }).then((p) => { if (p.state === 'granted') locate(false); }).catch(() => {});
   await loadSpots();
   show(VIEWS[current] ? current : 'feed');

@@ -28,7 +28,7 @@ let spots = [...mine, ...SPOTS.map((s) => ({ ...s, sky: SKY[s.id] || null, horiz
 if (only.length) spots = spots.filter((s) => only.includes(s.id));
 
 const pts = [...spots, ...LOWLAND_REFS].map((s) => ({ lat: s.lat, lon: s.lon, elev: s.elev }));
-const fc = await forecast(pts);
+const fc = await forecast(pts, { outlook: false }); // the next day and a half: MeteoSwiss only
 const cells = [];
 for (let lat = 45.86; lat <= 47.8; lat += 0.16) for (let lon = 6.0; lon <= 10.5; lon += 0.22) if (insidePolygon(lat, lon, CH_OUTLINE)) cells.push({ lat: +lat.toFixed(3), lon: +lon.toFixed(3) });
 const grid = await gridForecast(cells).then((g) => ({ cells, series: g.data })).catch(() => null);
@@ -45,7 +45,7 @@ const best = topOpportunities(ops, { min, perSpotDay: 1 }).filter((o) => o.peak.
 if (!best.length) { console.log(`Nothing at ${min}+ in the next 36 hours.`); process.exit(0); }
 const name = (id) => spots.find((s) => s.id === id)?.name || id;
 const day = (d) => { const n = Math.round((localMidnight(d) - localMidnight(now)) / 864e5); return n === 0 ? 'today' : n === 1 ? 'tomorrow' : weekday(d); };
-const lines = best.map((o) => `${o.icon || TYPES[o.type].icon} ${o.score} · ${o.title} · ${name(o.spotId)} · ${day(o.peak)} ${hhmm(o.peak)}`);
+const lines = best.map((o) => `${o.emoji || TYPES[o.type].emoji} ${o.score} · ${o.title} · ${name(o.spotId)} · ${day(o.peak)} ${hhmm(o.peak)}`);
 const title = `${best.length} photo chance${best.length > 1 ? 's' : ''}: ${best[0].title} at ${name(best[0].spotId)}`;
 const body = `${lines.join('\n')}\n\nMeteoSwiss forecast, ${hhmm(now)}.`;
 console.log(title + '\n' + body);

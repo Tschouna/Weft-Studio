@@ -1,6 +1,8 @@
 // Small UI helpers: escaping, sheets, toasts, photo URLs, friendly times, the moon drawing.
 import { hhmm, localMidnight, weekday, dayLabel, TZ } from './astro.js';
 import { kvGet } from './store.js';
+import { icon } from './icons.js';
+import { scoreClass, scoreWord } from './scoring.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const $ = (sel, root = document) => root.querySelector(sel);
@@ -47,7 +49,7 @@ export function rerenderSheet() {
 window.addEventListener('popstate', () => { if (ignorePop) { ignorePop--; return; } if (stack.length) closeSheet(true); });
 document.addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
 
-export const sheetHead = (title = '') => `<div class="grab"></div><div class="sheet-head"><b>${esc(title)}</b><button class="iconbtn" data-close aria-label="Close"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7a1 1 0 0 0-1.4 1.4l4.9 4.9-4.9 4.9a1 1 0 1 0 1.4 1.4l4.9-4.9 4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4z"/></svg></button></div>`;
+export const sheetHead = (title = '') => `<div class="sheet-head"><span class="eyebrow">${esc(title)}</span><button class="iconbtn" data-close aria-label="Close">${icon('close')}</button></div>`;
 document.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
 
 // ---- photos ----
@@ -68,7 +70,7 @@ export async function loadLocalPhotos(spots) {
   }
 }
 export const commonsPage = (photo) => `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(photo.file.replace(/ /g, '_'))}`;
-export const credit = (p) => (p.file ? `© ${p.author} · ${p.license} · Wikimedia Commons` : 'Your photo');
+export const credit = (p) => (p.file ? `${p.author} · ${p.license} · Wikimedia Commons` : 'Your photo');
 
 // ---- times ----
 export function relDay(d, now = new Date()) {
@@ -90,7 +92,7 @@ export function whenText(o, now = new Date()) {
 export const ago = (t) => { const m = Math.round((Date.now() - t) / 60e3); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
 
 // ---- the moon, drawn for a phase angle (0 new, 180 full) ----
-export function moonSvg(phase, size = 40) {
+export function moonSvg(phase, size = 40, dark = 'var(--moon-dark)', lit = 'var(--moon-lit)') {
   const r = size / 2 - 1, c = size / 2, p = ((phase % 360) + 360) % 360;
   const k = Math.cos((p * Math.PI) / 180); // 1 new, -1 full
   const waxing = p < 180;
@@ -99,9 +101,12 @@ export function moonSvg(phase, size = 40) {
   const sweepOuter = waxing ? 1 : 0;
   const sweepInner = k > 0 ? (waxing ? 0 : 1) : (waxing ? 1 : 0);
   const d = `M ${c} ${c - r} A ${r} ${r} 0 0 ${sweepOuter} ${c} ${c + r} A ${rx} ${r} 0 0 ${sweepInner} ${c} ${c - r} Z`;
-  return `<svg class="moon" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><circle cx="${c}" cy="${c}" r="${r}" fill="#26324d"/><path d="${d}" fill="#f4ecd2"/></svg>`;
+  return `<svg class="moon" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><circle cx="${c}" cy="${c}" r="${r}" fill="${dark}"/><path d="${d}" fill="${lit}"/><circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--moon-edge, transparent)" stroke-width="${size > 30 ? 1.2 : 0.9}"/></svg>`;
 }
 
-export const scoreBadge = (s, cls) => `<span class="score ${cls}">${s}</span>`;
+// the score plate: fill weight says how good (red, black, outlined)
+export const plate = (score, big = false) => `<span class="plate num ${scoreClass(score)}${big ? ' big' : ''}" title="${scoreWord(score)}">${score}</span>`;
+// replace <span data-i="name"> placeholders in static HTML with icons
+export function hydrateIcons(root = document) { root.querySelectorAll('[data-i]').forEach((el) => { el.outerHTML = icon(el.dataset.i); }); }
 export function debounce(fn, ms = 250) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 export { weekday, hhmm };

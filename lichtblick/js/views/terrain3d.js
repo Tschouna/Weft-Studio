@@ -7,6 +7,7 @@ import { sunAt, dayEvents, localMidnight, hhmm, horizonAlt, zurichParts, TZ } fr
 import { compass, compassWords } from '../geo.js';
 import { terrainFor, imagery } from '../sources/terrain.js';
 import { esc, openSheet, sheetHead } from '../ui.js';
+import { icon } from '../icons.js';
 
 const SIZES = { wide: { half: 9000, res: 40, img: 10, label: '18 km' }, close: { half: 2500, res: 10, img: 5, label: '5 km' } };
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -22,25 +23,30 @@ export function open3D(spot) {
 
   openSheet((root) => {
     root.innerHTML = `${sheetHead(`${spot.name} · 3D`)}
-      <div style="position:sticky;top:56px;z-index:4;background:var(--bg);padding:0 10px 4px;box-shadow:0 10px 16px -10px rgba(0,0,0,.6)">
-      <div style="position:relative;border-radius:16px;overflow:hidden;background:#0d1526;height:min(48vh,460px)" id="t3wrap">
+      <div style="position:sticky;top:52px;z-index:4;background:var(--bg);padding:0 0 8px;border-bottom:1px solid var(--rule)">
+      <div class="skybox" style="position:relative;border-radius:0;height:min(46vh,440px)" id="t3wrap">
         <canvas id="t3" style="width:100%;height:100%;display:block;touch-action:none"></canvas>
         <div id="t3load" class="notice" style="position:absolute;left:12px;right:12px;top:12px;margin:0">Loading swisstopo terrain…<div class="progress" style="margin-top:6px"><i id="t3bar"></i></div></div>
-        <div id="t3hud" style="position:absolute;left:10px;top:10px;font-size:12.5px;background:rgba(8,12,22,.72);padding:6px 9px;border-radius:10px;max-width:72%" hidden></div>
+        <div id="t3hud" style="position:absolute;left:10px;top:10px;font-size:12.5px;line-height:1.35;color:#fff;background:rgba(0,0,0,.72);padding:7px 10px;border-radius:2px;max-width:76%" hidden></div>
       </div>
-        <div class="row sp" style="margin-top:8px;padding:0 4px"><b id="t3time" style="font-size:19px"></b>
-          <span class="btns"><button class="btn small" id="t3play">▶︎ Play the day</button></span></div>
-        <input type="range" id="t3slider" min="0" max="1435" step="5" value="${st.minutes}" style="width:100%;accent-color:var(--gold)" aria-label="Time of day">
-      </div>
-      <div class="pad">
-        <div class="btns" id="t3jumps" style="margin:4px 0 10px"></div>
-        <div class="chips" id="t3days"></div>
-        <div class="row sp" style="gap:8px;flex-wrap:wrap">
-          <div class="segbar"><button data-size="wide" aria-pressed="true">18 km</button><button data-size="close" aria-pressed="false">5 km close-up</button></div>
-          <div class="segbar"><button data-kind="aerial" aria-pressed="true">Aerial photo</button><button data-kind="map" aria-pressed="false">Map</button></div>
+        <div class="row sp" style="margin-top:10px;padding:0 16px"><div><b class="num" id="t3time" style="font-size:26px"></b> <span class="small muted" id="t3date2"></span></div>
+          <button class="btn small" id="t3play">${icon('play')}Play the day</button></div>
+        <div style="padding:6px 16px 0">
+          <div id="t3strip" style="height:9px;display:flex" title="Black: night. Grey: the spot is in shadow. Yellow: direct sun on the spot."></div>
+          <input type="range" id="t3slider" min="0" max="1435" step="5" value="${st.minutes}" style="width:100%;margin-top:2px" aria-label="Time of day">
+          <div class="row sp tiny faint tnum"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
         </div>
-        <p class="small" id="t3sum" style="margin:12px 0 4px"></p>
-        <p class="tiny faint">Terrain: swisstopo swissALTIRegio (10 m, includes the border regions). Imagery: swisstopo SWISSIMAGE / national map. Shadows come from the terrain shown; the sun-on-the-spot times also use mountains up to 60 km away. Drag to turn, pinch to zoom, two fingers to move.</p>
+      </div>
+      <div class="sheet-body">
+        <p class="mt12" id="t3sum"></p>
+        <div class="btns gap6 mt12" id="t3jumps"></div>
+        <div class="sec"><div class="sec-head"><span class="eyebrow">Which day</span></div><div class="btns gap6" id="t3days"></div></div>
+        <div class="sec"><div class="sec-head"><span class="eyebrow">View</span></div>
+        <div class="btns">
+          <div class="seg"><button data-size="wide" aria-pressed="true">18 km</button><button data-size="close" aria-pressed="false">5 km close-up</button></div>
+          <div class="seg"><button data-kind="aerial" aria-pressed="true">Aerial photo</button><button data-kind="map" aria-pressed="false">Map</button></div>
+        </div></div>
+        <p class="tiny faint mt16" style="padding-bottom:24px">Terrain: swisstopo swissALTIRegio (10 m, includes the border regions). Imagery: swisstopo SWISSIMAGE / national map. Shadows come from the terrain shown; the sun-on-the-spot times also use mountains up to 60 km away. Drag to turn, pinch to zoom, two fingers to move.</p>
       </div>`;
     wireUi(root);
     build(root).catch((e) => { const l = root.querySelector('#t3load'); if (l) l.innerHTML = `Could not load the 3D view (${esc(e.message)}).`; });
@@ -67,7 +73,7 @@ export function open3D(spot) {
       ['Equinox', localMidnight(new Date(Date.UTC(y, 2, 20, 12)))]];
     const dc = root.querySelector('#t3days');
     dc.innerHTML = days.map(([l, d], i) => `<button class="chip" data-d="${i}" aria-pressed="${d.getTime() === st.day.getTime()}">${l}</button>`).join('') +
-      `<input type="date" id="t3date" style="width:auto;padding:6px 8px;font-size:14px" value="${nowParts.y}-${String(nowParts.m).padStart(2, '0')}-${String(nowParts.d).padStart(2, '0')}">`;
+      `<input type="date" id="t3date" style="width:auto;padding:6px 8px;font-size:14px" aria-label="Any date" value="${nowParts.y}-${String(nowParts.m).padStart(2, '0')}-${String(nowParts.d).padStart(2, '0')}">`;
     dc.querySelectorAll('[data-d]').forEach((b) => b.addEventListener('click', () => {
       st.day = days[+b.dataset.d][1];
       dc.querySelectorAll('[data-d]').forEach((x) => x.setAttribute('aria-pressed', x === b));
@@ -99,39 +105,53 @@ export function open3D(spot) {
     st.sum = sum;
     const jumps = [['Sunrise', sum.ev.sunrise], ['Sun on the spot', sum.first], ['Noon', new Date(st.day.getTime() + 12.5 * 3600e3)], ['Sun leaves the spot', sum.last], ['Sunset', sum.ev.sunset]].filter(([, t]) => t);
     const jc = root.querySelector('#t3jumps');
-    jc.innerHTML = jumps.map(([l, t], i) => `<button class="btn small ghost" data-j="${i}">${l} ${hhmm(t)}</button>`).join('');
+    jc.innerHTML = jumps.map(([l, t], i) => `<button class="chip" data-j="${i}">${l} <b class="tnum">${hhmm(t)}</b></button>`).join('');
     jc.querySelectorAll('[data-j]').forEach((b) => b.addEventListener('click', () => {
       const t = jumps[+b.dataset.j][1], p = zurichParts(t);
       st.minutes = Math.round((p.h * 60 + p.min) / 5) * 5; stopPlay(root); update(root);
     }));
     root.querySelector('#t3sum').innerHTML = sum.mins
-      ? `☀️ Direct sun on the spot <b>${hhmm(sum.first)}–${hhmm(new Date(sum.last.getTime() + 5 * 60e3))}</b> (${Math.floor(sum.mins / 60)} h ${sum.mins % 60} min). Sunrise over the flat horizon ${hhmm(sum.ev.sunrise)}, sunset ${hhmm(sum.ev.sunset)}.`
-      : '⛰️ No direct sun on the spot this day: the mountains hide it all day.';
+      ? `Direct sun on the spot <b class="tnum">${hhmm(sum.first)} to ${hhmm(new Date(sum.last.getTime() + 5 * 60e3))}</b>, ${Math.floor(sum.mins / 60)} h ${sum.mins % 60} min in all. <span class="muted">Over a flat horizon the sun would rise at ${hhmm(sum.ev.sunrise)} and set at ${hhmm(sum.ev.sunset)}.</span>`
+      : 'No direct sun on the spot this day: the mountains hide it from morning to evening.';
+    // the day as a strip: night, shadow, sun on the spot
+    const strip = root.querySelector('#t3strip');
+    if (strip) {
+      const seg = []; let prev = null, n = 0;
+      for (let m = 0; m < 1440; m += 5) {
+        const t = new Date(st.day.getTime() + m * 60e3), k = sunAt(t, spot).alt < -0.8 ? 'n' : sunOnSpot(t) ? 's' : 'h';
+        if (k !== prev) { if (prev) seg.push([prev, n]); prev = k; n = 0; }
+        n++;
+      }
+      seg.push([prev, n]);
+      const col = { n: 'var(--sky-night)', h: 'var(--ink3)', s: 'var(--sunc)' };
+      strip.innerHTML = seg.map(([k, c]) => `<i style="flex:${c};background:${col[k]}"></i>`).join('');
+    }
     update(root);
   }
   function startPlay(root) {
     const from = st.sum.ev.sunrise ? zurichParts(st.sum.ev.sunrise) : { h: 6, min: 0 }, to = st.sum.ev.sunset ? zurichParts(st.sum.ev.sunset) : { h: 19, min: 0 };
     const a = from.h * 60 + from.min - 30, b = to.h * 60 + to.min + 30;
     if (st.minutes < a || st.minutes > b) st.minutes = a;
-    root.querySelector('#t3play').textContent = '❚❚ Pause';
+    root.querySelector('#t3play').innerHTML = `${icon('pause')}Pause`;
     st.playing = setInterval(() => { st.minutes += 5; if (st.minutes > b) st.minutes = a; update(root); }, 90);
   }
   function stopPlay(root) {
     if (st.playing) clearInterval(st.playing);
     st.playing = null;
-    const p = root.querySelector('#t3play'); if (p) p.textContent = '▶︎ Play the day';
+    const p = root.querySelector('#t3play'); if (p) p.innerHTML = `${icon('play')}Play the day`;
   }
 
   function update(root) {
     const t = new Date(st.day.getTime() + st.minutes * 60e3);
     const s = sunAt(t, spot), lit = sunOnSpot(t);
     const slider = root.querySelector('#t3slider'); if (slider) slider.value = st.minutes;
-    const tl = root.querySelector('#t3time'); if (tl) tl.textContent = `${hhmm(t)} · ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: TZ }).format(t)}`;
+    const tl = root.querySelector('#t3time'); if (tl) tl.textContent = hhmm(t);
+    const dl = root.querySelector('#t3date2'); if (dl) dl.textContent = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'long', timeZone: TZ }).format(t);
     const hud = root.querySelector('#t3hud');
     if (hud) {
       hud.hidden = !g;
-      hud.innerHTML = s.alt < -0.5 ? `🌙 Sun below the horizon (${Math.round(s.alt)}°)`
-        : `${lit ? '☀️ The spot is in the sun' : '⛰️ The spot is in shadow'}<br><span class="muted">Sun ${Math.round(s.alt)}° high in the ${compassWords(s.az)} (${Math.round(s.az)}°)</span>`;
+      hud.innerHTML = s.alt < -0.5 ? `<b>Sun below the horizon</b> (${Math.round(s.alt)}°)`
+        : `<b style="color:${lit ? '#ffd24a' : '#fff'}">${lit ? 'The spot is in the sun' : 'The spot is in shadow'}</b><br><span style="opacity:.75">Sun ${Math.round(s.alt)}° high in the ${compassWords(s.az)} (${Math.round(s.az)}°)</span>`;
     }
     if (g) { light(s); g.render(); }
   }
@@ -195,21 +215,21 @@ export function open3D(spot) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true; mesh.receiveShadow = true;
     sceneObj.add(mesh);
-    // the spot: a gold pin
+    // the spot: a red pin
     const pinH = W * 0.035, pin = new THREE.Group();
-    const pinMat = new THREE.MeshBasicMaterial({ color: 0xffb547 });
+    const pinMat = new THREE.MeshBasicMaterial({ color: 0xff3b2e });
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(W * 0.0012, W * 0.0012, pinH, 8), pinMat); pole.position.y = pinH / 2;
     const head = new THREE.Mesh(new THREE.SphereGeometry(W * 0.005, 16, 12), pinMat); head.position.y = pinH;
     pin.add(pole, head); sceneObj.add(pin);
     // compass letters at the edges
     const label = (txt, x, z, col) => {
       const c = document.createElement('canvas'); c.width = c.height = 128;
-      const x2 = c.getContext('2d'); x2.font = 'bold 84px -apple-system, Segoe UI, sans-serif'; x2.textAlign = 'center'; x2.textBaseline = 'middle';
-      x2.fillStyle = 'rgba(8,12,22,.55)'; x2.beginPath(); x2.arc(64, 64, 60, 0, 7); x2.fill(); x2.fillStyle = col; x2.fillText(txt, 64, 68);
+      const x2 = c.getContext('2d'); x2.font = '800 84px Archivo, sans-serif'; x2.textAlign = 'center'; x2.textBaseline = 'middle';
+      x2.fillStyle = 'rgba(0,0,0,.6)'; x2.beginPath(); x2.arc(64, 64, 60, 0, 7); x2.fill(); x2.fillStyle = col; x2.fillText(txt, 64, 68);
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
       sp.scale.set(W * 0.05, W * 0.05, 1); sp.position.set(x, W * 0.06, z); sceneObj.add(sp);
     };
-    label('N', -ox, -H / 2 - oz - W * 0.03, '#ffb547'); label('S', -ox, H / 2 - oz + W * 0.03, '#ffffff');
+    label('N', -ox, -H / 2 - oz - W * 0.03, '#ff4b3d'); label('S', -ox, H / 2 - oz + W * 0.03, '#ffffff');
     label('E', W / 2 - ox + W * 0.03, -oz, '#ffffff'); label('W', -W / 2 - ox - W * 0.03, -oz, '#ffffff');
     // light
     const sun = new THREE.DirectionalLight(0xffffff, 3);
