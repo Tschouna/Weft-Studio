@@ -77,10 +77,10 @@ export async function refresh({ force = false } = {}) {
     if (g.status === 'fulfilled') App.grid = { cells, series: g.value.data, at: g.value.at };
     if (kp.status === 'fulfilled') App.kp = kp.value;
     await score();
-    status(stale ? `Offline · forecast from ${ago(App.updatedAt)}` : `MeteoSwiss · ${ago(App.updatedAt)}`);
+    status(stale ? `${navigator.onLine === false ? 'Offline' : 'Not refreshed'} · forecast from ${ago(App.updatedAt)}` : `MeteoSwiss · ${ago(App.updatedAt)}`);
   } catch (e) {
     console.error(e);
-    App.error = e;
+    App.error = e; App.loading = false; // not loading any more: the screens show the reason instead of placeholders
     status(navigator.onLine === false ? 'Offline' : 'Forecast not available');
     App.emit('error', e);
   } finally {

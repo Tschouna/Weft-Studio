@@ -30,7 +30,13 @@ $$('.tabbar [data-tab]').forEach((b) => b.addEventListener('click', () => {
   show(b.dataset.tab);
 }));
 $('#btn-settings').addEventListener('click', () => openSettings());
-$('#btn-refresh').addEventListener('click', () => refresh({ force: true }));
+// MeteoSwiss publishes a new model run every three hours: reading it again within minutes brings
+// nothing new and only uses up the forecast service's allowance.
+$('#btn-refresh').addEventListener('click', () => {
+  const age = App.updatedAt ? Date.now() - App.updatedAt : Infinity;
+  if (!App.error && App.ops.length && age < 10 * 60e3) { toast(`Up to date: forecast read ${age < 90e3 ? 'just now' : `${Math.round(age / 60e3)} min ago`}`); return; }
+  refresh({ force: true });
+});
 
 App.on('ops', rerender);
 App.on('spots', rerender);

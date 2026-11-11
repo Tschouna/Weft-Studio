@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { TYPES, confidence, openAt, opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
 import { localMidnight, nightInfo, dayEvents, hhmm, moonAt, planetsTonight, starShutter } from '../js/astro.js';
 import { lightBands, almanac, regionWeather, fogTop, briefing, SHOOT } from '../js/brief.js';
-import { splice, fetchRetry } from '../js/sources/meteoswiss.js';
+import { splice, fetchRetry, limitText } from '../js/sources/meteoswiss.js';
 import { ICONS } from '../js/icons.js';
 import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
@@ -360,7 +360,7 @@ test('a dropped forecast request is tried again; a lasting failure is reported',
   const real = globalThis.fetch;
   try {
     let calls = 0;
-    globalThis.fetch = async () => { calls++; if (calls === 1) throw new TypeError('Failed to fetch'); if (calls === 2) return { status: 429, ok: false }; return { status: 200, ok: true }; };
+    globalThis.fetch = async () => { calls++; if (calls === 1) throw new TypeError('Failed to fetch'); if (calls === 2) return { status: 503, ok: false }; return { status: 200, ok: true }; };
     const r = await fetchRetry('https://example.invalid/', { wait: 1 });
     assert.equal(r.status, 200); assert.equal(calls, 3);
     calls = 0;
@@ -368,8 +368,14 @@ test('a dropped forecast request is tried again; a lasting failure is reported',
     await assert.rejects(fetchRetry('https://example.invalid/', { wait: 1 }), /Failed to fetch/);
     assert.equal(calls, 3);
     calls = 0;
-    globalThis.fetch = async () => { calls++; return { status: 400, ok: false }; }; // a refused request is not repeated
-    assert.equal((await fetchRetry('https://example.invalid/', { wait: 1 })).status, 400); assert.equal(calls, 1);
+    for (const refused of [400, 429]) { // a refused request, or one over the request limit, is not repeated
+      calls = 0;
+      globalThis.fetch = async () => { calls++; return { status: refused, ok: false }; };
+      assert.equal((await fetchRetry('https://example.invalid/', { wait: 1 })).status, refused); assert.equal(calls, 1);
+    }
+    assert.match(limitText('Daily API request limit exceeded. Please try again tomorrow.'), /tomorrow$/);
+    assert.match(limitText('Hourly API request limit exceeded.'), /in an hour$/);
+    assert.match(limitText('Minutely API request limit exceeded.'), /in a minute$/);
   } finally { globalThis.fetch = real; }
 });
 

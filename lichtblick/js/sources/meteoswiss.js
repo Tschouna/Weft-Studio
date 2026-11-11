@@ -36,13 +36,13 @@ function normalise(loc, keys) {
   return s;
 }
 
-// Mobile networks drop requests and the service's per-minute limit clears quickly: try again after a
-// short pause before giving up.
+// Mobile networks drop requests: try again after a short pause before giving up. An answer that says
+// the request limit is reached (429) is not repeated: asking again only uses up more of the allowance.
 export async function fetchRetry(url, { tries = 3, wait = 1500 } = {}) {
   for (let i = 1; ; i++) {
     try {
       const r = await fetch(url);
-      if (i < tries && (r.status === 429 || r.status >= 500)) throw new Error(`forecast service answered ${r.status}`);
+      if (i < tries && r.status >= 500) throw new Error(`forecast service answered ${r.status}`);
       return r;
     } catch (e) {
       if (i >= tries) throw e;
@@ -50,6 +50,10 @@ export async function fetchRetry(url, { tries = 3, wait = 1500 } = {}) {
     }
   }
 }
+
+// The free forecast service allows each internet connection so many requests a minute, an hour and a
+// day (one full refresh of this app is about two thirds of a minute's allowance).
+export const limitText = (reason = '') => `The free forecast service limits how often one internet connection may ask, and that limit is reached. Try again ${/daily/i.test(reason) ? 'tomorrow' : /hourly/i.test(reason) ? 'in an hour' : 'in a minute'}`;
 
 async function omFetch(points, keys, { pastDays = 2, days = 6, model = MODEL } = {}) {
   const q = new URLSearchParams({
@@ -63,7 +67,7 @@ async function omFetch(points, keys, { pastDays = 2, days = 6, model = MODEL } =
   const r = await fetchRetry(`${OM}?${q}`);
   const j = await r.json().catch(() => null);
   if (!r.ok || !j || j.error) {
-    const e = new Error((j && j.reason) || `forecast service answered ${r.status}`);
+    const e = new Error(r.status === 429 ? limitText(j && j.reason) : (j && j.reason) || `forecast service answered ${r.status}`);
     e.status = r.status; throw e;
   }
   const list = Array.isArray(j) ? j : [j];
