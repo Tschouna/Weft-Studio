@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { TYPES, confidence, openAt, opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
 import { localMidnight, nightInfo, dayEvents, hhmm, moonAt, planetsTonight, starShutter } from '../js/astro.js';
 import { lightBands, almanac, regionWeather, fogTop, briefing, SHOOT } from '../js/brief.js';
-import { splice } from '../js/sources/meteoswiss.js';
+import { splice, fetchRetry } from '../js/sources/meteoswiss.js';
 import { ICONS } from '../js/icons.js';
 import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
@@ -33,9 +33,12 @@ function fc(now, base, fn = () => ({})) {
 const refsWith = (now, base, fn) => LOWLAND_REFS.map((r) => ({ ...r, fc: fc(now, base, fn) }));
 
 let pass = 0, fail = 0;
+const pending = []; // tests that return a promise are counted when it settles
 function test(name, f) {
-  try { f(); pass++; console.log(`  ok  ${name}`); }
-  catch (e) { fail++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+  const ok = () => { pass++; console.log(`  ok  ${name}`); };
+  const bad = (e) => { fail++; console.log(`  FAIL ${name}\n       ${e.message}`); };
+  try { const r = f(); if (r && typeof r.then === 'function') pending.push(r.then(ok, bad)); else ok(); }
+  catch (e) { bad(e); }
 }
 const best = (ops, type) => ops.filter((o) => o.type === type).sort((a, b) => b.score - a.score)[0];
 
@@ -352,6 +355,24 @@ test('every chance type and species has a pictogram and shooting notes', () => {
   for (const [k, sp] of Object.entries(SPECIES)) assert.ok(ICONS[sp.glyph], `${k}: ${sp.glyph}`);
 });
 
+console.log('network');
+test('a dropped forecast request is tried again; a lasting failure is reported', async () => {
+  const real = globalThis.fetch;
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; if (calls === 1) throw new TypeError('Failed to fetch'); if (calls === 2) return { status: 429, ok: false }; return { status: 200, ok: true }; };
+    const r = await fetchRetry('https://example.invalid/', { wait: 1 });
+    assert.equal(r.status, 200); assert.equal(calls, 3);
+    calls = 0;
+    globalThis.fetch = async () => { calls++; throw new TypeError('Failed to fetch'); };
+    await assert.rejects(fetchRetry('https://example.invalid/', { wait: 1 }), /Failed to fetch/);
+    assert.equal(calls, 3);
+    calls = 0;
+    globalThis.fetch = async () => { calls++; return { status: 400, ok: false }; }; // a refused request is not repeated
+    assert.equal((await fetchRetry('https://example.invalid/', { wait: 1 })).status, 400); assert.equal(calls, 1);
+  } finally { globalThis.fetch = real; }
+});
+
 console.log('app shell');
 test('the service worker caches every module and data file', async () => {
   const { readFileSync, readdirSync } = await import('node:fs');
@@ -360,5 +381,6 @@ test('the service worker caches every module and data file', async () => {
   for (const f of [...walk('js'), ...walk('data')].filter((f) => /\.(js|mjs)$/.test(f))) assert.ok(sw.includes(`'${f}'`), `${f} missing from sw.js`);
 });
 
+await Promise.all(pending);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

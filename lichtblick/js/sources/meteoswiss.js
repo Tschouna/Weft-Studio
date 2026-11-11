@@ -36,6 +36,21 @@ function normalise(loc, keys) {
   return s;
 }
 
+// Mobile networks drop requests and the service's per-minute limit clears quickly: try again after a
+// short pause before giving up.
+export async function fetchRetry(url, { tries = 3, wait = 1500 } = {}) {
+  for (let i = 1; ; i++) {
+    try {
+      const r = await fetch(url);
+      if (i < tries && (r.status === 429 || r.status >= 500)) throw new Error(`forecast service answered ${r.status}`);
+      return r;
+    } catch (e) {
+      if (i >= tries) throw e;
+      await new Promise((ok) => setTimeout(ok, wait * i));
+    }
+  }
+}
+
 async function omFetch(points, keys, { pastDays = 2, days = 6, model = MODEL } = {}) {
   const q = new URLSearchParams({
     latitude: points.map((p) => p.lat.toFixed(4)).join(','),
@@ -45,7 +60,7 @@ async function omFetch(points, keys, { pastDays = 2, days = 6, model = MODEL } =
     past_days: String(pastDays), forecast_days: String(days),
   });
   if (points.every((p) => Number.isFinite(p.elev))) q.set('elevation', points.map((p) => Math.round(p.elev)).join(','));
-  const r = await fetch(`${OM}?${q}`);
+  const r = await fetchRetry(`${OM}?${q}`);
   const j = await r.json().catch(() => null);
   if (!r.ok || !j || j.error) {
     const e = new Error((j && j.reason) || `forecast service answered ${r.status}`);
