@@ -1,19 +1,40 @@
 {
-  "name": "Lichtblick – photo weather for Switzerland",
+  "name": "Lichtblick: photo light for Switzerland",
   "short_name": "Lichtblick",
-  "description": "Where and when the light will be good in Switzerland: sea of fog, mirror lakes, lightning, fresh snow, autumn colours and the Milky Way.",
+  "description": "Where and when the light will be good in Switzerland, ten days ahead: sea of fog, mirror lakes, lightning, fresh snow, autumn colours, wildlife and the Milky Way.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0b1220",
-  "theme_color": "#0b1220",
-  "categories": ["photo", "weather", "travel"],
+  "background_color": "#eff0ee",
+  "theme_color": "#eff0ee",
+  "categories": [
+    "photo",
+    "weather",
+    "travel"
+  ],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
   ]
 }

@@ -140,7 +140,7 @@ export function wildlifeDay(spot, fc, date) {
   const title = evs[0] ? evs[0].title : sp.rhythm === 'park' ? `${spot.name}: animals up close` : `${sp.name} ${{ morning: 'in the morning', evening: 'in the evening', midday: 'by day' }[part]}`;
   const raw = clamp(peak.total);
   const score = Math.round(100 * raw * (sp.rhythm === 'park' ? 0.75 : 1));
-  return { hours, peak, start: hours[i0].t, end: hours[i1].t + H, species: peak.best, icon: sp.icon, title, why, score, ev, falling, fresh, list };
+  return { hours, peak, start: hours[i0].t, end: hours[i1].t + H, species: peak.best, icon: sp.glyph, emoji: sp.emoji, title, why, score, ev, falling, fresh, list };
 }
 
 export function wildlifeOps(spot, fc, ctx, days) {
@@ -149,7 +149,7 @@ export function wildlifeOps(spot, fc, ctx, days) {
   for (const d of days) {
     const r = wildlifeDay(spot, fc, new Date(d.day.getTime() + 12 * H));
     if (!r || r.score < 40) continue;
-    out.push({ type: 'wildlife', spotId: spot.id, start: new Date(r.start), end: new Date(r.end), peak: new Date(r.peak.t), score: r.score, title: r.title, why: r.why, icon: r.icon, species: r.species });
+    out.push({ type: 'wildlife', spotId: spot.id, start: new Date(r.start), end: new Date(r.end), peak: new Date(r.peak.t), score: r.score, title: r.title, why: r.why, icon: r.icon, emoji: r.emoji, species: r.species });
   }
   return out;
 }

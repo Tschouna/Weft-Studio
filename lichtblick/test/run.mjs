@@ -1,8 +1,11 @@
 // Checks for the opportunity detectors, with made-up forecasts of exactly the weather each one is about.
 //   node test/run.mjs
 import assert from 'node:assert/strict';
-import { openAt, opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
-import { localMidnight, nightInfo, dayEvents, hhmm, moonAt } from '../js/astro.js';
+import { TYPES, confidence, openAt, opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
+import { localMidnight, nightInfo, dayEvents, hhmm, moonAt, planetsTonight, starShutter } from '../js/astro.js';
+import { lightBands, almanac, regionWeather, fogTop, briefing, SHOOT } from '../js/brief.js';
+import { splice } from '../js/sources/meteoswiss.js';
+import { ICONS } from '../js/icons.js';
 import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
 import { SKY } from '../data/sky.js';
@@ -270,6 +273,83 @@ test('every spot species is known, every species has 12 months', () => {
   for (const s of SPOTS) for (const id of s.species || []) assert.ok(SPECIES[id], `${s.id}: ${id}`);
   for (const [id, sp] of Object.entries(SPECIES)) assert.equal(sp.season.length, 12, id);
   assert.ok(inSeason(spot('trupchun'), new Date('2026-09-26T10:00:00Z'))[0].events.length);
+});
+
+console.log('briefing, outlook, almanac');
+test('the light of a day adds up to 24 hours, with two golden hours', () => {
+  const lb = lightBands(new Date('2026-11-12T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 });
+  assert.equal(Math.round(lb.bands.reduce((a, b) => a + (b.to - b.from), 0) / 60e3), 1440);
+  assert.equal(lb.bands.filter((b) => b.kind === 'gold').length, 2);
+  assert.ok(lb.bands[0].kind === 'night' && lb.bands.some((b) => b.kind === 'day'));
+});
+test('with a mountain horizon the sun reaches Riffelsee late and leaves early', () => {
+  const s = spot('riffelsee'), lb = lightBands(new Date('2026-11-12T10:00:00Z'), s, s.horizon);
+  const direct = lb.direct.reduce((a, b) => a + (b.to - b.from), 0) / 3600e3, ev = dayEvents(new Date('2026-11-12T10:00:00Z'), s);
+  assert.ok(direct > 4 && direct < (ev.sunset - ev.sunrise) / 3600e3 - 1.5, `${direct} h`);
+});
+test('outlook is spliced after the last MeteoSwiss hour and marked', () => {
+  const now = new Date('2026-11-12T06:00:00Z'), t0 = localMidnight(now).getTime();
+  const ms = { lat: 47, lon: 8, t: [], temp: [], rh: [], cloud: [], wind: [], sun: [], dew: [], gust: [], windDir: [], precip: [] };
+  for (let i = 0; i < 144; i++) { ms.t.push(t0 + i * H); const ok = i < 120; ms.temp.push(ok ? 5 : null); for (const k of ['rh', 'cloud', 'wind', 'sun', 'dew', 'gust', 'windDir', 'precip']) ms[k].push(ok ? 1 : null); }
+  const out = { t: [], temp: [], rh: [], cloud: [], wind: [], precip: [] };
+  for (let i = 0; i < 240; i++) { out.t.push(t0 + i * H); out.temp.push(9); out.rh.push(80); out.cloud.push(20); out.wind.push(10); out.precip.push(0); }
+  const s = splice(ms, out);
+  assert.equal(s.outlookFrom, t0 + 120 * H);
+  assert.equal(s.t.length, 240);
+  assert.equal(s.temp[119], 5); assert.equal(s.temp[120], 9);
+  assert.ok(s.gust[130] > 10 && s.dew[130] < 9 && s.windDir[130] === null);
+  assert.ok(Math.max(...s.sun.slice(120)) > 2000 && Math.min(...s.sun.slice(120)) === 0, 'estimated sunshine by day only');
+  assert.equal(confidence(t0 + 130 * H, s, now.getTime()), 'low');
+  assert.equal(confidence(now.getTime() + 20 * H, s, now.getTime()), 'high');
+  assert.equal(confidence(now.getTime() + 60 * H, s, now.getTime()), 'medium');
+});
+test('chances beyond day five are found, marked as outlook and scored lower', () => {
+  const now = new Date('2026-07-14T06:00:00Z');
+  const f = fc(now, { cloud: 0, wind: 1, gust: 2 }); f.outlookFrom = localMidnight(now, 3).getTime();
+  const ops = opportunitiesFor(spot('bachalpsee'), f, makeContext({ now }));
+  const far = ops.filter((o) => o.outlook), near = ops.filter((o) => !o.outlook && o.type === 'mirror');
+  assert.ok(far.length && near.length);
+  assert.ok(far.every((o) => o.conf === 'low' && /Outlook/.test(o.why.join(' '))));
+  assert.ok(best(far, 'mirror').score < best(near, 'mirror').score);
+});
+test('sea of fog: top found between foggy lowlands and clear heights', () => {
+  const t = Date.UTC(2026, 10, 12, 8), pts = [];
+  for (let e = 300; e <= 2600; e += 50) pts.push({ elev: e, lat: 47, fc: { t: [t, t + H], low: [e < 950 ? 100 : 5, 0], mid: [0, 0], precip: [0, 0] } });
+  const f = fogTop(pts, t);
+  assert.ok(f && Math.abs(f.top - 950) <= 50, JSON.stringify(f));
+  assert.equal(fogTop(pts.map((p) => ({ ...p, fc: { ...p.fc, low: [10, 10] } })), t), null);
+});
+test('regions: sunny Engadin ranks above a rainy Jura', () => {
+  const day = new Date('2026-07-14T10:00:00Z'), t0 = localMidnight(day).getTime();
+  const cells = [], series = [];
+  for (const [lat, lon, wet] of [[46.55, 9.95, 0], [46.6, 9.9, 0], [47.2, 7.0, 1], [47.25, 7.1, 1]]) {
+    cells.push({ lat, lon });
+    const s = { t: [], elev: 1000, cloud: [], low: [], precip: [], sun: [], temp: [], code: [] };
+    for (let i = 0; i < 48; i++) { s.t.push(t0 + i * H); s.cloud.push(wet ? 100 : 5); s.low.push(wet ? 90 : 0); s.precip.push(wet ? 1.2 : 0); s.sun.push(wet ? 0 : 3600); s.temp.push(14); s.code.push(wet ? 63 : 0); }
+    series.push(s);
+  }
+  const r = regionWeather({ cells, series }, day);
+  assert.equal(r[0].id, 'engadin'); assert.equal(r[0].word, 'Sunny');
+  assert.equal(r[r.length - 1].id, 'jura'); assert.equal(r[r.length - 1].word, 'Rain');
+  assert.match(briefing(day, { regions: r }).text.join(' '), /Engadin/);
+});
+test('almanac for any date: winter brings frozen lakes and the ibex rut, no Milky Way core', () => {
+  const a = almanac(new Date('2027-12-18T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 }, SPOTS);
+  assert.ok(a.seasons.some((s) => /Frozen/.test(s.title)) && a.seasons.some((s) => /fog/i.test(s.title)));
+  assert.ok(a.wildlife.some((w) => /Ibex rut/.test(w.title) && w.spots.length >= 3));
+  assert.equal(a.night.coreMinutes, 0);
+  assert.ok(a.dayLength > 500 && a.dayLength < 520 && Math.abs(a.dayChange) <= 1, `${a.dayLength} ${a.dayChange}`);
+  const o = almanac(new Date('2027-10-20T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 }, SPOTS);
+  assert.ok(o.colour.some((c) => c.species === 'larch' && c.names.length >= 3), JSON.stringify(o.colour));
+});
+test('planets: bright ones listed with a sensible window', () => {
+  const p = planetsTonight(new Date('2026-11-12T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 });
+  assert.ok(Array.isArray(p) && p.length >= 1 && p.every((x) => x.best.alt >= 6 && x.from <= x.to && Number.isFinite(x.mag)), JSON.stringify(p.map((x) => x.name)));
+  assert.deepEqual(starShutter(24), { ok: 20, sharp: 12 });
+});
+test('every chance type and species has a pictogram and shooting notes', () => {
+  for (const [k, t] of Object.entries(TYPES)) { assert.ok(ICONS[t.icon], `${k}: ${t.icon}`); assert.ok(SHOOT[k] && SHOOT[k].length, `notes for ${k}`); assert.ok(t.emoji); }
+  for (const [k, sp] of Object.entries(SPECIES)) assert.ok(ICONS[sp.glyph], `${k}: ${sp.glyph}`);
 });
 
 console.log('app shell');

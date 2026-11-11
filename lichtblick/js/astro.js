@@ -245,3 +245,29 @@ export function fists(alt) {
   if (f < 1.25) return 'one fist above the horizon';
   return `${(Math.round(f * 2) / 2).toString().replace('.5', '½')} fists above the horizon`;
 }
+
+// The bright planets of the night that starts on the evening of `date`: when each is well above the
+// horizon in a dark enough sky, where it stands highest, and how bright it is.
+export function planetsTonight(date, spot) {
+  const o = observer(spot), noon = new Date(localMidnight(date).getTime() + 12 * H);
+  const sunset = searchRiseSet('Sun', o, -1, noon) || new Date(noon.getTime() + 8 * H);
+  const sunrise = searchRiseSet('Sun', o, +1, sunset) || new Date(noon.getTime() + 20 * H);
+  const out = [];
+  for (const body of ['Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn']) {
+    let first = null, last = null, best = null;
+    for (let t = sunset.getTime(); t <= sunrise.getTime(); t += 15 * 60e3) {
+      const d = new Date(t);
+      if (sunAt(d, spot).alt > -5) continue;
+      const time = A.MakeTime(d), eq = A.Equator(body, time, o, true, true), h = A.Horizon(time, o, eq.ra, eq.dec, 'normal');
+      if (h.altitude < 6) continue;
+      if (!first) first = d;
+      last = d;
+      if (!best || h.altitude > best.alt) best = { t: d, alt: h.altitude, az: h.azimuth };
+    }
+    if (best && last - first >= 30 * 60e3) out.push({ name: body, from: first, to: last, best, mag: A.Illumination(body, A.MakeTime(best.t)).mag });
+  }
+  return out.sort((a, b) => a.mag - b.mag);
+}
+
+// longest shutter for point-like stars: the "500 rule" and a stricter one for large prints
+export const starShutter = (focal, crop = 1) => ({ ok: Math.floor(500 / (focal * crop)), sharp: Math.floor(300 / (focal * crop)) });
