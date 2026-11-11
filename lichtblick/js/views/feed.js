@@ -104,7 +104,8 @@ export function renderFeed(root) {
   let chances;
   if (far) chances = `<div class="notice">Forecasts reach ten days. For this date you see the light, the moon and what is in season; come back from <b>${esc(new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', timeZone: TZ }).format(new Date(sel - 9 * DAY)))}</b> for the weather.</div>`;
   else if (App.loading && !App.ops.length) chances = `<div class="stack">${'<div class="skeleton"></div>'.repeat(4)}</div>`;
-  else if (App.error && !App.ops.length) chances = `<div class="notice warn"><b>No forecast.</b> ${esc(App.error.message)}. Check the connection and press refresh.</div>`;
+  else if (App.error && !App.ops.length) chances = App.error.status === 429 ? `<div class="notice warn"><b>No forecast for the moment.</b> ${esc(App.error.message)}.</div>`
+    : `<div class="notice warn"><b>No forecast.</b> ${esc(App.error.message)}. Check the connection and press refresh.</div>`;
   else if (!list.length) chances = `<div class="empty">Nothing special in the forecast${group !== 'all' ? ' for this filter' : ''}.<br><span class="small">Grey days happen. Try another day in the strip above.</span></div>`;
   else chances = `<div class="rows">${list.map((o) => chanceRow(o)).join('')}</div>`;
 
