@@ -35,11 +35,22 @@ const path = require('path');
   const scroll = (sel, y) => page.evaluate(([s, top]) => document.querySelector(s).scrollTo(0, top), [sel, y]);
   const closeSheet = () => page.click('#sheet [data-close]');
   const dayCells = () => page.$$('#view-feed .ribbon [data-day]');
+  // a screen must scroll straight up and down: nothing wider than the phone, no sideways panning, no zoom
+  const straight = async (sel) => {
+    const r = await page.evaluate((s) => {
+      const el = document.querySelector(s), cs = getComputedStyle(el);
+      el.scrollLeft = 300; const moved = el.scrollLeft; el.scrollLeft = 0;
+      return { overflowX: cs.overflowX, moved, wider: el.scrollWidth - el.clientWidth };
+    }, sel);
+    if (r.overflowX !== 'hidden' || r.moved || r.wider > 0) throw new Error(`${sel} can slide sideways: ${JSON.stringify(r)}`);
+  };
 
   // home: today, further down, another day, a day in the outlook, a date months away
   await page.goto(base);
   await page.waitForSelector('#view-feed .tt', { timeout: 30000 });
   await shot('01-home');
+  await straight('#view-feed');
+  if (!/user-scalable=no/.test(await page.getAttribute('meta[name=viewport]', 'content'))) throw new Error('the page can be zoomed');
   await scroll('#view-feed', 620); await shot('02-home-light');
   await scroll('#view-feed', 1500); await shot('03-home-chances');
   await scroll('#view-feed', 99999); await shot('04-home-regions');
@@ -56,6 +67,7 @@ const path = require('path');
   await page.waitForSelector('#sheet h1');
   await page.waitForTimeout(1500);
   await shot('10-spot');
+  await straight('#sheet .sheet-inner');
   for (const [i, y] of [900, 1800, 2700, 3600].entries()) { await scroll('#sheet .sheet-inner', y); await page.waitForTimeout(600); await shot(`1${i + 1}-spot`); }
   await scroll('#sheet .sheet-inner', 0);
   await page.click('#sheet [data-act="3d"]');
@@ -80,12 +92,14 @@ const path = require('path');
   await page.selectOption('#skyspot', 'grimsel');
   await page.waitForTimeout(500);
   await shot('30-night');
+  await straight('#view-sky');
   for (const [i, y] of [700, 1500, 2400, 3300].entries()) { await scroll('#view-sky', y); await shot(`3${i + 1}-night`); }
 
   // wildlife
   await page.click('[data-tab="wild"]');
   await page.waitForSelector('#view-wild .tt', { timeout: 20000 });
   await shot('40-wildlife');
+  await straight('#view-wild');
   await page.selectOption('#wspot', 'niederhorn');
   await page.waitForTimeout(800);
   await page.evaluate(() => document.querySelector('#planner').scrollIntoView());
@@ -98,11 +112,13 @@ const path = require('path');
   await page.click('[data-tab="spots"]');
   await page.waitForSelector('#view-spots .spotc');
   await shot('50-spots');
+  await straight('#view-spots');
   await page.click('[data-kind="dark"]'); await shot('51-spots-dark-sky');
   await page.click('#addspot'); await page.waitForSelector('#addq'); await shot('52-add-spot'); await closeSheet();
   await page.click('#btn-settings');
   await page.waitForSelector('#mbkey');
   await shot('60-settings');
+  await straight('#sheet .sheet-inner');
   await scroll('#sheet .sheet-inner', 800); await shot('61-settings');
   if (theme === 'light') { // switching the look works without a reload
     await scroll('#sheet .sheet-inner', 0);

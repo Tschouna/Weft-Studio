@@ -31,7 +31,9 @@
 html.red .topbar, html.red #views, html.red .tabbar, html.red #sheet, html.red #toast { filter: url(#redonly); }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+html, body { margin: 0; height: 100%; width: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--ink); }
+/* an app, not a web page: no pinch or double-tap zoom, which would let the whole screen slide around */
+html { touch-action: pan-x pan-y; }
 body { font: 400 15px/1.45 "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif; font-stretch: 100%; overscroll-behavior-y: none; -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; color: inherit; font-stretch: inherit; }
 button { cursor: pointer; }
@@ -77,7 +79,8 @@ h1, h2, h3, p { margin: 0; }
 .tabbar button[aria-selected="true"]::before { content: ""; position: absolute; top: -1px; left: 18%; right: 18%; height: 3px; background: var(--accent); }
 
 #views { position: fixed; top: var(--top); bottom: var(--tab); left: 0; right: 0; }
-.view { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px 36px; }
+/* screens scroll straight up and down, never sideways; only the strips and tables inside them do */
+.view { position: absolute; inset: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 16px 36px; }
 .view[data-view="map"] { padding: 0; overflow: hidden; }
 .wrap { max-width: 720px; margin: 0 auto; }
 .bleed { margin-left: -16px; margin-right: -16px; width: calc(100% + 32px); }
@@ -103,7 +106,7 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 16px 0; }
 .btn.small { padding: 7px 10px; font-size: 13px; }
 .btn:disabled { opacity: 0.45; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px; }
-.chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 16px 2px; margin: 0 -16px; scrollbar-width: none; }
+.chips { display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; padding: 2px 16px 2px; margin: 0 -16px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 .chip { flex: none; border: 1px solid var(--rule); background: var(--paper); color: var(--ink2); border-radius: var(--r); padding: 7px 11px; font-size: 13px; font-weight: 600; font-stretch: 92%; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
@@ -113,6 +116,7 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 16px 0; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 input[type="text"], input[type="search"], input[type="password"], input[type="number"], input[type="date"], textarea, select {
   width: 100%; background: var(--paper); border: 1px solid var(--rule); color: var(--ink); border-radius: var(--r); padding: 11px 12px; font-size: 16px; }
+input[type="date"] { min-width: 0; max-width: 100%; }
 input:focus, textarea:focus, select:focus { border-color: var(--ink); outline: none; }
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 label.field { display: grid; gap: 6px; margin: 12px 0; font-size: 13px; color: var(--ink2); font-weight: 600; }
@@ -138,7 +142,7 @@ select.pick { width: auto; max-width: 100%; font-weight: 700; font-stretch: 92%;
 
 /* ---- day ribbon (home) ---- */
 .ribbon { position: sticky; top: 0; z-index: 20; background: var(--bg); margin: 0 -16px; border-bottom: 1px solid var(--ink); display: flex; }
-.ribbon .days { display: flex; overflow-x: auto; scrollbar-width: none; flex: 1; }
+.ribbon .days { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; flex: 1; min-width: 0; }
 .ribbon .days::-webkit-scrollbar { display: none; }
 .day { flex: none; width: 54px; border: 0; background: none; padding: 8px 0 7px; display: grid; justify-items: center; gap: 1px; color: var(--ink2); border-right: 1px solid var(--rule2); position: relative; }
 .day .dw { font-size: 10.5px; font-weight: 700; font-stretch: 84%; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -152,8 +156,9 @@ select.pick { width: auto; max-width: 100%; font-weight: 700; font-stretch: 92%;
 .day[aria-pressed="true"] .dn { color: var(--bg); }
 .day[aria-pressed="true"] .bar { background: rgba(127, 127, 127, 0.5); } .day[aria-pressed="true"] .bar i { background: var(--bg); }
 .day[aria-pressed="true"] .bar.s5 i { background: var(--accent); }
-.ribbon .cal { flex: none; width: 50px; border: 0; border-left: 1px solid var(--ink); background: var(--bg); display: grid; place-items: center; position: relative; color: var(--ink); }
-.ribbon .cal input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; padding: 0; }
+.ribbon .cal { flex: none; width: 50px; overflow: hidden; border: 0; border-left: 1px solid var(--ink); background: var(--bg); display: grid; place-items: center; position: relative; color: var(--ink); }
+/* iPhones give date fields a width of their own: without this the hidden one sticks out past the screen edge */
+.ribbon .cal input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; padding: 0; min-width: 0; max-width: 100%; border: 0; -webkit-appearance: none; appearance: none; }
 
 /* ---- light ribbon: the day's sky from midnight to midnight ---- */
 .light { position: relative; }
@@ -232,7 +237,7 @@ details.fold > div { padding: 0 0 12px; }
 
 /* ---- sheets ---- */
 .sheet { position: fixed; inset: 0; z-index: 2000; background: var(--veil); display: flex; align-items: flex-end; justify-content: center; animation: fade 0.16s ease; }
-.sheet-inner { width: 100%; max-width: 720px; max-height: calc(100% - 22px - env(safe-area-inset-top)); overflow-y: auto; background: var(--bg); border-top: 3px solid var(--accent); padding-bottom: calc(26px + env(safe-area-inset-bottom)); animation: up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); -webkit-overflow-scrolling: touch; }
+.sheet-inner { width: 100%; max-width: 720px; max-height: calc(100% - 22px - env(safe-area-inset-top)); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border-top: 3px solid var(--accent); padding-bottom: calc(26px + env(safe-area-inset-bottom)); animation: up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); -webkit-overflow-scrolling: touch; }
 @keyframes up { from { transform: translateY(36px); opacity: 0.5; } }
 @keyframes fade { from { opacity: 0; } }
 .sheet-head { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 6px 16px; background: var(--bg); border-bottom: 1px solid var(--rule); }
@@ -249,7 +254,7 @@ details.fold > div { padding: 0 0 12px; }
 .skybox { background: #05070d; border-radius: var(--r); overflow: hidden; --moon-edge: transparent; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--ink2); margin-top: 7px; }
 .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 1px; }
-.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.scroll-x { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 table.hours { border-collapse: collapse; font-size: 12px; min-width: 100%; font-variant-numeric: tabular-nums; }
 table.hours th { color: var(--ink2); font-weight: 700; font-stretch: 86%; padding: 5px 4px; font-size: 11px; letter-spacing: 0.04em; }
 table.hours th.rh { text-align: left; white-space: nowrap; position: sticky; left: 0; background: var(--bg); padding-right: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px; z-index: 1; }
