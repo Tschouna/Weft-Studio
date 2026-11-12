@@ -211,6 +211,8 @@ select.pick { width: auto; max-width: 100%; font-weight: 700; font-stretch: 92%;
 .pad { padding: 12px 14px; }
 .notice { border-left: 3px solid var(--ink); background: var(--paper); padding: 10px 12px; font-size: 13px; color: var(--ink2); }
 .notice.warn { border-left-color: var(--accent); }
+.steps { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 12px; color: var(--ink); }
+.steps li::marker { font-weight: 800; }
 .notice b { color: var(--ink); }
 .empty { text-align: center; color: var(--ink2); padding: 44px 20px; }
 .skeleton { height: 86px; background: linear-gradient(90deg, var(--rule2) 0%, var(--paper) 50%, var(--rule2) 100%); background-size: 200% 100%; animation: shimmer 1.3s infinite; }

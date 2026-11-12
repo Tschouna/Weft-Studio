@@ -6,6 +6,7 @@ import { TYPES } from '../scoring.js';
 import { esc, openSheet, sheetHead, toast, rerenderSheet } from '../ui.js';
 import { icon } from '../icons.js';
 import { THEMES, setTheme } from '../theme.js';
+import { pushSupport, currentSubscription, enablePush, disablePush, setupCode, secretsUrl } from '../push.js';
 
 const THEME_ICON = { auto: 'sunrise', light: 'sun', dark: 'moon', red: 'eye' };
 
@@ -28,11 +29,23 @@ export function openSettings() {
         <p class="tiny faint mt8" id="mbstate">Package: ${esc(tier)} · ${c.calls} calls, about ${Math.round(c.credits / 1000)}k credits used since ${new Date(c.since).toLocaleDateString('en-GB')}</p>
       </div>
       ${sec('Alerts')}
-        <div class="switch"><span><b>Notify me about great chances</b><br><span class="tiny faint">Checked whenever the app refreshes (${perm === 'granted' ? 'allowed' : perm === 'denied' ? 'blocked in the browser settings' : perm === 'unsupported' ? 'this browser has no notifications; install the app to the home screen' : 'permission will be asked'})</span></span><input type="checkbox" id="anotify" ${st.notify ? 'checked' : ''}></div>
+        <div class="notice" id="pushbox">
+          <b>Alerts while the app is closed</b>
+          <p class="small mt4">A free job on GitHub looks at the forecast every three hours in the daytime and sends new chances to this phone as notifications, following the settings below. Set it up once:</p>
+          <ol class="steps small">
+            <li><button class="btn small primary" id="pushon">${icon('bell')}Turn on for this phone</button><div class="tiny muted mt4" id="pushstate"></div></li>
+            <li><button class="btn small" id="pushcopy" disabled>${icon('save')}Copy the setup code</button>
+              <textarea id="pushcode" rows="3" readonly hidden class="mt8" style="font-size:11px" aria-label="Setup code"></textarea></li>
+            <li>${secretsUrl() ? `Open <a href="${esc(secretsUrl())}" target="_blank" rel="noopener"><b>New secret</b> on GitHub</a>` : 'On GitHub, open the repository, then <b>Settings → Secrets and variables → Actions → New repository secret</b>'}. Name it <b class="tnum">LICHTBLICK_PUSH</b>, paste the code into <i>Secret</i>, tap <i>Add secret</i>.</li>
+          </ol>
+          <p class="tiny faint mt8">The code holds this phone's address for notifications, a key made on this phone, your alert settings and your own spots. It is stored encrypted on GitHub. If you change the settings below or add spots, copy the code again and update the secret. To try it: on GitHub, Actions → Lichtblick → Run workflow → tick <i>test</i>.</p>
+        </div>
+        <div class="eyebrow mt24">What to alert about</div>
+        <div class="switch"><span><b>Also notify me when I open the app</b><br><span class="tiny faint">Checked whenever the app refreshes (${perm === 'granted' ? 'allowed' : perm === 'denied' ? 'blocked in the browser settings' : perm === 'unsupported' ? 'this browser has no notifications; install the app to the home screen' : 'permission will be asked'})</span></span><input type="checkbox" id="anotify" ${st.notify ? 'checked' : ''}></div>
         <label class="field mt12">Only when the score is at least <b class="num" id="aminv">${st.alertMin}</b><input type="range" id="amin" min="50" max="95" step="5" value="${st.alertMin}"></label>
         <div class="switch"><span>Only my saved and own spots</span><input type="checkbox" id="afav" ${st.alertFavsOnly ? 'checked' : ''}></div>
         <div class="btns gap6 mt12" id="atypes">${Object.entries(TYPES).map(([k, t]) => `<button class="chip" data-type="${k}" aria-pressed="${types.includes(k)}">${icon(t.icon)}${esc(t.label)}</button>`).join('')}</div>
-        <p class="tiny faint mt8">Chances beyond day five come from the longer-range outlook and never trigger an alert. For alerts while the app is closed, see "Push alerts" in the README (a free ntfy.sh topic and a scheduled GitHub job).</p>
+        <p class="tiny faint mt8">Chances beyond day five come from the longer-range outlook and never trigger an alert.</p>
       </div>
       ${sec('Spots', `${mySpots().length} of your own`)}
         <div class="switch"><span>Show the curated spots</span><input type="checkbox" id="curated" ${st.showCurated ? 'checked' : ''}></div>
@@ -81,6 +94,37 @@ export function openSettings() {
       saveSettings({ notify: e.target.checked });
       if (e.target.checked) { toast('Alerts on'); score(); }
     });
+    // ---- alerts while the app is closed ----
+    const pOn = root.querySelector('#pushon'), pCopy = root.querySelector('#pushcopy'), pState = root.querySelector('#pushstate'), pCode = root.querySelector('#pushcode');
+    let sub = null;
+    const pushUi = () => {
+      const sup = pushSupport();
+      if (!sup.ok) {
+        pOn.disabled = true;
+        pState.textContent = sup.why === 'install' ? 'On an iPhone, alerts need the app on the Home Screen first: in Safari tap Share, then Add to Home Screen, and open Lichtblick from there.' : 'This browser cannot receive notifications while the app is closed.';
+        return;
+      }
+      pOn.innerHTML = sub ? `${icon('check')}On for this phone` : `${icon('bell')}Turn on for this phone`;
+      pOn.classList.toggle('primary', !sub);
+      pCopy.disabled = !sub; pCopy.classList.toggle('primary', !!sub);
+      pState.innerHTML = sub ? 'This phone is ready. <a href="#" id="pushoff">Turn off</a>' : '';
+      root.querySelector('#pushoff')?.addEventListener('click', async (e) => { e.preventDefault(); await disablePush().catch(() => {}); sub = null; pCode.hidden = true; pushUi(); toast('Alerts off for this phone'); });
+    };
+    currentSubscription().then((s) => { sub = s; pushUi(); }).catch(() => pushUi());
+    pushUi();
+    pOn.addEventListener('click', async () => {
+      if (sub) return;
+      pState.textContent = 'Asking the phone…';
+      try { sub = await enablePush(); pushUi(); toast('Ready: now copy the setup code'); }
+      catch (e) { pState.textContent = `${e.message}.`; }
+    });
+    pCopy.addEventListener('click', async () => {
+      if (!sub) return;
+      const code = setupCode(sub);
+      try { await navigator.clipboard.writeText(code); toast('Setup code copied'); }
+      catch { pCode.hidden = false; pCode.value = code; pCode.focus(); pCode.select(); toast('Select all of it and copy'); }
+    });
+
     const amin = root.querySelector('#amin');
     amin.addEventListener('input', () => { root.querySelector('#aminv').textContent = amin.value; });
     amin.addEventListener('change', () => saveSettings({ alertMin: +amin.value }));

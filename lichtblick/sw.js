@@ -6,7 +6,7 @@ const SHELL = [
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'vendor/astronomy.mjs',
   'vendor/leaflet/images/layers.png', 'vendor/leaflet/images/layers-2x.png', 'vendor/leaflet/images/marker-icon.png',
-  'js/main.js', 'js/app.js', 'js/icons.js', 'js/theme.js', 'js/brief.js', 'js/wildlife.js', 'js/lightpollution.js', 'js/ui.js', 'js/store.js', 'js/geo.js', 'js/astro.js', 'js/scoring.js', 'js/exif.js',
+  'js/main.js', 'js/app.js', 'js/icons.js', 'js/theme.js', 'js/brief.js', 'js/push.js', 'js/wildlife.js', 'js/lightpollution.js', 'js/ui.js', 'js/store.js', 'js/geo.js', 'js/astro.js', 'js/scoring.js', 'js/exif.js',
   'js/sources/meteoswiss.js', 'js/sources/meteoblue.js', 'js/sources/swisstopo.js', 'js/sources/spaceweather.js',
   'js/views/feed.js', 'js/views/parts.js', 'js/views/wildlife.js', 'js/sources/inaturalist.js', 'js/views/map.js', 'js/views/sky.js', 'js/views/spots.js', 'js/views/spot.js', 'js/views/settings.js', 'js/views/charts.js', 'js/views/terrain3d.js', 'js/sources/terrain.js',
   'data/spots.js', 'data/species.js', 'data/sky.js', 'data/horizons.js', 'data/phenology.js', 'data/ch-outline.js',
@@ -28,6 +28,15 @@ self.addEventListener('fetch', (e) => {
     const hit = await cache.match(e.request, { ignoreSearch: true });
     const net = fetch(e.request).then((r) => { if (r.ok) cache.put(e.request, r.clone()); return r; }).catch(() => hit);
     return hit || net;
+  }));
+});
+
+// An alert sent by the scheduled job while the app is closed (scripts/digest.mjs).
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Lichtblick', {
+    body: d.body || '', tag: d.tag || undefined, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { spot: d.spot || null },
   }));
 });
 
