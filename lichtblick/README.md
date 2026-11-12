@@ -71,17 +71,25 @@ In *Settings*, paste your own meteoblue API key.
 - **Seeing**, **jet stream** and the **bad layer** are in meteoblue's *Seeing* package, which is not part of the free API. With a key that includes it, the app uses it automatically (`seeing-1h`, `clouds-1h`, `moonlight-1h`).
 - Without a key, the night sky still works with MeteoSwiss clouds, and each spot links to meteoblue's free astronomy-seeing web page.
 
-## Push alerts while the app is closed
+## Alerts while the app is closed
 
-In the app, *Settings → Alerts* notifies you about great chances whenever it refreshes. For alerts when it is closed, a scheduled GitHub job runs the same detectors twice a day (early morning and mid-afternoon) and sends the best chances of the next 36 hours to your phone through [ntfy](https://ntfy.sh), a free push app for iPhone and Android:
+The app can notify you when you open it (*Settings → Alerts*). To hear about a chance without opening it, a free scheduled job on GitHub runs the same detectors every three hours in the daytime (04:35 to 19:35 UTC) and sends what is new in the next 36 hours straight to your phone, as a notification from Lichtblick itself. Each chance is sent once, and again only if it has become clearly better.
 
-1. Install **ntfy** and subscribe to a topic with a long, random name (anyone who knows the name can read it), e.g. `lichtblick-7f3k2q9x`.
-2. In the repository: **Settings → Secrets and variables → Actions**
-   - secret `NTFY_TOPIC` = that name
-   - optional variables: `LICHTBLICK_URL` = `https://tschouna.github.io/Weft-Studio/` (tapping the alert opens the spot), `LICHTBLICK_MIN` = the lowest score worth a ping (default 75).
-3. To include your own spots, export them in the app and commit the file as `lichtblick/data/my-spots.json`.
+Set it up once, on the phone:
 
-Try it from the *Actions* tab with *Run workflow*. Without the secret the job does nothing.
+1. Open Lichtblick from the Home Screen (on an iPhone it must be installed there; iOS 16.4 or newer), then *Settings → Alerts → Turn on for this phone* and allow notifications.
+2. Tap *Copy the setup code*.
+3. Tap the *New secret on GitHub* link below it (or in the repository: **Settings → Secrets and variables → Actions → New repository secret**). Name: `LICHTBLICK_PUSH`. Paste the code into *Secret* and save.
+
+To try it: on GitHub, **Actions → Lichtblick → Run workflow**, tick *test*, run. A test notification should arrive within a minute.
+
+The setup code holds this phone's address at its maker's push service (Apple, Google or Mozilla), a signing key made on the phone, your alert settings (lowest score, kinds of chance, saved spots only) and your own spots. It is stored encrypted as a GitHub secret and goes nowhere else. If you change the alert settings or add spots, copy the code again and replace the secret. If you reinstall the app, turn the alerts on again and replace the secret.
+
+How it works, for the curious: `js/push.js` subscribes the phone, `sw.js` shows what arrives, `scripts/digest.mjs` decides what to send and `scripts/webpush.mjs` encrypts and signs it (Web Push, RFC 8291 and 8292, no library; checked against the example in the standard).
+
+**Alternative: ntfy.** Install the free [ntfy](https://ntfy.sh) app, subscribe to a topic with a long random name, and add that name as the secret `NTFY_TOPIC`. You then get one message listing the new chances. Optional variables: `LICHTBLICK_URL` = `https://tschouna.github.io/Weft-Studio/` (tapping the message opens the spot), `LICHTBLICK_MIN` = the lowest score worth a ping.
+
+Without either secret the job does nothing. GitHub pauses scheduled jobs in a repository that has had no activity for 60 days; any commit wakes them again.
 
 ## Where the data comes from
 
@@ -118,7 +126,7 @@ Plain HTML and JavaScript modules, no build step. Node 22 for the checks and scr
 | `node scripts/phenology.mjs` | Rebuild `data/phenology.js` from MeteoSwiss open data |
 | `node scripts/horizons.mjs` | Compute the mountain horizon of new curated spots (`--all` for all) |
 | `node scripts/darkness.mjs` | Measure the sky darkness of the curated spots into `data/sky.js` |
-| `DRY_RUN=1 node scripts/digest.mjs` | Print the push-alert digest instead of sending it |
+| `DRY_RUN=1 NTFY_TOPIC=x node scripts/digest.mjs` | Print the alerts the scheduled job would send, instead of sending them |
 
 | Path | What it is |
 |---|---|
@@ -137,7 +145,8 @@ Plain HTML and JavaScript modules, no build step. Node 22 for the checks and scr
 | `js/exif.js` | Reads the GPS position from photos |
 | `data/` | Curated spots (with night access, opening hours, lights), their horizons and sky darkness, the species guide, the autumn-colour climatology, Switzerland's outline |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline and install |
-| `scripts/` | Data builders, the push digest, the local server |
+| `js/push.js`, `scripts/digest.mjs`, `scripts/alerts.mjs`, `scripts/webpush.mjs` | Alerts while the app is closed: subscribing the phone, choosing what to send, encrypting and sending it |
+| `scripts/` | Data builders, the alerts job, the local server |
 | `../.github/workflows/lichtblick.yml` | Checks, GitHub Pages, scheduled push alerts |
 
 When you add a file under `js/` or `data/`, also list it in `sw.js` (a check reminds you).

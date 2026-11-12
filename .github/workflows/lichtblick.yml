@@ -1,24 +1,29 @@
 # Lichtblick, the photo-weather phone app in lichtblick/:
 # - on pushes that touch it: run its checks, and on main publish it to GitHub Pages
 #   (one-time setup: Settings → Pages → Source: "GitHub Actions")
-# - twice a day: send the best photo chances to your phone through ntfy.sh, if the repository has a
-#   secret NTFY_TOPIC (and optionally a variable LICHTBLICK_URL with the Pages address)
+# - every three hours in the daytime: send new photo chances to your phone, if the repository has a
+#   secret LICHTBLICK_PUSH (the setup code from the app: Settings → Alerts) or NTFY_TOPIC (ntfy.sh).
+#   "Run workflow" with "test" ticked sends a test alert.
 name: Lichtblick
 
 on:
   push:
     paths: ['lichtblick/**', '.github/workflows/lichtblick.yml']
   schedule:
-    - cron: '35 4 * * *'   # early morning in Switzerland: today's chances
-    - cron: '5 15 * * *'   # afternoon: tonight and tomorrow morning
+    - cron: '35 4-19/3 * * *'   # 04:35 to 19:35 UTC, every three hours: daytime in Switzerland
   workflow_dispatch:
+    inputs:
+      test:
+        description: Send a test alert to the phone instead of checking the forecast
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   test:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && !inputs.test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +32,7 @@ jobs:
       - run: node lichtblick/test/run.mjs
 
   pages:
-    if: github.event_name != 'schedule' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'schedule' && !inputs.test && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -50,15 +55,34 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
+      LICHTBLICK_PUSH: ${{ secrets.LICHTBLICK_PUSH }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      HAS_TARGET: ${{ secrets.LICHTBLICK_PUSH != '' || secrets.NTFY_TOPIC != '' }}
       LICHTBLICK_URL: ${{ vars.LICHTBLICK_URL }}
       LICHTBLICK_MIN: ${{ vars.LICHTBLICK_MIN }}
+      LICHTBLICK_TEST: ${{ inputs.test }}
+      LICHTBLICK_STATE: ${{ github.workspace }}/.lichtblick-sent.json
     steps:
+      - name: Nothing to do without a phone to send to
+        if: env.HAS_TARGET != 'true'
+        run: echo "Add the secret LICHTBLICK_PUSH (the setup code from the app, Settings → Alerts) to receive alerts."
       - uses: actions/checkout@v4
-        if: env.NTFY_TOPIC != ''
+        if: env.HAS_TARGET == 'true'
       - uses: actions/setup-node@v4
-        if: env.NTFY_TOPIC != ''
+        if: env.HAS_TARGET == 'true'
         with: { node-version: 22 }
-      - name: Send the photo chances
-        if: env.NTFY_TOPIC != ''
+      # what was already sent, so the same chance is not sent every three hours
+      - uses: actions/cache/restore@v4
+        if: env.HAS_TARGET == 'true'
+        with:
+          path: .lichtblick-sent.json
+          key: lichtblick-sent-${{ github.run_id }}
+          restore-keys: lichtblick-sent-
+      - name: Send the new photo chances
+        if: env.HAS_TARGET == 'true'
         run: node lichtblick/scripts/digest.mjs
+      - uses: actions/cache/save@v4
+        if: env.HAS_TARGET == 'true' && hashFiles('.lichtblick-sent.json') != ''
+        with:
+          path: .lichtblick-sent.json
+          key: lichtblick-sent-${{ github.run_id }}

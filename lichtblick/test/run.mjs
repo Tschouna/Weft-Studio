@@ -379,6 +379,61 @@ test('a dropped forecast request is tried again; a lasting failure is reported',
   } finally { globalThis.fetch = real; }
 });
 
+console.log('alerts while the app is closed');
+test('push encryption gives exactly the example of the standard (RFC 8291, appendix A)', async () => {
+  const { encrypt, b64u, unb64u } = await import('../scripts/webpush.mjs');
+  const out = encrypt('When I grow up, I want to be a watermelon', 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', 'BTBZMqHH6r4Tts7J_aSIgg',
+    { salt: unb64u('DGv6ra1nlYgDCS1FRnbzlw'), localKey: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw' });
+  assert.equal(b64u(out), 'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN');
+  assert.notEqual(b64u(encrypt('x', 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', 'BTBZMqHH6r4Tts7J_aSIgg')), b64u(encrypt('x', 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', 'BTBZMqHH6r4Tts7J_aSIgg')), 'a fresh key and salt each time');
+});
+test('the push request is signed with the phone-made key, for the right push service', async () => {
+  const { vapidHeader, b64u, unb64u } = await import('../scripts/webpush.mjs');
+  const { generateKeyPairSync, verify } = await import('node:crypto');
+  const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = privateKey.export({ format: 'jwk' });
+  const raw = Buffer.concat([Buffer.from([4]), unb64u(jwk.x), unb64u(jwk.y)]);
+  const now = Date.UTC(2026, 10, 12, 8);
+  const h = vapidHeader('https://web.push.apple.com/QGk3abc', { publicKey: b64u(raw), privateKey: jwk.d }, 'https://example.org/app/', now);
+  const [, token, key] = h.match(/^vapid t=([^,]+), k=(.+)$/);
+  assert.equal(key, b64u(raw));
+  const [head, claims, sig] = token.split('.');
+  assert.deepEqual(JSON.parse(unb64u(head)), { typ: 'JWT', alg: 'ES256' });
+  const c = JSON.parse(unb64u(claims));
+  assert.equal(c.aud, 'https://web.push.apple.com'); assert.equal(c.sub, 'https://example.org/app/');
+  assert.ok(c.exp > now / 1000 && c.exp <= now / 1000 + 24 * 3600, 'valid for less than a day');
+  assert.ok(verify('sha256', Buffer.from(`${head}.${claims}`), { key: publicKey, dsaEncoding: 'ieee-p1363' }, unb64u(sig)));
+});
+test('alerts: only new chances, by your settings, never twice unless clearly better', async () => {
+  const { pickAlerts, alertKey } = await import('../scripts/alerts.mjs');
+  const now = Date.UTC(2026, 10, 12, 8), at = (h) => new Date(now + h * 3600e3);
+  const ops = [
+    { spotId: 'rigi', type: 'fogsea', score: 92, peak: at(22), title: 'Sea of fog at sunrise' },
+    { spotId: 'rigi', type: 'sunrise', score: 80, peak: at(22), title: 'Sunrise' },          // same spot: only its best
+    { spotId: 'oeschinen', type: 'mirror', score: 78, peak: at(23), title: 'Mirror-calm water' },
+    { spotId: 'grimsel', type: 'milkyway', score: 85, peak: at(60), title: 'Milky Way' },   // beyond 36 hours
+    { spotId: 'creux', type: 'sunset', score: 70, peak: at(8), title: 'Sunset' },            // below the lowest score
+    { spotId: 'far', type: 'fogsea', score: 95, peak: at(30), outlook: true, title: 'Outlook' },
+  ];
+  let r = pickAlerts(ops, { now });
+  assert.deepEqual(r.fresh.map((o) => o.spotId), ['rigi', 'oeschinen']);
+  assert.equal(r.fresh[0].type, 'fogsea');
+  // three hours later the same forecast: nothing new
+  let again = pickAlerts(ops, { now: now + 3 * 3600e3, state: r.state });
+  assert.equal(again.fresh.length, 0);
+  // ... unless a chance has become clearly better
+  again = pickAlerts(ops.map((o) => (o.spotId === 'oeschinen' ? { ...o, score: 93 } : o)), { now: now + 3 * 3600e3, state: r.state });
+  assert.deepEqual(again.fresh.map((o) => o.spotId), ['oeschinen']);
+  // your settings: lowest score, kinds of chance, saved spots only (own spots always count)
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { min: 60 } }).fresh.map((o) => o.spotId), ['rigi', 'oeschinen', 'creux']);
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { types: ['mirror'] } }).fresh.map((o) => o.spotId), ['oeschinen']);
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { favsOnly: true, favs: ['oeschinen'] } }).fresh.map((o) => o.spotId), ['oeschinen']);
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { favsOnly: true, favs: [] }, mine: new Set(['rigi']) }).fresh.map((o) => o.spotId), ['rigi']);
+  // what was sent is forgotten after a few days
+  const old = pickAlerts(ops, { now: now + 5 * 24 * 3600e3, state: r.state });
+  assert.ok(!old.state.sent[alertKey(ops[0])] || old.state.sent[alertKey(ops[0])].at > now);
+});
+
 console.log('app shell');
 test('the service worker caches every module and data file', async () => {
   const { readFileSync, readdirSync } = await import('node:fs');
