@@ -1956,11 +1956,10 @@ function maxRelief(S) {
 
 // Pieces that hold soil or water never get cut-through patterns.
 // ---------------------------------------------------------------- faceted wall planters
-// The geometric wall planter: upright walls round a pointed opening, a bottom of two 45° slopes meeting in
-// a keel, and a steep diamond facet in front. Every face keeps within 45°, so it prints upright, as it hangs,
-// with no supports, on a flat strip cut along the keel. The wall is the plane y = 0 and the planter reaches
-// toward -y. It is built as solid minus cavity: both are convex, cut by the same planes (the cavity's moved
-// in by the wall thickness), so every face is a flat polygon.
+// The geometric wall planter, copied exactly from the original model: upright sides round a pointed opening,
+// a bottom of two slopes meeting in a keel, and a steep diamond facet in front, with a flat back screwed to
+// the wall. It is built as solid minus cavity: both are convex, cut by the same planes (the cavity's moved in
+// by the wall thickness), so every face is a flat polygon.
 const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit3 = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
@@ -2010,23 +2009,6 @@ function earClip(pts) {
   if (idx.length === 3) out.push([idx[0], idx[1], idx[2]]);
   return out;
 }
-// one hole (clockwise) joined into a convex outline (anticlockwise) by a bridge from the hole's rightmost point
-function bridgeHole(outer, hole) {
-  let mi = 0;
-  for (let i = 1; i < hole.length; i++) if (hole[i][0] > hole[mi][0]) mi = i;
-  const M = hole[mi], n = outer.length;
-  let best = Infinity, bi = 0;
-  for (let i = 0; i < n; i++) {
-    const a = outer[i], b = outer[(i + 1) % n];
-    if ((a[1] - M[1]) * (b[1] - M[1]) > 0 || a[1] === b[1]) continue;
-    const x = a[0] + ((M[1] - a[1]) / (b[1] - a[1])) * (b[0] - a[0]);
-    if (x >= M[0] && x < best) { best = x; bi = a[0] > b[0] ? i : (i + 1) % n; }
-  }
-  const res = outer.slice(0, bi + 1);
-  for (let k = 0; k <= hole.length; k++) res.push(hole[(mi + k) % hole.length]);
-  res.push(outer[bi], ...outer.slice(bi + 1));
-  return res;
-}
 // Several holes (clockwise) joined into an outline (anticlockwise), each by the shortest bridge that crosses
 // no edge of the outline or of any hole.
 function bridgeHoles(outer, holes) {
@@ -2056,67 +2038,34 @@ function bridgeHoles(outer, holes) {
   return poly;
 }
 const signedArea2D = (pts) => { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
-// the keyhole as an outline (x across, y up from the centre of its round opening), anticlockwise:
-// the same shape as holeField's keyhole, a teardrop with a narrow slot rising to a pointed top
-function keyholeOutline(R = 4.6, w = 2.3, L = 9) {
-  const yT = (R - 0.766 * w) / 0.643, top = L + (0.766 * w) / 0.643, pts = [[0, top], [-w, L], [-w, yT]];
-  for (let k = 0; k <= 24; k++) { const a = ((140 + (260 * k) / 24) * Math.PI) / 180; pts.push([R * Math.cos(a), R * Math.sin(a)]); }
-  pts.push([w, yT], [w, L]);
-  return pts;
-}
-
 export function facetedWall(F, X = {}) {
-  // The geometric wall planter, as measured from the real one: a box whose opening is a shallow point
-  // (straight sides out from the wall, then two front faces meeting at a point), upright walls, a bottom of
-  // two slopes meeting in a keel that runs straight out from the wall, and a steep diamond facet in front,
-  // from the keel's front end up past the side corners to just under the rim. Proportions are in widths.
-  const W = clamp(F.diameter || 160, 60, 400), a = W / 2;
-  const e = clamp(X.facetDepth ?? 0.38, 0.2, 0.8) * W; // the sides, straight out from the wall
-  const f = clamp(X.facetPoint ?? 0.15, 0.03, 0.4) * W; // how far the front point stands past them
-  // the bottom slopes rise 45° from the keel to the side walls (the original's 39° would need supports)
-  const Htot = clamp(X.facetHeight ?? 1.11, 0.75, 1.8) * W, hs = Htot - a; // total height; the upright side walls
-  const zk = 0, ze = a, H = ze + hs; // keel, bottom of the side walls, rim
-  // the diamond: its top corner sits this far under the rim on the front edge; it may not lean past 45°
-  // (f / its rise), nor reach the wall along the keel
-  let g = clamp(X.facetGap ?? 0.08, 0, 0.4) * W;
-  g = Math.min(g, hs - f, hs - (a * f) / Math.max(1, e - 0.06 * W));
-  const zv = H - Math.max(0, g), h1 = zv - ze;
-  const t = clamp(F.wall || 3, 1.2, 8), tb = Math.max(t, 3), fl = clamp(F.floor || 3, 1.2, 8), foot = 4;
-  const zTop = H, zFoot = zk + foot;
-  const nrm = (v, d) => { const l = Math.hypot(...v); return { n: v.map((c) => c / l), d: d / l }; };
-  // (the wall is y = 0 and the planter reaches toward -y)
+  // The geometric wall planter (WP013), exactly: its planes measured from the original STL at 160 mm wide,
+  // scaled as a whole. Built as it prints, from the open end: the rim on the bed at z = 0, the back on the
+  // plane y = 0 and the planter reaching toward +y, the keel at the top. At 160 mm: sides 60 mm straight out
+  // from the wall, the front coming to a point 30 mm past them (faces at 20.56°), upright sides 97.5 mm deep,
+  // bottom slopes rising 52.5 mm over 80 to a keel 150 mm from the rim, and a diamond facet 19° off upright.
+  const W = clamp(F.diameter || 160, 60, 400), k = W / 160;
+  const t = clamp(F.wall || 3, 1.2, 8), tb = Math.max(t, 3);
+  const nrm = (v, d) => { const l = Math.hypot(...v); return { n: v.map((c) => c / l), d: (d / l) * k }; };
+  const s19 = Math.sin((19 * Math.PI) / 180), c19 = Math.cos((19 * Math.PI) / 180);
   const hull = [
-    { n: [1, 0, 0], d: a }, { n: [-1, 0, 0], d: a }, // the sides
-    nrm([f, -a, 0], f * a + a * e), nrm([-f, -a, 0], f * a + a * e), // the two front faces
-    nrm([1, 0, -1], -zk), nrm([-1, 0, -1], -zk), // the bottom slopes, from the keel up to the sides at 45°
-    nrm([0, -h1, -f], h1 * e - f * ze), // the diamond: through the side corners and its top on the front edge
+    nrm([1, 0, 0], 80), nrm([-1, 0, 0], 80), // the sides
+    nrm([30, 80, 0], 7200), nrm([-30, 80, 0], 7200), // the front faces: corners at 60 mm, the point at 90 mm
+    nrm([52.5, 0, 80], 12000), nrm([-52.5, 0, 80], 12000), // the bottom slopes: 97.5 mm at the sides, 150 at the keel
+    { n: [0, c19, s19], d: 88.9174 * k }, // the diamond: 11.74 mm under the rim at the point, 42.39 mm out at the keel
   ];
-  const planes = (inset, back, top, bottom) => [
-    ...hull.map((pl) => ({ n: pl.n, d: pl.d - inset })),
-    { n: [0, 1, 0], d: -back }, { n: [0, 0, 1], d: top }, { n: [0, 0, -1], d: -bottom },
-  ];
-  // keep only the planes that bound the outside below the rim: one that only touches it at a corner or an
-  // edge (the cube's top faces, above the rim) would, moved in by the wall, cut a ceiling into the cavity
-  const polyArea = (f) => { let ax = 0, ay = 0, az = 0; for (let i = 0; i < f.length; i++) { const c = cross3(f[i], f[(i + 1) % f.length]); ax += c[0]; ay += c[1]; az += c[2]; } return Math.hypot(ax, ay, az) / 2; };
-  const first = convexFromPlanes(planes(0, 0, zTop, zFoot)).faces;
-  const keep = hull.filter((_, q) => first[q] && polyArea(first[q]) > 1);
-  hull.length = 0; hull.push(...keep);
-  const BACK = hull.length, TOP = hull.length + 1;
-  const Po = convexFromPlanes(planes(0, 0, zTop, zFoot)), Pi = convexFromPlanes(planes(t, tb, zTop, zFoot + fl));
-  // two screw holes near the top corners of the back, teardrop-topped so they print without support
+  const BACK = hull.length, RIM = hull.length + 1;
+  const planes = (inset, back) => [...hull.map((pl) => ({ n: pl.n, d: pl.d - inset })), { n: [0, -1, 0], d: -back }, { n: [0, 0, -1], d: 0 }];
+  const Po = convexFromPlanes(planes(0, 0)), Pi = convexFromPlanes(planes(t, tb));
+  // two Ø 6 mm screw holes through the back, 20 mm in from the sides and 15 mm under the rim (at 160 mm wide)
   const backIn = Pi.faces[BACK].map((v) => [v[0], v[2]]);
   const inside = (pt, poly, margin) => { for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length], ex = q[0] - p[0], ey = q[1] - p[1], l = Math.hypot(ex, ey) || 1; if ((ex * (pt[1] - p[1]) - ey * (pt[0] - p[0])) / l < margin) return false; } return true; };
   const ccw = signedArea2D(backIn) > 0 ? backIn : backIn.slice().reverse();
-  const teardrop = (cx, cz, r = 2.4) => {
-    const pts = [];
-    for (let q = 0; q <= 18; q++) { const ang = ((135 + (270 * q) / 18) * Math.PI) / 180; pts.push([cx + r * Math.cos(ang), cz + r * Math.sin(ang)]); }
-    pts.push([cx, cz + r * Math.SQRT2]);
-    return pts;
-  };
-  const hx = a - Math.max(0.09 * W, t + 8), holes = [];
-  for (let z = zTop - clamp(0.08 * W, 10, 20); z > zFoot + 15; z -= 1) {
-    const L = teardrop(-hx, z), R = teardrop(hx, z);
-    if (L.every((p) => inside(p, ccw, 2.5)) && R.every((p) => inside(p, ccw, 2.5))) { holes.push(L, R); break; }
+  const circle = (cx, cz, r = 3) => Array.from({ length: 32 }, (_, q) => [cx + r * Math.cos((q * Math.PI) / 16), cz + r * Math.sin((q * Math.PI) / 16)]);
+  const holes = [];
+  for (let z = 15 * k; z < 60 * k; z += 0.5) {
+    const L = circle(-60 * k, z), R = circle(60 * k, z);
+    if (L.every((p) => inside(p, ccw, 1.5)) && R.every((p) => inside(p, ccw, 1.5))) { holes.push(L, R); break; }
   }
 
   // every triangle gets corners of its own, so each facet shades flat and its edges stay crisp; the weld id
@@ -2138,34 +2087,31 @@ export function facetedWall(F, X = {}) {
     const pts = bridgeHoles(o, hs2);
     for (const [i, j, k] of earClip(pts)) tri(to3(pts[i]), to3(pts[j]), to3(pts[k]), want);
   };
-  const po = planes(0, 0, zTop, zFoot), pi = planes(t, tb, zTop, zFoot + fl);
-  Po.faces.forEach((f, k) => {
-    if (!f || k === TOP) return;
-    if (k === BACK && holes.length) holed(f, holes, (v) => [v[0], v[2]], (q) => [q[0], 0, q[1]], po[k].n);
-    else fan(f, po[k].n);
+  const po = planes(0, 0);
+  Po.faces.forEach((f, q) => {
+    if (!f || q === RIM) return;
+    if (q === BACK && holes.length) holed(f, holes, (v) => [v[0], v[2]], (p2) => [p2[0], 0, p2[1]], po[q].n);
+    else fan(f, po[q].n);
   });
-  Pi.faces.forEach((f, k) => {
-    if (!f || k === TOP) return;
-    const into = po[k].n.map((x) => -x);
-    if (k === BACK && holes.length) holed(f, holes, (v) => [v[0], v[2]], (q) => [q[0], -tb, q[1]], into);
+  Pi.faces.forEach((f, q) => {
+    if (!f || q === RIM) return;
+    const into = po[q].n.map((x) => -x);
+    if (q === BACK && holes.length) holed(f, holes, (v) => [v[0], v[2]], (p2) => [p2[0], tb, p2[1]], into);
     else fan(f, into);
   });
-  // the rim: a flat ring between the outside and the opening
-  holed(Po.faces[TOP], [Pi.faces[TOP].map((v) => [v[0], v[1]])], (v) => [v[0], v[1]], (q) => [q[0], q[1], zTop], [0, 0, 1]);
+  // the rim, on the bed: a flat ring between the outside and the opening
+  holed(Po.faces[RIM], [Pi.faces[RIM].map((v) => [v[0], v[1]])], (v) => [v[0], v[1]], (p2) => [p2[0], p2[1], 0], [0, 0, -1]);
   // the holes' sides, through the back wall
   for (const hole of holes) {
-    for (let k = 0; k < hole.length; k++) {
-      const A = hole[k], B = hole[(k + 1) % hole.length], into = [-(B[1] - A[1]), 0, B[0] - A[0]];
+    for (let q = 0; q < hole.length; q++) {
+      const A = hole[q], B = hole[(q + 1) % hole.length], into = [-(B[1] - A[1]), 0, B[0] - A[0]];
       const want = signedArea2D(hole) > 0 ? into : into.map((x) => -x);
-      const a0 = [A[0], 0, A[1]], b0 = [B[0], 0, B[1]], a1 = [A[0], -tb, A[1]], b1 = [B[0], -tb, B[1]];
+      const a0 = [A[0], 0, A[1]], b0 = [B[0], 0, B[1]], a1 = [A[0], tb, A[1]], b1 = [B[0], tb, B[1]];
       tri(a0, b0, b1, want); tri(a0, b1, a1, want);
     }
   }
-  // sit it on the bed
-  const Pz = mesh.P;
-  for (let q = 2; q < Pz.n; q += 3) Pz.a[q] -= zFoot;
-  const depth = Math.max(...Po.V.map((v) => -v[1]));
-  return { mesh, W, height: zTop - zFoot, depth, holes: holes.length, wall: t, back: tb };
+  const depth = Math.max(...Po.V.map((v) => v[1])), height = Math.max(...Po.V.map((v) => v[2]));
+  return { mesh, W, height, depth, holes: holes.length, wall: t, back: tb };
 }
 
 export const WATERTIGHT = new Set(['planter', 'vase', 'hanging', 'wall', 'candle']);
@@ -2174,14 +2120,16 @@ export const WATERTIGHT = new Set(['planter', 'vase', 'hanging', 'wall', 'candle
 function generateFaceted(P) {
   const F = P.form, X = P.extras, g = facetedWall(F, X);
   const m = finish(g.mesh, { overhangLimit: 46, cutDepth: F.wall });
-  const parts = [{ key: 'pot', label: 'Pot', ...m, place: { z: 0, color: 0 } }];
+  // it prints from the open end: shown the right way up, hanging, by turning the print over
+  const parts = [{ key: 'pot', label: 'Pot', ...m, place: { z: g.height, flipZ: true, color: 0 } }];
   const checks = [], loops = Math.max(1, Math.round(g.wall / 0.45));
   if (g.wall < 0.8) checks.push({ level: 'bad', text: 'Walls under 0.8 mm are too thin for a 0.4 mm nozzle.' });
   else checks.push({ level: g.wall < 2 ? 'warn' : 'ok', text: `Wall ${g.wall.toFixed(1)} mm ≈ ${loops} wall loop${loops > 1 ? 's' : ''} at 0.45 mm line width${g.wall < 2 ? '. It can flex: 3 mm makes a sturdy planter' : ''}.` });
   const over = m.stats.overhang, area = m.stats.area;
-  if (over / area > 0.01 || over > 500) checks.push({ level: 'bad', text: `${(over / 100).toFixed(1)} cm² overhangs past 46°. It is striped on the model; add supports or change the shape.` });
-  else checks.push({ level: 'ok', text: 'Every face keeps within 45°: it prints upright, as it hangs, with no supports, standing on a flat strip cut along its keel. A 5 mm brim helps it hold the bed.' });
-  if (g.holes) checks.push({ level: 'ok', text: 'Two screw holes near the top corners of the back (Ø 4.8 mm, with a small point on top so they print cleanly): screw it straight to the wall from inside.' });
+  // the original's bottom slopes rise 33° from level, so printed from the open end their insides lean 57°
+  if (over > 1) checks.push({ level: 'warn', text: `Prints from the open end, rim on the bed. Inside, the two bottom slopes lean 57° as they print (${(over / 100).toFixed(0)} cm², striped in Print check): that is the original design, and with the part fan on most printers manage it without supports. If yours sags there, add tree supports from the bed; they come out through the opening.` });
+  else checks.push({ level: 'ok', text: 'Prints from the open end, rim on the bed, with no supports.' });
+  if (g.holes) checks.push({ level: 'ok', text: 'Two Ø 6 mm screw holes near the top corners of the back, as on the original: screw it straight to the wall from inside.' });
   else checks.push({ level: 'warn', text: 'The back is too small for screw holes: make it wider, or hang it with strong mounting tape.' });
   checks.push({ level: 'ok', text: 'No drainage hole, so it never drips: water sparingly, or stand a small nursery pot inside it.' });
   return { parts, checks, info: { cell: 0, NU: 0, rows: 0, mainKey: 'pot', eased: 0, lift: 0, colorChanges: [], wallY: 0, hangers: null, stand: null, globe: null, facet: { height: g.height, depth: g.depth, width: g.W } } };

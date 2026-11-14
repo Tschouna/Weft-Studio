@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.7.3
+
+- **Faceted wall planters, 1:1 with the original:**
+  - Rebuilt from the original model file itself, plane for plane: at 160 mm wide it is 160 × 90 × 150 mm, sides 60 mm straight out from the wall, the front coming to a point 30 mm past them, upright sides 97.5 mm deep, two bottom slopes meeting in a keel 150 mm under the rim, and a diamond facet 19° off upright. Its volume is within 0.3% of the original's.
+  - Two Ø 6 mm screw holes near the top corners of the back, where the original has them.
+  - It prints from the open end, rim on the bed, as the original does. Print check marks the two inside bottom slopes, which lean 57° as they print; most printers manage that, and tree supports from the bed come out through the opening if yours does not.
+  - Form now has one size control: **Width**, which scales the whole planter and keeps its exact shape (160 mm is 1:1). Wall thickness stays as you set it (3 mm, as the original), and so do the screw holes.
+  - The original's edges are rounded off by about 3 mm; Weft's are crisp.
+  - In the Collection: **Facet** (the original size, matte graphite) and **Keel** (200 mm wide, satin sand).
+
 ## 2.7.2
 
 - **Faceted wall planters, measured from the real one:**

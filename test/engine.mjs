@@ -10,8 +10,8 @@
 //  9. globe lamps: every top, underside, outline and pattern builds closed, a closed ball says it needs
 //     supports and a peak with a cone underside needs none, relief covers the whole ball; the glow test
 //     strip is closed
-// 10. faceted wall planters: every tilt, depth, diamond shape and rim builds closed, with no overhangs, a
-//     flat foot on the bed, a flat back on the wall with two screw holes, and upright sides
+// 10. faceted wall planters: the original's exact shape at 160 mm (its planes and volume), scaled whole to
+//     every width, closed, rim on the bed, a flat back with two Ø 6 mm screw holes, nothing worse than a warning
 import { generate, makeProfile, easeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
@@ -346,25 +346,34 @@ if (!gOk) fail('glow test');
 // ---------------------------------------------------------------- 10
 if (run(10)) {
 console.log('10. faceted wall planters');
-const cases = [['as measured', {}], ['tall', { facetHeight: 1.6 }], ['low', { facetHeight: 0.8 }], ['deep sides', { facetDepth: 0.75 }],
-  ['sharp point', { facetPoint: 0.38 }], ['flat front', { facetPoint: 0.04 }], ['diamond to the rim', { facetGap: 0 }], ['diamond low', { facetGap: 0.35 }], ['small, thin wall', {}, { diameter: 90, wall: 1.6 }]];
-for (const [name, ex, fo] of cases) {
-  const d = design({ object: 'wall', form: { diameter: 160, wall: 3, floor: 3, ...(fo || {}) }, extras: { wallStyle: 'facet', ...ex } });
+// the original (WP013) at 160 mm wide: its outside faces, measured from its STL, and its volume
+const nz = (v) => { const l = Math.hypot(...v); return v.map((c) => c / l); };
+const r19 = (19 * Math.PI) / 180;
+const FACES = [['sides', [1, 0, 0]], ['sides', [-1, 0, 0]], ['front', nz([30, 80, 0])], ['front', nz([-30, 80, 0])],
+  ['bottom', nz([52.5, 0, 80])], ['bottom', nz([-52.5, 0, 80])], ['diamond', [0, Math.cos(r19), Math.sin(r19)]], ['back', [0, -1, 0]], ['rim', [0, 0, -1]]];
+const cases = [['1:1 with the original', 160, 3], ['larger', 240, 3], ['largest', 300, 3], ['smaller, thinner wall', 90, 2], ['thick wall', 160, 4], ['smallest', 60, 1.6]];
+for (const [name, W, wall] of cases) {
+  const k = W / 160, d = design({ object: 'wall', form: { diameter: W, wall, floor: 3 }, extras: { wallStyle: 'facet' } });
   const r = generate(d, 1), p = r.parts[0], P = p.position, I = p.index, g = facetedWall(d.form, d.extras);
-  let vol = 0, foot = 0, back = 0, sides = 0;
+  let vol = 0;
+  const found = FACES.map(() => 0);
   for (let t = 0; t < I.length; t += 3) {
     const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
     vol += (P[a] * (P[b + 1] * P[c + 2] - P[b + 2] * P[c + 1]) - P[a + 1] * (P[b] * P[c + 2] - P[b + 2] * P[c]) + P[a + 2] * (P[b] * P[c + 1] - P[b + 1] * P[c])) / 6;
     const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
-    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, area = Math.hypot(nx, ny, nz) / 2;
-    if (nz < 0 && Math.max(P[a + 2], P[b + 2], P[c + 2]) < 1e-3) foot += area;
-    if (ny > 0 && Math.min(P[a + 1], P[b + 1], P[c + 1]) > -1e-3) back += area;
-    // the upright sides, square to the wall, at the full width
-    if (Math.abs(nx) > 0.9999 * 2 * area && Math.abs(Math.abs(P[a]) - d.form.diameter / 2) < 1e-3) sides += area;
+    const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx], l = Math.hypot(...n);
+    if (l < 1e-9) continue;
+    // an outside face lies on the original's plane (scaled): facing the right way, and as far out as the hull
+    FACES.forEach(([, f], q) => { if (f[0] * n[0] + f[1] * n[1] + f[2] * n[2] > 0.99999 * l) found[q] += l / 2; });
   }
   const open = openEdges(p), bb = p.stats.bbox;
-  const ok = !open && vol > 0 && p.stats.overhang < 1 && foot > 60 && back > 500 && sides > 100 && Math.abs(bb[2]) < 1e-3 && Math.abs(bb[4]) < 1e-3 && g.holes === 2 && Math.abs(bb[3] - bb[0] - d.form.diameter) < 0.01 && !r.checks.some((c) => c.level === 'bad');
-  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${p.stats.tris} tris, ${open} open edges, ${(vol / 1000).toFixed(0)} cm³, ${Math.round(bb[5])} mm tall, ${Math.round(-bb[1])} mm out, foot ${foot.toFixed(0)} mm², back ${(back / 100).toFixed(0)} cm², sides ${(sides / 100).toFixed(0)} cm², overhang ${p.stats.overhang.toFixed(1)} mm²${g.holes !== 2 ? `, ${g.holes} screw holes` : ''}`);
+  // the outline scales exactly: 160 × 90 × 150 mm at 1:1
+  const sizeOk = [bb[0] + 80 * k, bb[1], bb[2], bb[3] - 80 * k, bb[4] - 90 * k, bb[5] - 150 * k].every((e) => Math.abs(e) < 0.01);
+  const volOk = W !== 160 || wall !== 3 || Math.abs(vol / 1000 - 179.11) < 179.11 * 0.01;
+  const missing = FACES.filter((_, q) => found[q] < 1).map(([nm]) => nm);
+  const holesOk = g.holes === 2 || W < 80;
+  const ok = !open && vol > 0 && sizeOk && volOk && !missing.length && holesOk && !r.checks.some((c) => c.level === 'bad');
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name} (${W} mm, wall ${wall}): ${p.stats.tris} tris, ${open} open edges, ${(vol / 1000).toFixed(1)} cm³, ${bb.slice(3).map((v, i) => (v - bb[i]).toFixed(1)).join(' × ')} mm, ${g.holes} screw holes, overhang ${(p.stats.overhang / 100).toFixed(0)} cm²${missing.length ? `, missing faces: ${missing.join(', ')}` : ''}${!sizeOk ? ', wrong size' : ''}${!volOk ? ', volume off the original' : ''}`);
   if (!ok) fail(`faceted ${name}`);
 }
 }
