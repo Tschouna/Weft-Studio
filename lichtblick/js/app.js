@@ -7,7 +7,8 @@ import { CH_OUTLINE } from '../data/ch-outline.js';
 import { forecast, gridForecast } from './sources/meteoswiss.js';
 import { kpForecast } from './sources/spaceweather.js';
 import { horizonIfKnown } from './sources/swisstopo.js';
-import { opportunitiesFor, makeContext, LOWLAND_REFS, topOpportunities } from './scoring.js';
+import { opportunitiesFor, makeContext, LOWLAND_REFS, topOpportunities, opDayOf } from './scoring.js';
+import { localMidnight } from './astro.js';
 import { insidePolygon, distance } from './geo.js';
 import { mySpots, saveMySpots, hiddenSpots, favourites, setFavourites, settings, kvSet, getJSON, setJSON } from './store.js';
 import { status, loadLocalPhotos, ago } from './ui.js';
@@ -15,7 +16,7 @@ import { status, loadLocalPhotos, ago } from './ui.js';
 const listeners = new Map();
 export const App = {
   spots: [], byId: new Map(), fc: new Map(), refs: [], grid: null, kp: null,
-  ops: [], opsBySpot: new Map(), updatedAt: null, loading: false, error: null, me: null,
+  ops: [], opsBySpot: new Map(), updatedAt: null, loading: false, error: null, me: null, reach: 0, outlookFrom: 0,
   on(ev, fn) { if (!listeners.has(ev)) listeners.set(ev, new Set()); listeners.get(ev).add(fn); return () => listeners.get(ev).delete(fn); },
   emit(ev, data) { for (const fn of listeners.get(ev) || []) { try { fn(data); } catch (e) { console.error(e); } } },
 };
@@ -67,17 +68,19 @@ export async function refresh({ force = false } = {}) {
     mine.forEach((s, i) => App.fc.set(s.id, own[i]));
     App.refs = LOWLAND_REFS.map((r, i) => ({ ...r, fc: main[curated.length + i] }));
     App.updatedAt = Math.min(...main.map((m) => m.fetchedAt));
+    App.reach = Math.max(...main.map((m) => m.t[m.t.length - 1] || 0));
+    App.outlookFrom = Math.min(...main.map((m) => m.outlookFrom || Infinity));
     const stale = main.some((m) => m.stale);
-    status('Map grid & space weather…');
+    status('Regions and space weather…');
     const cells = gridCells();
     const [g, kp] = await Promise.allSettled([gridForecast(cells, { force }), kpForecast()]);
     if (g.status === 'fulfilled') App.grid = { cells, series: g.value.data, at: g.value.at };
     if (kp.status === 'fulfilled') App.kp = kp.value;
     await score();
-    status(stale ? `Offline · forecast from ${ago(App.updatedAt)}` : `MeteoSwiss · ${ago(App.updatedAt)}`);
+    status(stale ? `${navigator.onLine === false ? 'Offline' : 'Not refreshed'} · forecast from ${ago(App.updatedAt)}` : `MeteoSwiss · ${ago(App.updatedAt)}`);
   } catch (e) {
     console.error(e);
-    App.error = e;
+    App.error = e; App.loading = false; // not loading any more: the screens show the reason instead of placeholders
     status(navigator.onLine === false ? 'Offline' : 'Forecast not available');
     App.emit('error', e);
   } finally {
@@ -105,6 +108,17 @@ export async function score() {
 
 export const feedOps = (opts) => topOpportunities(App.ops, opts);
 
+export const opDay = opDayOf;
+export function opsOn(day) { const d = localMidnight(day).getTime(); return App.ops.filter((o) => opDay(o) === d); }
+// everything with an altitude and a forecast, for finding the top of the sea of fog
+export function fogPoints() {
+  const pts = [];
+  if (App.grid) App.grid.cells.forEach((c, i) => { const fc = App.grid.series[i]; if (fc) pts.push({ lat: c.lat, elev: fc.elev, fc }); });
+  for (const s of App.spots) { const fc = App.fc.get(s.id); if (fc) pts.push({ lat: s.lat, elev: s.elev, fc }); }
+  for (const r of App.refs) if (r.fc) pts.push({ lat: r.lat, elev: r.elev, fc: r.fc });
+  return pts;
+}
+
 // best opportunity of a spot in the next days (for lists and pins)
 export function bestFor(spotId, from = Date.now(), to = Infinity) {
   const ops = App.opsBySpot.get(spotId) || [];
@@ -122,7 +136,7 @@ async function notifyNew() {
   if (!st.notify || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   const fav = favourites();
   const seen = new Set(getJSON('lb.notified', []));
-  const fresh = feedOps({ min: st.alertMin }).filter((o) => (!st.alertFavsOnly || fav.has(o.spotId)) && (!st.alertTypes || st.alertTypes.includes(o.type)))
+  const fresh = feedOps({ min: st.alertMin }).filter((o) => !o.outlook && (!st.alertFavsOnly || fav.has(o.spotId)) && (!st.alertTypes || st.alertTypes.includes(o.type)))
     .filter((o) => !seen.has(opKey(o))).slice(0, 3);
   if (!fresh.length) return;
   const reg = await navigator.serviceWorker?.getRegistration();

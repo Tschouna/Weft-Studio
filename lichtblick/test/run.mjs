@@ -1,8 +1,11 @@
 // Checks for the opportunity detectors, with made-up forecasts of exactly the weather each one is about.
 //   node test/run.mjs
 import assert from 'node:assert/strict';
-import { openAt, opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
-import { localMidnight, nightInfo, dayEvents, hhmm, moonAt } from '../js/astro.js';
+import { TYPES, confidence, openAt, opportunitiesFor, makeContext, autumnWindow, iceLikely, LOWLAND_REFS, photoWeatherAt, topOpportunities } from '../js/scoring.js';
+import { localMidnight, nightInfo, dayEvents, hhmm, moonAt, planetsTonight, starShutter } from '../js/astro.js';
+import { lightBands, almanac, regionWeather, fogTop, briefing, SHOOT } from '../js/brief.js';
+import { splice, fetchRetry, limitText } from '../js/sources/meteoswiss.js';
+import { ICONS } from '../js/icons.js';
 import { SPOTS } from '../data/spots.js';
 import { HORIZONS } from '../data/horizons.js';
 import { SKY } from '../data/sky.js';
@@ -30,9 +33,12 @@ function fc(now, base, fn = () => ({})) {
 const refsWith = (now, base, fn) => LOWLAND_REFS.map((r) => ({ ...r, fc: fc(now, base, fn) }));
 
 let pass = 0, fail = 0;
+const pending = []; // tests that return a promise are counted when it settles
 function test(name, f) {
-  try { f(); pass++; console.log(`  ok  ${name}`); }
-  catch (e) { fail++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+  const ok = () => { pass++; console.log(`  ok  ${name}`); };
+  const bad = (e) => { fail++; console.log(`  FAIL ${name}\n       ${e.message}`); };
+  try { const r = f(); if (r && typeof r.then === 'function') pending.push(r.then(ok, bad)); else ok(); }
+  catch (e) { bad(e); }
 }
 const best = (ops, type) => ops.filter((o) => o.type === type).sort((a, b) => b.score - a.score)[0];
 
@@ -272,6 +278,162 @@ test('every spot species is known, every species has 12 months', () => {
   assert.ok(inSeason(spot('trupchun'), new Date('2026-09-26T10:00:00Z'))[0].events.length);
 });
 
+console.log('briefing, outlook, almanac');
+test('the light of a day adds up to 24 hours, with two golden hours', () => {
+  const lb = lightBands(new Date('2026-11-12T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 });
+  assert.equal(Math.round(lb.bands.reduce((a, b) => a + (b.to - b.from), 0) / 60e3), 1440);
+  assert.equal(lb.bands.filter((b) => b.kind === 'gold').length, 2);
+  assert.ok(lb.bands[0].kind === 'night' && lb.bands.some((b) => b.kind === 'day'));
+});
+test('with a mountain horizon the sun reaches Riffelsee late and leaves early', () => {
+  const s = spot('riffelsee'), lb = lightBands(new Date('2026-11-12T10:00:00Z'), s, s.horizon);
+  const direct = lb.direct.reduce((a, b) => a + (b.to - b.from), 0) / 3600e3, ev = dayEvents(new Date('2026-11-12T10:00:00Z'), s);
+  assert.ok(direct > 4 && direct < (ev.sunset - ev.sunrise) / 3600e3 - 1.5, `${direct} h`);
+});
+test('outlook is spliced after the last MeteoSwiss hour and marked', () => {
+  const now = new Date('2026-11-12T06:00:00Z'), t0 = localMidnight(now).getTime();
+  const ms = { lat: 47, lon: 8, t: [], temp: [], rh: [], cloud: [], wind: [], sun: [], dew: [], gust: [], windDir: [], precip: [] };
+  for (let i = 0; i < 144; i++) { ms.t.push(t0 + i * H); const ok = i < 120; ms.temp.push(ok ? 5 : null); for (const k of ['rh', 'cloud', 'wind', 'sun', 'dew', 'gust', 'windDir', 'precip']) ms[k].push(ok ? 1 : null); }
+  const out = { t: [], temp: [], rh: [], cloud: [], wind: [], precip: [] };
+  for (let i = 0; i < 240; i++) { out.t.push(t0 + i * H); out.temp.push(9); out.rh.push(80); out.cloud.push(20); out.wind.push(10); out.precip.push(0); }
+  const s = splice(ms, out);
+  assert.equal(s.outlookFrom, t0 + 120 * H);
+  assert.equal(s.t.length, 240);
+  assert.equal(s.temp[119], 5); assert.equal(s.temp[120], 9);
+  assert.ok(s.gust[130] > 10 && s.dew[130] < 9 && s.windDir[130] === null);
+  assert.ok(Math.max(...s.sun.slice(120)) > 2000 && Math.min(...s.sun.slice(120)) === 0, 'estimated sunshine by day only');
+  assert.equal(confidence(t0 + 130 * H, s, now.getTime()), 'low');
+  assert.equal(confidence(now.getTime() + 20 * H, s, now.getTime()), 'high');
+  assert.equal(confidence(now.getTime() + 60 * H, s, now.getTime()), 'medium');
+});
+test('chances beyond day five are found, marked as outlook and scored lower', () => {
+  const now = new Date('2026-07-14T06:00:00Z');
+  const f = fc(now, { cloud: 0, wind: 1, gust: 2 }); f.outlookFrom = localMidnight(now, 3).getTime();
+  const ops = opportunitiesFor(spot('bachalpsee'), f, makeContext({ now }));
+  const far = ops.filter((o) => o.outlook), near = ops.filter((o) => !o.outlook && o.type === 'mirror');
+  assert.ok(far.length && near.length);
+  assert.ok(far.every((o) => o.conf === 'low' && /Outlook/.test(o.why.join(' '))));
+  assert.ok(best(far, 'mirror').score < best(near, 'mirror').score);
+});
+test('sea of fog: top found between foggy lowlands and clear heights', () => {
+  const t = Date.UTC(2026, 10, 12, 8), pts = [];
+  for (let e = 300; e <= 2600; e += 50) pts.push({ elev: e, lat: 47, fc: { t: [t, t + H], low: [e < 950 ? 100 : 5, 0], mid: [0, 0], precip: [0, 0] } });
+  const f = fogTop(pts, t);
+  assert.ok(f && Math.abs(f.top - 950) <= 50, JSON.stringify(f));
+  assert.equal(fogTop(pts.map((p) => ({ ...p, fc: { ...p.fc, low: [10, 10] } })), t), null);
+});
+test('regions: sunny Engadin ranks above a rainy Jura', () => {
+  const day = new Date('2026-07-14T10:00:00Z'), t0 = localMidnight(day).getTime();
+  const cells = [], series = [];
+  for (const [lat, lon, wet] of [[46.55, 9.95, 0], [46.6, 9.9, 0], [47.2, 7.0, 1], [47.25, 7.1, 1]]) {
+    cells.push({ lat, lon });
+    const s = { t: [], elev: 1000, cloud: [], low: [], precip: [], sun: [], temp: [], code: [] };
+    for (let i = 0; i < 48; i++) { s.t.push(t0 + i * H); s.cloud.push(wet ? 100 : 5); s.low.push(wet ? 90 : 0); s.precip.push(wet ? 1.2 : 0); s.sun.push(wet ? 0 : 3600); s.temp.push(14); s.code.push(wet ? 63 : 0); }
+    series.push(s);
+  }
+  const r = regionWeather({ cells, series }, day);
+  assert.equal(r[0].id, 'engadin'); assert.equal(r[0].word, 'Sunny');
+  assert.equal(r[r.length - 1].id, 'jura'); assert.equal(r[r.length - 1].word, 'Rain');
+  assert.match(briefing(day, { regions: r }).text.join(' '), /Engadin/);
+});
+test('almanac for any date: winter brings frozen lakes and the ibex rut, no Milky Way core', () => {
+  const a = almanac(new Date('2027-12-18T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 }, SPOTS);
+  assert.ok(a.seasons.some((s) => /Frozen/.test(s.title)) && a.seasons.some((s) => /fog/i.test(s.title)));
+  assert.ok(a.wildlife.some((w) => /Ibex rut/.test(w.title) && w.spots.length >= 3));
+  assert.equal(a.night.coreMinutes, 0);
+  assert.ok(a.dayLength > 500 && a.dayLength < 520 && Math.abs(a.dayChange) <= 1, `${a.dayLength} ${a.dayChange}`);
+  const o = almanac(new Date('2027-10-20T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 }, SPOTS);
+  assert.ok(o.colour.some((c) => c.species === 'larch' && c.names.length >= 3), JSON.stringify(o.colour));
+});
+test('planets: bright ones listed with a sensible window', () => {
+  const p = planetsTonight(new Date('2026-11-12T10:00:00Z'), { lat: 46.8, lon: 8.2, elev: 500 });
+  assert.ok(Array.isArray(p) && p.length >= 1 && p.every((x) => x.best.alt >= 6 && x.from <= x.to && Number.isFinite(x.mag)), JSON.stringify(p.map((x) => x.name)));
+  assert.deepEqual(starShutter(24), { ok: 20, sharp: 12 });
+});
+test('every chance type and species has a pictogram and shooting notes', () => {
+  for (const [k, t] of Object.entries(TYPES)) { assert.ok(ICONS[t.icon], `${k}: ${t.icon}`); assert.ok(SHOOT[k] && SHOOT[k].length, `notes for ${k}`); assert.ok(t.emoji); }
+  for (const [k, sp] of Object.entries(SPECIES)) assert.ok(ICONS[sp.glyph], `${k}: ${sp.glyph}`);
+});
+
+console.log('network');
+test('a dropped forecast request is tried again; a lasting failure is reported', async () => {
+  const real = globalThis.fetch;
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; if (calls === 1) throw new TypeError('Failed to fetch'); if (calls === 2) return { status: 503, ok: false }; return { status: 200, ok: true }; };
+    const r = await fetchRetry('https://example.invalid/', { wait: 1 });
+    assert.equal(r.status, 200); assert.equal(calls, 3);
+    calls = 0;
+    globalThis.fetch = async () => { calls++; throw new TypeError('Failed to fetch'); };
+    await assert.rejects(fetchRetry('https://example.invalid/', { wait: 1 }), /Failed to fetch/);
+    assert.equal(calls, 3);
+    calls = 0;
+    for (const refused of [400, 429]) { // a refused request, or one over the request limit, is not repeated
+      calls = 0;
+      globalThis.fetch = async () => { calls++; return { status: refused, ok: false }; };
+      assert.equal((await fetchRetry('https://example.invalid/', { wait: 1 })).status, refused); assert.equal(calls, 1);
+    }
+    assert.match(limitText('Daily API request limit exceeded. Please try again tomorrow.'), /tomorrow$/);
+    assert.match(limitText('Hourly API request limit exceeded.'), /in an hour$/);
+    assert.match(limitText('Minutely API request limit exceeded.'), /in a minute$/);
+  } finally { globalThis.fetch = real; }
+});
+
+console.log('alerts while the app is closed');
+test('push encryption gives exactly the example of the standard (RFC 8291, appendix A)', async () => {
+  const { encrypt, b64u, unb64u } = await import('../scripts/webpush.mjs');
+  const out = encrypt('When I grow up, I want to be a watermelon', 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', 'BTBZMqHH6r4Tts7J_aSIgg',
+    { salt: unb64u('DGv6ra1nlYgDCS1FRnbzlw'), localKey: 'yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw' });
+  assert.equal(b64u(out), 'DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN');
+  assert.notEqual(b64u(encrypt('x', 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', 'BTBZMqHH6r4Tts7J_aSIgg')), b64u(encrypt('x', 'BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', 'BTBZMqHH6r4Tts7J_aSIgg')), 'a fresh key and salt each time');
+});
+test('the push request is signed with the phone-made key, for the right push service', async () => {
+  const { vapidHeader, b64u, unb64u } = await import('../scripts/webpush.mjs');
+  const { generateKeyPairSync, verify } = await import('node:crypto');
+  const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = privateKey.export({ format: 'jwk' });
+  const raw = Buffer.concat([Buffer.from([4]), unb64u(jwk.x), unb64u(jwk.y)]);
+  const now = Date.UTC(2026, 10, 12, 8);
+  const h = vapidHeader('https://web.push.apple.com/QGk3abc', { publicKey: b64u(raw), privateKey: jwk.d }, 'https://example.org/app/', now);
+  const [, token, key] = h.match(/^vapid t=([^,]+), k=(.+)$/);
+  assert.equal(key, b64u(raw));
+  const [head, claims, sig] = token.split('.');
+  assert.deepEqual(JSON.parse(unb64u(head)), { typ: 'JWT', alg: 'ES256' });
+  const c = JSON.parse(unb64u(claims));
+  assert.equal(c.aud, 'https://web.push.apple.com'); assert.equal(c.sub, 'https://example.org/app/');
+  assert.ok(c.exp > now / 1000 && c.exp <= now / 1000 + 24 * 3600, 'valid for less than a day');
+  assert.ok(verify('sha256', Buffer.from(`${head}.${claims}`), { key: publicKey, dsaEncoding: 'ieee-p1363' }, unb64u(sig)));
+});
+test('alerts: only new chances, by your settings, never twice unless clearly better', async () => {
+  const { pickAlerts, alertKey } = await import('../scripts/alerts.mjs');
+  const now = Date.UTC(2026, 10, 12, 8), at = (h) => new Date(now + h * 3600e3);
+  const ops = [
+    { spotId: 'rigi', type: 'fogsea', score: 92, peak: at(22), title: 'Sea of fog at sunrise' },
+    { spotId: 'rigi', type: 'sunrise', score: 80, peak: at(22), title: 'Sunrise' },          // same spot: only its best
+    { spotId: 'oeschinen', type: 'mirror', score: 78, peak: at(23), title: 'Mirror-calm water' },
+    { spotId: 'grimsel', type: 'milkyway', score: 85, peak: at(60), title: 'Milky Way' },   // beyond 36 hours
+    { spotId: 'creux', type: 'sunset', score: 70, peak: at(8), title: 'Sunset' },            // below the lowest score
+    { spotId: 'far', type: 'fogsea', score: 95, peak: at(30), outlook: true, title: 'Outlook' },
+  ];
+  let r = pickAlerts(ops, { now });
+  assert.deepEqual(r.fresh.map((o) => o.spotId), ['rigi', 'oeschinen']);
+  assert.equal(r.fresh[0].type, 'fogsea');
+  // three hours later the same forecast: nothing new
+  let again = pickAlerts(ops, { now: now + 3 * 3600e3, state: r.state });
+  assert.equal(again.fresh.length, 0);
+  // ... unless a chance has become clearly better
+  again = pickAlerts(ops.map((o) => (o.spotId === 'oeschinen' ? { ...o, score: 93 } : o)), { now: now + 3 * 3600e3, state: r.state });
+  assert.deepEqual(again.fresh.map((o) => o.spotId), ['oeschinen']);
+  // your settings: lowest score, kinds of chance, saved spots only (own spots always count)
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { min: 60 } }).fresh.map((o) => o.spotId), ['rigi', 'oeschinen', 'creux']);
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { types: ['mirror'] } }).fresh.map((o) => o.spotId), ['oeschinen']);
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { favsOnly: true, favs: ['oeschinen'] } }).fresh.map((o) => o.spotId), ['oeschinen']);
+  assert.deepEqual(pickAlerts(ops, { now, prefs: { favsOnly: true, favs: [] }, mine: new Set(['rigi']) }).fresh.map((o) => o.spotId), ['rigi']);
+  // what was sent is forgotten after a few days
+  const old = pickAlerts(ops, { now: now + 5 * 24 * 3600e3, state: r.state });
+  assert.ok(!old.state.sent[alertKey(ops[0])] || old.state.sent[alertKey(ops[0])].at > now);
+});
+
 console.log('app shell');
 test('the service worker caches every module and data file', async () => {
   const { readFileSync, readdirSync } = await import('node:fs');
@@ -280,5 +442,6 @@ test('the service worker caches every module and data file', async () => {
   for (const f of [...walk('js'), ...walk('data')].filter((f) => /\.(js|mjs)$/.test(f))) assert.ok(sw.includes(`'${f}'`), `${f} missing from sw.js`);
 });
 
+await Promise.all(pending);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

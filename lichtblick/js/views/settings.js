@@ -1,9 +1,14 @@
-// Settings: meteoblue key, alerts, your location, backup of your spots, data sources.
+// Settings: appearance, meteoblue key, alerts, your location, backup of your spots, data sources.
 import { App, loadSpots, refresh, score } from '../app.js';
 import { settings, saveSettings, mySpots, saveMySpots, kvGet, kvSet, getJSON } from '../store.js';
 import { astroForecast, creditsUsed } from '../sources/meteoblue.js';
 import { TYPES } from '../scoring.js';
 import { esc, openSheet, sheetHead, toast, rerenderSheet } from '../ui.js';
+import { icon } from '../icons.js';
+import { THEMES, setTheme } from '../theme.js';
+import { pushSupport, currentSubscription, enablePush, disablePush, setupCode, secretsUrl } from '../push.js';
+
+const THEME_ICON = { auto: 'sunrise', light: 'sun', dark: 'moon', red: 'eye' };
 
 export function openSettings() {
   openSheet((root) => {
@@ -11,43 +16,64 @@ export function openSettings() {
     const tier = st.meteoblueSeeing === 'yes' ? 'Seeing package available' : st.meteoblueSeeing === 'no' ? 'free packages (clouds every 3 h)' : 'not tested yet';
     const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
     const types = st.alertTypes || Object.keys(TYPES);
-    root.innerHTML = `${sheetHead('Settings')}<div class="pad">
-      <div class="section"><h3>meteoblue (night sky)</h3>
-        <p class="small muted">Your own API key. The free meteoblue Weather API key gives cloud layers, visibility and fog for the night (10 million credits for a year; the app spends 8 000 per spot and keeps answers 3 hours). Seeing, jet stream and the bad layer need meteoblue's Seeing package. <a href="https://docs.meteoblue.com/en/weather-apis/free-weather-api/overview" target="_blank" rel="noopener">How to get a free key ↗</a></p>
-        <label class="field">API key<input type="password" id="mbkey" value="${esc(st.meteoblueKey)}" placeholder="paste your meteoblue key" autocomplete="off" spellcheck="false"></label>
-        <div class="btns"><button class="btn small" id="mbsave">Save</button><button class="btn small ghost" id="mbtest">Save & test (one call)</button></div>
-        <p class="small muted" id="mbstate">Package: ${esc(tier)} · ${c.calls} calls, about ${Math.round(c.credits / 1000)}k credits used since ${new Date(c.since).toLocaleDateString('en-GB')}</p>
+    const sec = (title, note = '') => `<div class="sec"><div class="sec-head"><span class="eyebrow">${title}</span>${note ? `<span class="tiny faint">${note}</span>` : ''}</div>`;
+    root.innerHTML = `${sheetHead('Settings')}<div class="sheet-body">
+      ${sec('Appearance')}
+        <div class="btns gap6" id="themes">${THEMES.map(([k, l]) => `<button class="chip" data-theme-pick="${k}" aria-pressed="${(st.theme || 'auto') === k}">${icon(THEME_ICON[k])}${l}</button>`).join('')}</div>
+        <p class="tiny faint mt8">Follow the sun: light by day, dark from dusk. Red night keeps your eyes adapted to the dark while you shoot stars.</p>
       </div>
-      <hr>
-      <div class="section"><h3>Alerts</h3>
-        <div class="switch"><span>Notify me about great chances<br><span class="tiny faint">Checked whenever the app refreshes (${perm === 'granted' ? 'allowed' : perm === 'denied' ? 'blocked in the browser settings' : perm === 'unsupported' ? 'this browser has no notifications; install the app to the home screen' : 'permission will be asked'})</span></span><input type="checkbox" id="anotify" ${st.notify ? 'checked' : ''}></div>
-        <label class="field">Only when the score is at least <b id="aminv">${st.alertMin}</b><input type="range" id="amin" min="50" max="95" step="5" value="${st.alertMin}" style="accent-color:var(--gold)"></label>
-        <div class="switch"><span>Only my favourites and own spots</span><input type="checkbox" id="afav" ${st.alertFavsOnly ? 'checked' : ''}></div>
-        <div class="tags" style="margin-top:10px" id="atypes">${Object.entries(TYPES).map(([k, t]) => `<button class="chip" data-type="${k}" aria-pressed="${types.includes(k)}">${t.icon} ${esc(t.label)}</button>`).join('')}</div>
-        <p class="tiny faint">For alerts while the app is closed, see "Push alerts" in the README (a free ntfy.sh topic and a scheduled GitHub job).</p>
+      ${sec('Night sky from meteoblue')}
+        <p class="small muted">Your own API key. The free meteoblue Weather API key gives cloud layers, visibility and fog for the night (10 million credits for a year; the app spends 8 000 per spot and keeps answers 3 hours). Seeing, jet stream and the bad layer need meteoblue's Seeing package. <a href="https://docs.meteoblue.com/en/weather-apis/free-weather-api/overview" target="_blank" rel="noopener">How to get a free key</a></p>
+        <label class="field mt12">API key<input type="password" id="mbkey" value="${esc(st.meteoblueKey)}" placeholder="paste your meteoblue key" autocomplete="off" spellcheck="false"></label>
+        <div class="btns mt8"><button class="btn small primary" id="mbsave">${icon('check')}Save</button><button class="btn small quiet" id="mbtest">Save and test (one call)</button></div>
+        <p class="tiny faint mt8" id="mbstate">Package: ${esc(tier)} · ${c.calls} calls, about ${Math.round(c.credits / 1000)}k credits used since ${new Date(c.since).toLocaleDateString('en-GB')}</p>
       </div>
-      <hr>
-      <div class="section"><h3>Spots</h3>
+      ${sec('Alerts')}
+        <div class="notice" id="pushbox">
+          <b>Alerts while the app is closed</b>
+          <p class="small mt4">A free job on GitHub looks at the forecast every three hours in the daytime and sends new chances to this phone as notifications, following the settings below. Set it up once:</p>
+          <ol class="steps small">
+            <li><button class="btn small primary" id="pushon">${icon('bell')}Turn on for this phone</button><div class="tiny muted mt4" id="pushstate"></div></li>
+            <li><button class="btn small" id="pushcopy" disabled>${icon('save')}Copy the setup code</button>
+              <textarea id="pushcode" rows="3" readonly hidden class="mt8" style="font-size:11px" aria-label="Setup code"></textarea></li>
+            <li>${secretsUrl() ? `Open <a href="${esc(secretsUrl())}" target="_blank" rel="noopener"><b>New secret</b> on GitHub</a>` : 'On GitHub, open the repository, then <b>Settings → Secrets and variables → Actions → New repository secret</b>'}. Name it <b class="tnum">LICHTBLICK_PUSH</b>, paste the code into <i>Secret</i>, tap <i>Add secret</i>.</li>
+          </ol>
+          <p class="tiny faint mt8">The code holds this phone's address for notifications, a key made on this phone, your alert settings and your own spots. It is stored encrypted on GitHub. If you change the settings below or add spots, copy the code again and update the secret. To try it: on GitHub, Actions → Lichtblick → Run workflow → tick <i>test</i>.</p>
+        </div>
+        <div class="eyebrow mt24">What to alert about</div>
+        <div class="switch"><span><b>Also notify me when I open the app</b><br><span class="tiny faint">Checked whenever the app refreshes (${perm === 'granted' ? 'allowed' : perm === 'denied' ? 'blocked in the browser settings' : perm === 'unsupported' ? 'this browser has no notifications; install the app to the home screen' : 'permission will be asked'})</span></span><input type="checkbox" id="anotify" ${st.notify ? 'checked' : ''}></div>
+        <label class="field mt12">Only when the score is at least <b class="num" id="aminv">${st.alertMin}</b><input type="range" id="amin" min="50" max="95" step="5" value="${st.alertMin}"></label>
+        <div class="switch"><span>Only my saved and own spots</span><input type="checkbox" id="afav" ${st.alertFavsOnly ? 'checked' : ''}></div>
+        <div class="btns gap6 mt12" id="atypes">${Object.entries(TYPES).map(([k, t]) => `<button class="chip" data-type="${k}" aria-pressed="${types.includes(k)}">${icon(t.icon)}${esc(t.label)}</button>`).join('')}</div>
+        <p class="tiny faint mt8">Chances beyond day five come from the longer-range outlook and never trigger an alert.</p>
+      </div>
+      ${sec('Spots', `${mySpots().length} of your own`)}
         <div class="switch"><span>Show the curated spots</span><input type="checkbox" id="curated" ${st.showCurated ? 'checked' : ''}></div>
-        <div class="btns" style="margin-top:10px"><button class="btn small" id="locate">📍 Use my location for distances</button></div>
-        <div class="btns" style="margin-top:10px"><button class="btn small ghost" id="export">Export my spots</button><label class="btn small ghost" style="position:relative;overflow:hidden">Import spots<input type="file" accept="application/json,.json" id="import" style="position:absolute;inset:0;opacity:0"></label></div>
-        <p class="tiny faint">${mySpots().length} spots of your own. Everything is stored on this phone only.</p>
+        <div class="btns mt12"><button class="btn small" id="locate">${icon('locate')}Use my location for distances</button></div>
+        <div class="btns mt8"><button class="btn small quiet" id="export">${icon('save')}Export my spots</button><label class="btn small quiet" style="position:relative;overflow:hidden">${icon('plus')}Import spots<input type="file" accept="application/json,.json" id="import" style="position:absolute;inset:0;opacity:0"></label></div>
+        <p class="tiny faint mt8">Everything is stored on this phone only. Export now and then to keep a copy.</p>
       </div>
-      <hr>
-      <div class="section"><h3>Install on your phone</h3>
-        <p class="small muted"><b>iPhone:</b> open this page in Safari, tap Share, then <i>Add to Home Screen</i>.<br><b>Android:</b> Chrome menu ⋮ → <i>Install app</i>.<br>It then opens full screen and keeps working offline with the last forecast.</p>
+      ${sec('Install on your phone')}
+        <p class="small muted"><b>iPhone:</b> open this page in Safari, tap Share, then <i>Add to Home Screen</i>.<br><b>Android:</b> Chrome menu, then <i>Install app</i>.<br>It then opens full screen and keeps working offline with the last forecast. To update: close the app fully and open it again, twice.</p>
       </div>
-      <hr>
-      <div class="section small muted"><h3>Data</h3>
-        <p><b>Forecast:</b> MeteoSwiss numerical weather models ICON-CH1-EPS and ICON-CH2-EPS (open data, CC BY 4.0), read point by point through the free <a href="https://open-meteo.com/en/docs/meteoswiss-api" target="_blank" rel="noopener">Open-Meteo MeteoSwiss API</a>.</p>
-        <p><b>Live measurements & webcams:</b> MeteoSwiss SwissMetNet via data.geo.admin.ch. <b>Autumn colours:</b> MeteoSwiss phenology observations 2011-2025.</p>
-        <p><b>Night sky:</b> meteoblue Forecast API (your key). Sun, moon and Milky Way computed on the phone with Astronomy Engine (MIT).</p>
-        <p><b>Maps, heights, horizons, search:</b> swisstopo (geo.admin.ch). <b>Night lights:</b> NASA Black Marble. <b>Northern lights:</b> NOAA SWPC Kp forecast.</p>
-        <p><b>Photos:</b> Wikimedia Commons, credited on each spot.</p>
-        <button class="btn small ghost" id="clear">Clear cached forecasts</button>
+      ${sec('Where the data comes from')}
+        <div class="small muted stack">
+        <p><b>Forecast, days 1 to 5:</b> MeteoSwiss numerical weather models ICON-CH1-EPS and ICON-CH2-EPS (open data, CC BY 4.0), read point by point through the free <a href="https://open-meteo.com/en/docs/meteoswiss-api" target="_blank" rel="noopener">Open-Meteo MeteoSwiss API</a>.</p>
+        <p><b>Outlook, days 6 to 10:</b> the ECMWF IFS model through Open-Meteo. Coarser, so those chances are marked as an outlook and scored lower.</p>
+        <p><b>Live measurements and webcams:</b> MeteoSwiss SwissMetNet via data.geo.admin.ch. <b>Autumn colours:</b> MeteoSwiss phenology observations 2011 to 2025.</p>
+        <p><b>Night sky:</b> meteoblue Forecast API (your key). Sun, moon, planets and Milky Way are computed on the phone with Astronomy Engine (MIT).</p>
+        <p><b>Maps, heights, horizons, 3D terrain, search:</b> swisstopo (geo.admin.ch). <b>Night lights:</b> NASA Black Marble. <b>Northern lights:</b> NOAA SWPC Kp forecast. <b>Sightings:</b> iNaturalist.</p>
+        <p><b>Photos:</b> Wikimedia Commons, credited on each spot. <b>Typeface:</b> Archivo (SIL Open Font License).</p>
+        </div>
+        <button class="btn small quiet mt12" id="clear">${icon('refresh')}Clear cached forecasts</button>
       </div>
+      <p class="tiny faint mt24" style="padding-bottom:24px">Lichtblick · made for photographers in Switzerland</p>
     </div>`;
 
+    root.querySelectorAll('[data-theme-pick]').forEach((b) => b.addEventListener('click', () => {
+      setTheme(b.dataset.themePick);
+      root.querySelectorAll('[data-theme-pick]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    }));
     const keyEl = root.querySelector('#mbkey');
     root.querySelector('#mbsave').addEventListener('click', () => { saveSettings({ meteoblueKey: keyEl.value.trim(), meteoblueSeeing: 'auto' }); toast('Saved'); });
     root.querySelector('#mbtest').addEventListener('click', async () => {
@@ -68,6 +94,37 @@ export function openSettings() {
       saveSettings({ notify: e.target.checked });
       if (e.target.checked) { toast('Alerts on'); score(); }
     });
+    // ---- alerts while the app is closed ----
+    const pOn = root.querySelector('#pushon'), pCopy = root.querySelector('#pushcopy'), pState = root.querySelector('#pushstate'), pCode = root.querySelector('#pushcode');
+    let sub = null;
+    const pushUi = () => {
+      const sup = pushSupport();
+      if (!sup.ok) {
+        pOn.disabled = true;
+        pState.textContent = sup.why === 'install' ? 'On an iPhone, alerts need the app on the Home Screen first: in Safari tap Share, then Add to Home Screen, and open Lichtblick from there.' : 'This browser cannot receive notifications while the app is closed.';
+        return;
+      }
+      pOn.innerHTML = sub ? `${icon('check')}On for this phone` : `${icon('bell')}Turn on for this phone`;
+      pOn.classList.toggle('primary', !sub);
+      pCopy.disabled = !sub; pCopy.classList.toggle('primary', !!sub);
+      pState.innerHTML = sub ? 'This phone is ready. <a href="#" id="pushoff">Turn off</a>' : '';
+      root.querySelector('#pushoff')?.addEventListener('click', async (e) => { e.preventDefault(); await disablePush().catch(() => {}); sub = null; pCode.hidden = true; pushUi(); toast('Alerts off for this phone'); });
+    };
+    currentSubscription().then((s) => { sub = s; pushUi(); }).catch(() => pushUi());
+    pushUi();
+    pOn.addEventListener('click', async () => {
+      if (sub) return;
+      pState.textContent = 'Asking the phone…';
+      try { sub = await enablePush(); pushUi(); toast('Ready: now copy the setup code'); }
+      catch (e) { pState.textContent = `${e.message}.`; }
+    });
+    pCopy.addEventListener('click', async () => {
+      if (!sub) return;
+      const code = setupCode(sub);
+      try { await navigator.clipboard.writeText(code); toast('Setup code copied'); }
+      catch { pCode.hidden = false; pCode.value = code; pCode.focus(); pCode.select(); toast('Select all of it and copy'); }
+    });
+
     const amin = root.querySelector('#amin');
     amin.addEventListener('input', () => { root.querySelector('#aminv').textContent = amin.value; });
     amin.addEventListener('change', () => saveSettings({ alertMin: +amin.value }));

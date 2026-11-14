@@ -20,7 +20,8 @@ export function fakeOpenMeteo(url, now = Date.now()) {
       const t = t0 + k * H, rel = (t - now) / 864e5, lh = (new Date(t).getUTCHours() + 1) % 24;
       const w = weather(lat, lon, elev, rel, lh, k);
       h.time.push(Math.round(t / 1000));
-      for (const v of vars) h[v].push(w[v] ?? null);
+      const gone = /meteoswiss/.test(q.get('models') || '') && t > now + 118 * H; // MeteoSwiss reaches five days
+      for (const v of vars) h[v].push(gone ? null : w[v] ?? null);
     }
     return { latitude: lat, longitude: lon, elevation: elev, utc_offset_seconds: 0, timezone: 'GMT', hourly: h };
   });

@@ -15,28 +15,30 @@ const avg = (a) => { const v = a.filter((x) => x != null && Number.isFinite(x));
 const sum = (a) => a.filter((x) => x != null && Number.isFinite(x)).reduce((s, x) => s + x, 0);
 const has = (spot, ...tags) => tags.some((t) => (spot.tags || []).includes(t));
 
+// icon = pictogram in the app (js/icons.js), emoji = the same for plain-text push messages
 export const TYPES = {
-  sunrise: { label: 'Sunrise light', icon: '🌅', group: 'light' },
-  sunset: { label: 'Sunset light', icon: '🌇', group: 'light' },
-  fogsea: { label: 'Sea of fog', icon: '☁️', group: 'fog' },
-  mist: { label: 'Fog & mist', icon: '🌫️', group: 'fog' },
-  mirror: { label: 'Mirror lake', icon: '🪞', group: 'water' },
-  lightning: { label: 'Lightning', icon: '⚡', group: 'storm' },
-  rainbow: { label: 'Rainbow', icon: '🌈', group: 'storm' },
-  clearing: { label: 'Storm light', icon: '🌦️', group: 'storm' },
-  freshsnow: { label: 'Fresh snow', icon: '❄️', group: 'winter' },
-  ice: { label: 'Frozen lake', icon: '🧊', group: 'winter' },
-  hoarfrost: { label: 'Hoarfrost', icon: '🌨️', group: 'winter' },
-  autumn: { label: 'Autumn colours', icon: '🍂', group: 'season' },
-  waterfall: { label: 'Waterfall power', icon: '💧', group: 'water' },
-  foehn: { label: 'Foehn clarity', icon: '💨', group: 'storm' },
-  stars: { label: 'Starry night', icon: '✨', group: 'night' },
-  milkyway: { label: 'Milky Way', icon: '🌌', group: 'night' },
-  meteors: { label: 'Meteor shower', icon: '🌠', group: 'night' },
-  aurora: { label: 'Northern lights', icon: '🟢', group: 'night' },
-  bluehour: { label: 'Blue hour', icon: '🏙️', group: 'light' },
-  wildlife: { label: 'Wildlife', icon: '🦌', group: 'wildlife' },
+  sunrise: { label: 'Sunrise light', icon: 'sunrise', emoji: '🌅', group: 'light' },
+  sunset: { label: 'Sunset light', icon: 'sunset', emoji: '🌇', group: 'light' },
+  fogsea: { label: 'Sea of fog', icon: 'fogsea', emoji: '☁️', group: 'fog' },
+  mist: { label: 'Fog & mist', icon: 'mist', emoji: '🌫️', group: 'fog' },
+  mirror: { label: 'Mirror lake', icon: 'mirror', emoji: '🪞', group: 'water' },
+  lightning: { label: 'Lightning', icon: 'lightning', emoji: '⚡', group: 'storm' },
+  rainbow: { label: 'Rainbow', icon: 'rainbow', emoji: '🌈', group: 'storm' },
+  clearing: { label: 'Storm light', icon: 'clearing', emoji: '🌦️', group: 'storm' },
+  freshsnow: { label: 'Fresh snow', icon: 'freshsnow', emoji: '❄️', group: 'winter' },
+  ice: { label: 'Frozen lake', icon: 'ice', emoji: '🧊', group: 'winter' },
+  hoarfrost: { label: 'Hoarfrost', icon: 'hoarfrost', emoji: '🌨️', group: 'winter' },
+  autumn: { label: 'Autumn colours', icon: 'autumn', emoji: '🍂', group: 'season' },
+  waterfall: { label: 'Waterfall power', icon: 'waterfall', emoji: '💧', group: 'water' },
+  foehn: { label: 'Foehn clarity', icon: 'foehn', emoji: '💨', group: 'storm' },
+  stars: { label: 'Starry night', icon: 'stars', emoji: '✨', group: 'night' },
+  milkyway: { label: 'Milky Way', icon: 'milkyway', emoji: '🌌', group: 'night' },
+  meteors: { label: 'Meteor shower', icon: 'meteors', emoji: '🌠', group: 'night' },
+  aurora: { label: 'Northern lights', icon: 'aurora', emoji: '🟢', group: 'night' },
+  bluehour: { label: 'Blue hour', icon: 'bluehour', emoji: '🏙️', group: 'light' },
+  wildlife: { label: 'Wildlife', icon: 'paw', emoji: '🦌', group: 'wildlife' },
 };
+export const iconOf = (o) => o.icon || TYPES[o.type]?.icon || 'info';
 
 // Lowland reference points for the sea of fog: Mittelland, Rhine and Rhône valleys, Ticino.
 export const LOWLAND_REFS = [
@@ -70,7 +72,7 @@ export function makeContext({ now = new Date(), refs = [], grid = null, kp = nul
 }
 // sun events per region (0.25°) and day: all spots in a valley share them
 function daysFor(ctx, spot, n = 6) {
-  const key = `${spot.lat.toFixed(1)},${(Math.round(spot.lon * 4) / 4).toFixed(2)},${Math.round((spot.elev || 0) / 1500)}`;
+  const key = `${spot.lat.toFixed(1)},${(Math.round(spot.lon * 4) / 4).toFixed(2)},${Math.round((spot.elev || 0) / 1500)},${n}`;
   if (!ctx._days.has(key)) {
     const out = [];
     for (let d = -1; d < n; d++) out.push(dayEvents(localMidnight(ctx.now, d), spot));
@@ -504,9 +506,11 @@ function nightSky(spot, fc, ctx, days, mb, ice) {
 }
 
 // ---------- all of it, for one spot ----------
-export function opportunitiesFor(spot, fc, ctx, { mb = null, days: nDays = 5 } = {}) {
+export function opportunitiesFor(spot, fc, ctx, { mb = null, days: nDays = null } = {}) {
   if (!fc || !fc.t || !fc.t.length) return [];
-  const days = daysFor(ctx, spot, nDays);
+  // as many days as the forecast reaches (five from MeteoSwiss, up to ten with the outlook)
+  const reach = Math.ceil((fc.t[fc.t.length - 1] - localMidnight(ctx.now).getTime()) / 864e5);
+  const days = daysFor(ctx, spot, nDays ?? Math.max(1, Math.min(11, reach)));
   const ice = iceLikely(spot, fc, ctx.now);
   const all = [
     ...goldenHours(spot, fc, ctx, days), ...seaOfFog(spot, fc, ctx, days), ...mistAndFog(spot, fc, ctx, days),
@@ -519,12 +523,21 @@ export function opportunitiesFor(spot, fc, ctx, { mb = null, days: nDays = 5 } =
   const inSeason = !spot.months || (() => { const m = zurichParts(ctx.now).m, [a, b] = spot.months; return a <= b ? m >= a && m <= b : m >= a || m <= b; })();
   return all.filter((o) => o.end.getTime() >= now && o.score > 0 && openAt(spot, o.peak)).map((o) => {
     clipToOpen(spot, o);
+    o.conf = confidence(o.peak.getTime(), fc, now);
+    if (o.conf === 'low') { o.outlook = true; o.score = Math.round(o.score * 0.9); o.why.push('Outlook beyond the five MeteoSwiss days (ECMWF model): a first hint, check again closer to the day'); }
     if (!inSeason) { o.score = Math.round(o.score * 0.55); o.why.unshift('Out of season: the way up is usually closed now'); }
     // first light at places where the lifts have not started yet
     if (!NIGHT_TYPES.has(o.type) && spot.nightNote && ['stay', 'hike'].includes(spot.night) && localHour(o.peak) < 8.5) o.why.push(`Before the first lift: ${spot.nightNote}`);
     return o;
   }).sort((a, b) => b.score - a.score);
 }
+
+// how far to trust it: the 1 km model for the first day and a half, the 2 km model to day five, then the outlook
+export function confidence(t, fc, now = Date.now()) {
+  if (fc && fc.outlookFrom && t >= fc.outlookFrom) return 'low';
+  return t - now <= 36 * H ? 'high' : 'medium';
+}
+export const CONF_WORDS = { high: 'High confidence: MeteoSwiss 1 km model', medium: 'Medium confidence: MeteoSwiss 2 km model, 2 to 5 days ahead', low: 'Low confidence: ECMWF outlook beyond day 5' };
 
 // opening hours of the local day containing `date`: [from, to] in hours, or null when there are none
 function hoursOn(spot, date) {
@@ -571,6 +584,8 @@ export function photoWeatherAt(fc, t) {
   return Math.round(clamp(s, 0, 100));
 }
 
+// the local day a chance belongs to: a night that runs past midnight counts for the evening it starts
+export const opDayOf = (o) => localMidnight(new Date(o.peak.getTime() - (TYPES[o.type]?.group === 'night' ? 4 * H : 0))).getTime();
 export const scoreWord = (s) => (s >= 88 ? 'Exceptional' : s >= 75 ? 'Great' : s >= 60 ? 'Good' : s >= 45 ? 'Worth a look' : 'Unlikely');
 export const scoreClass = (s) => (s >= 88 ? 's5' : s >= 75 ? 's4' : s >= 60 ? 's3' : s >= 45 ? 's2' : 's1');
 export { compass, localHour };
