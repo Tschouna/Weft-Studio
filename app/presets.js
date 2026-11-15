@@ -447,6 +447,14 @@ export const COLLECTION = [
     extras: { back: 0.3, drain: 0 },
     finish: { color: '#3a3b3d', material: 'matte' },
   }),
+  // ---- 2.9: a self-watering wall planter on two keyholes, its pattern running round to the wall
+  design({
+    name: 'Alcove', object: 'wall',
+    form: { height: 150, diameter: 160, base: 0.8, top: 1, belly: 0.55, fullness: 0.4, inset: 0, wall: 3, floor: 3, bottom: 'point', rimEdge: 'round' },
+    surface: { pattern: 'seigaiha', mode: 'relief', count: 14, rows: 4, fill: 1, depth: 2.2, profile: 'round', bandBottom: 0, bandTop: 8 },
+    extras: { back: 0.3, drain: 0, base: 'insert', reservoir: 45, gap: 1.5, mountCount: 2, mountSpacing: 70, mountSlot: 12 },
+    finish: { color: '#2f4858', color2: '#e8e2d6', material: 'matte' },
+  }),
   design({
     name: 'Plumb', object: 'hanging',
     form: { height: 150, diameter: 150, base: 0.8, top: 0.94, belly: 0.62, fullness: 0.4, inset: 0, wall: 3, floor: 3, bottom: 'point', rimEdge: 'round' },

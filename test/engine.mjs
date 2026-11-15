@@ -16,6 +16,10 @@
 //     a pointed one prints with no overhang; every outline, pattern, rim edge, drainage hole and colour
 //     band builds closed with the rim flat on the bed; the pattern reaches the tip; a wall planter's back
 //     stays flat and a wall's thickness thick right down to the tip
+// 12. wall planters: every row is the same D on the wall (nothing is stretched), the pattern runs round to
+//     the back and the wall's plane cuts it off flat; one or two mounting holes, keyholes or screw holes,
+//     sized and spaced as asked and kept on the flat of the back; a self-watering insert drops in with its
+//     clearance all round, clears the mounting screws from its foot up, and prints without supports
 import { generate, makeProfile, easeProfile, shapeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
@@ -401,7 +405,7 @@ console.log('11. domed bottoms');
   for (const [nm, back] of [['hanging', 0], ['wall', 0.3]]) {
     const g = shapeProfile({ ...F, bottom: 'point' }, back).fn;
     let lean = 0;
-    for (let k = 0; k < 400; k++) { const z0 = (160 * k) / 400, z1 = (160 * (k + 1)) / 400; lean = Math.max(lean, (Math.abs(g(z1) - g(z0)) / (z1 - z0)) * (z1 <= zb ? 1 + back : 1)); }
+    for (let k = 0; k < 400; k++) { const z0 = (160 * k) / 400, z1 = (160 * (k + 1)) / 400; lean = Math.max(lean, (Math.abs(g(z1) - g(z0)) / (z1 - z0)) * (1 + back)); }
     const deg = (Math.atan(lean) * 180) / Math.PI, okP = deg < 44.6 && g(0) < 1e-6;
     console.log(`  ${okP ? 'ok  ' : 'FAIL'} pointed silhouette (${nm}): leans ${deg.toFixed(1)}° at most, closes at ${g(0).toFixed(3)} mm`);
     if (!okP) fail(`pointed silhouette ${nm}`);
@@ -447,9 +451,11 @@ for (const [name, o] of cases) {
     // a wall planter's back: flat on the wall's plane, at the full height
     if (wall && ny > 1.99999 * area) { const y = (P[a + 1] + P[b + 1] + P[c + 1]) / 3; if (y > bb[4] - 0.5) { backArea += area; backOff = Math.max(backOff, bb[4] - Math.min(P[a + 1], P[b + 1], P[c + 1])); } }
   }
-  // the back wall's thickness in the dome (the last third of the print): inside faces that look away from the wall
+  // the back wall's thickness in the dome (the last third of the print): inside faces that look away from the
+  // wall (on a smooth pot: a pattern's own faces look that way too, right up to the wall)
   let thin = Infinity;
-  if (wall) for (let v = 0; v < P.length / 3; v++) if (p.normal[v * 3 + 1] < -0.92 && P[v * 3 + 1] > bb[4] - 2.5 * t && Math.abs(P[v * 3]) < 10 && P[v * 3 + 2] > H * 0.6) thin = Math.min(thin, bb[4] - P[v * 3 + 1]);
+  const plain = d.surface.mode !== 'relief';
+  if (wall && plain) for (let v = 0; v < P.length / 3; v++) if (p.normal[v * 3 + 1] < -0.92 && P[v * 3 + 1] > bb[4] - 2.5 * t && Math.abs(P[v * 3]) < 10 && P[v * 3 + 2] > H * 0.6) thin = Math.min(thin, bb[4] - P[v * 3 + 1]);
   // relief within 30% of the radius of the tip: how far the surface stands off the bare silhouette there
   if (d.surface.mode === 'relief') {
     const fn = shapeProfile(d.form, wall ? clamp(d.extras.back ?? 0.3, 0.1, 0.6) : 0).fn;
@@ -467,12 +473,160 @@ for (const [name, o] of cases) {
   const cutOff = d.extras.drain > 0 ? (point ? 1.5 * (d.extras.drain / 2 + t) : 1.5) : 0.6;
   const ok = !open && vol > 0 && Math.abs(bb[2]) < 1e-6 && rimArea > 200 && tall > H - cutOff && tall < H + d.surface.depth + 0.5 && !bad.length
     && (point ? p.stats.overhang < 60 && !supported : supported)
-    && (!wall || (backOff < 0.01 && backArea > 0.5 * R * H && thin > 0.85 * t && thin < 1.2 * t))
+    && (!wall || (backOff < 0.05 && backArea > 0.5 * R * H && Math.abs(bb[4] - r.info.wallY) < 1e-4 && (!plain || (thin > 0.85 * t && thin < 1.2 * t))))
     && (d.surface.mode !== 'relief' || tipRelief > 0.3)
     && (!d.multicolor || bands === d.multicolor.cuts.length + 1)
     && r.parts[0].place.flipZ && r.parts[0].place.turnY;
-  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${(p.stats.tris / 1000).toFixed(0)}k tris, ${open} open edges, ${tall.toFixed(1)} mm tall, rim ${(rimArea / 100).toFixed(0)} cm² on the bed, overhang ${(p.stats.overhang / 100).toFixed(1)} cm²${supported ? ' (says it needs supports)' : ''}${wall ? `, back ${(backArea / 100).toFixed(0)} cm² flat within ${backOff.toFixed(3)} mm, ${thin.toFixed(2)} mm thick at the tip` : ''}${d.surface.mode === 'relief' ? `, relief at the tip ${tipRelief.toFixed(1)} mm` : ''}${bands ? `, ${bands} bands` : ''}${bad.length ? ` BAD: ${bad.map((c) => c.text).join(' ')}` : ''}`);
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${(p.stats.tris / 1000).toFixed(0)}k tris, ${open} open edges, ${tall.toFixed(1)} mm tall, rim ${(rimArea / 100).toFixed(0)} cm² on the bed, overhang ${(p.stats.overhang / 100).toFixed(1)} cm²${supported ? ' (says it needs supports)' : ''}${wall ? `, back ${(backArea / 100).toFixed(0)} cm² flat within ${backOff.toFixed(3)} mm${plain ? `, ${thin.toFixed(2)} mm thick at the tip` : ''}` : ''}${d.surface.mode === 'relief' ? `, relief at the tip ${tipRelief.toFixed(1)} mm` : ''}${bands ? `, ${bands} bands` : ''}${bad.length ? ` BAD: ${bad.map((c) => c.text).join(' ')}` : ''}`);
   if (!ok) fail(`domed ${name}`);
+}
+}
+
+// ---------------------------------------------------------------- 12
+if (run(12)) {
+console.log('12. wall planters: pattern to the back, mounting holes, self-watering inserts');
+const smooth = { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 };
+const prism = { pattern: 'prism', mode: 'relief', count: 12, angle: 58, fill: 0.6, depth: 3.2, profile: 'sharp', bandBottom: 0, bandTop: 0 };
+// a part's points as they are shown (a domed pot is built upside down and turned over)
+const shown = (p) => {
+  const P = p.position, out = new Float64Array(P.length), pl = p.place;
+  for (let v = 0; v < P.length; v += 3) {
+    if (pl.flipZ) { out[v] = pl.turnY ? -P[v] : P[v]; out[v + 1] = pl.turnY ? P[v + 1] : -P[v + 1]; out[v + 2] = pl.z - P[v + 2]; }
+    else { out[v] = P[v]; out[v + 1] = P[v + 1]; out[v + 2] = P[v + 2] + (pl.z || 0); }
+  }
+  return out;
+};
+// the flat of the back: faces square to the wall, on its plane
+const backArea = (p, plane) => {
+  const P = p.position, I = p.index; let a = 0;
+  for (let k = 0; k < I.length; k += 3) {
+    const i = I[k] * 3, j = I[k + 1] * 3, m = I[k + 2] * 3;
+    if (Math.min(P[i + 1], P[j + 1], P[m + 1]) < plane - 1e-3) continue;
+    a += Math.abs((P[j] - P[i]) * (P[m + 2] - P[i + 2]) - (P[m] - P[i]) * (P[j + 2] - P[i + 2])) / 2;
+  }
+  return a;
+};
+
+// (a) every row is the same D standing on the wall: its depth is always (1 + back) / 2 of its width
+for (const [name, form, back] of [['tapered, flat bottom', { base: 0.5, top: 1.1 }, 0.3], ['bellied, deep back', { base: 0.7, top: 0.8, belly: 0.45 }, 0.5], ['pointed', { bottom: 'point' }, 0.3], ['round', { bottom: 'round' }, 0.3]]) {
+  const d = design({ object: 'wall', form, extras: { back }, surface: smooth }), r = generate(d, 0.8), p = r.parts[0], P = shown(p), plane = r.info.wallY;
+  const rows = new Map();
+  for (let v = 0; v < P.length; v += 3) {
+    const k = Math.round(P[v + 2] / 4); let e = rows.get(k);
+    if (!e) rows.set(k, e = { x: 0, y0: Infinity, y1: -Infinity });
+    e.x = Math.max(e.x, Math.abs(P[v])); e.y0 = Math.min(e.y0, P[v + 1]); e.y1 = Math.max(e.y1, P[v + 1]);
+  }
+  let worst = 0, n = 0, off = 0;
+  for (const [k, e] of rows) {
+    if (e.x < 20 || k * 4 < 8 || k * 4 > d.form.height - 6) continue; // (the floor, the rim's edge and the very tip aside)
+    worst = Math.max(worst, Math.abs((e.y1 - e.y0) / (2 * e.x) - (1 + back) / 2)); off = Math.max(off, Math.abs(e.y1 - plane)); n++;
+  }
+  const ok = n > 10 && worst < 0.02 && off < 1e-3 && Math.abs(p.stats.bbox[4] - plane) < 1e-4 && !openEdges(p);
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${n} slices, depth over width off (1 + back) / 2 by at most ${worst.toFixed(4)}, back on the wall within ${off.toFixed(4)} mm`);
+  if (!ok) fail(`wall shape ${name}`);
+}
+
+// (b) the pattern runs round to the back: close to the wall the textured pot is wider than the bare one,
+// nothing passes the wall's plane, and the back is flat
+for (const [name, form, surface] of [['flat bottom, prism', {}, prism], ['pointed, prism', { bottom: 'point' }, prism], ['round, ribs', { bottom: 'round' }, { ...prism, pattern: 'ribs', count: 40, depth: 2.5, profile: 'round', fill: 1 }], ['flat bottom, hammered (pressed in)', {}, { ...prism, pattern: 'hammered', count: 14, depth: 1.6, profile: 'round', fill: 1 }], ['tapered, rolled lip, prism', { base: 0.55, rimEdge: 'rolled' }, prism]]) {
+  const mk = (surf) => { const d = design({ object: 'wall', form, surface: surf }); return [d, generate(d, 0.8)]; };
+  const [d, r] = mk(surface), [, r0] = mk(smooth), p = r.parts[0], plane = r.info.wallY;
+  // how far the surface stands off the bare one, among points 1.5 to 6 mm in front of the wall
+  const reach = (res) => { const P = shown(res.parts[0]), m = new Map(); for (let v = 0; v < P.length; v += 3) { const dy = plane - P[v + 1]; if (dy < 1.5 || dy > 6) continue; const k = Math.round(P[v + 2] / 5); m.set(k, Math.max(m.get(k) ?? 0, Math.abs(P[v]))); } return m; };
+  const A = reach(r), B = reach(r0);
+  let stand = 0, dent = 0;
+  for (const [k, x] of A) if (B.has(k) && k * 5 > 15 && k * 5 < d.form.height - 12) { stand = Math.max(stand, x - B.get(k)); dent = Math.max(dent, B.get(k) - x); }
+  const pressed = surface.pattern === 'hammered';
+  const flat = backArea(p, plane), flat0 = backArea(r0.parts[0], plane);
+  // (a pattern pressed into the wall leaves the back as it is: flat, and no smaller)
+  const ok = !openEdges(p) && Math.abs(p.stats.bbox[4] - plane) < 1e-4 && (pressed ? Math.abs(flat - flat0) < 0.06 * flat0 : stand > 0.4 * surface.depth) && flat > 0.98 * flat0 && !r.checks.some((c) => c.level === 'bad')
+    && (d.form.bottom === 'round' || p.stats.overhang < 60);
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: by the wall the pattern ${pressed ? 'is pressed in, and the back is whole' : `stands out ${stand.toFixed(1)} mm`}, nothing passes the wall (${(p.stats.bbox[4] - plane).toExponential(1)} mm), flat back ${(flat / 100).toFixed(0)} cm² (bare: ${(flat0 / 100).toFixed(0)}), overhang ${(p.stats.overhang / 100).toFixed(1)} cm²`);
+  if (!ok) fail(`wall pattern ${name}`);
+}
+
+// (c) mounting holes: as many, as large, as long and as far apart as asked, kept on the flat of the back
+{
+  const mk = (extras, form = {}) => { const d = design({ object: 'wall', form, extras, surface: smooth }), r = generate(d, 0.8); return { d, r, p: r.parts[0], m: r.info.mount, flat: backArea(r.parts[0], r.info.wallY) }; };
+  const one = mk({}), two = mk({ mountCount: 2, mountSpacing: 70 }), long = mk({ mountSlot: 30 }), big = mk({ mountHead: 14, mountShaft: 6 });
+  const screws = mk({ mount: 'screw', mountCount: 2, mountShaft: 5, mountSpacing: 60 }), wide = mk({ mountCount: 2, mountSpacing: 400 }), low = mk({ mountDrop: 60 });
+  const narrow = mk({ mountCount: 2, mountSpacing: 80, mountHead: 16 }, { diameter: 44, height: 80 }), domed = mk({ mountCount: 2, mountSpacing: 90, mountDrop: 115 }, { bottom: 'round' }), tip = mk({ mountCount: 2, mountSpacing: 60, mountDrop: 200 }, { bottom: 'round' });
+  const oneScrew = mk({ mount: 'screw', mountShaft: 5 });
+  const hole = one.flat - two.flat, rows = [
+    ['one keyhole by default', one.m.count === 1 && !one.m.screw && one.m.slot === 9 && one.m.drop === 22, `Ø ${one.m.head} opening, ${one.m.shaft} × ${one.m.slot} mm slot, ${one.m.drop} mm under the rim`],
+    ['a second keyhole takes as much out of the back as the first', two.m.count === 2 && two.m.spacing === 70 && hole > 80 && hole < 160, `${hole.toFixed(0)} mm² each, ${two.m.spacing} mm apart`],
+    ['a longer slot', long.m.slot === 30 && Math.abs(one.flat - long.flat - 21 * 4.6) < 12, `+21 mm of slot takes ${(one.flat - long.flat).toFixed(0)} mm² more (${(21 * 4.6).toFixed(0)} expected)`],
+    ['a bigger opening and a wider slot', big.m.head === 14 && big.m.shaft === 6 && one.flat - big.flat > 60, `Ø ${big.m.head} mm opening, ${big.m.shaft} mm slot`],
+    ['two plain screw holes', screws.m.screw && screws.m.count === 2 && screws.m.slot === 0 && Math.abs(oneScrew.flat - screws.flat - 1.1 * Math.PI * 2.5 ** 2) < 6, `Ø ${screws.m.shaft} mm, ${screws.m.spacing} mm apart, ${(oneScrew.flat - screws.flat).toFixed(1)} mm² each (${(1.1 * Math.PI * 2.5 ** 2).toFixed(1)} for a Ø 5 mm teardrop)`],
+    ['too far apart: as far as the flat of the back allows', wide.m.count === 2 && wide.m.spacing < 125 && wide.m.spacing > 90 && wide.r.checks.some((c) => /as far apart as the flat of the back allows/.test(c.text)), `${wide.m.spacing.toFixed(0)} mm`],
+    ['lower down', low.m.drop === 60, `${low.m.drop} mm under the rim`],
+    ['a back too narrow for two has one, and says so', narrow.m.count === 1 && narrow.r.checks.some((c) => /too narrow there for two/.test(c.text)), `${narrow.m.count} hole`],
+    ['low in a round bowl they move together', domed.m.count === 2 && domed.m.drop === 115 && domed.m.spacing < 90 && domed.m.spacing > 30 && domed.r.checks.some((c) => /as far apart as the flat of the back allows/.test(c.text)), `${domed.m.drop.toFixed(0)} mm under the rim, ${domed.m.spacing.toFixed(0)} mm apart`],
+    ['at the very tip there is room for one', tip.m.count === 1 && tip.m.drop < 140 && tip.r.checks.some((c) => /too narrow there for two/.test(c.text)), `${tip.m.drop.toFixed(0)} mm under the rim`],
+  ];
+  for (const [name, ok, note] of rows) { console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${note}`); if (!ok) fail(`mount ${name}`); }
+  for (const x of [one, two, long, big, screws, oneScrew, wide, low, narrow, domed, tip]) { if (openEdges(x.p)) fail('a wall planter with mounting holes is not closed'); if (x.p.stats.overhang > 60 && x.d.form.bottom !== 'round') fail('mounting holes overhang'); }
+}
+
+// (d) self-watering inserts. The pot is sliced every millimetre and rays are cast from a point just inside
+// the insert's back: where each first meets a slice is the inside of the pot at that height, and the way
+// in from above is as wide as the narrowest slice above. The insert has to keep clear of that all round.
+function insertFit(r, d) {
+  const pot = r.parts.find((p) => p.key === 'pot'), ins = r.parts.find((p) => p.key === 'insert');
+  const P = shown(pot), Q = shown(ins), H = d.form.height + (r.info.lift || 0), t = d.form.wall;
+  const oy = r.info.wallY - t - 9, A = 720, bins = Math.ceil(H) + 1, inner = new Float64Array(A * bins).fill(Infinity), I = pot.index;
+  for (let k = 0; k < I.length; k += 3) {
+    const a = I[k] * 3, b = I[k + 1] * 3, c = I[k + 2] * 3;
+    const zlo = Math.min(P[a + 2], P[b + 2], P[c + 2]), zhi = Math.max(P[a + 2], P[b + 2], P[c + 2]);
+    for (let hb = Math.max(0, Math.ceil(zlo)); hb <= Math.min(bins - 1, Math.floor(zhi)); hb++) {
+      const pts = [];
+      for (const [u, v] of [[a, b], [b, c], [c, a]]) {
+        const z0 = P[u + 2], z1 = P[v + 2];
+        if ((z0 - hb) * (z1 - hb) > 0 || z0 === z1) continue;
+        const f = (hb - z0) / (z1 - z0);
+        pts.push([P[u] + (P[v] - P[u]) * f, P[u + 1] + (P[v + 1] - P[u + 1]) * f - oy]);
+      }
+      if (pts.length < 2) continue;
+      const [p, q] = pts, a0 = Math.atan2(p[1], p[0]), a1 = Math.atan2(q[1], q[0]);
+      let lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+      if (hi - lo > Math.PI) { const tmp = lo; lo = hi; hi = tmp + TAU; }
+      for (let q2 = Math.ceil((lo / TAU) * A); q2 <= Math.floor((hi / TAU) * A); q2++) {
+        const ang = (q2 / A) * TAU, dx = Math.cos(ang), dy = Math.sin(ang), ex = q[0] - p[0], ey = q[1] - p[1], det = dx * -ey + ex * dy;
+        if (Math.abs(det) < 1e-12) continue;
+        const sd = (p[0] * -ey + ex * p[1]) / det, w = (dx * p[1] - dy * p[0]) / det;
+        if (sd > 0 && w >= -1e-9 && w <= 1 + 1e-9) { const id = (((q2 % A) + A) % A) * bins + hb; if (sd < inner[id]) inner[id] = sd; }
+      }
+    }
+  }
+  for (let a = 0; a < A; a++) for (let hb = bins - 2; hb >= 0; hb--) inner[a * bins + hb] = Math.min(inner[a * bins + hb], inner[a * bins + hb + 1]);
+  let gap = Infinity, head = Infinity;
+  const m = r.info.mount, yIn = r.info.wallY - t;
+  for (let v = 0; v < Q.length; v += 3) {
+    const z = Q[v + 2];
+    // the screw heads stand 4 mm in from the pot's back: the insert keeps clear of them from its foot up to the holes
+    for (const x of m.xs) if (Math.abs(Q[v] - x) < (m.screw ? 5.5 : m.head / 2) && z < H - m.drop + 6) head = Math.min(head, yIn - Q[v + 1]);
+    if (z > H - 0.5) continue; // the flare above the rim rests on it
+    const x = Q[v], y = Q[v + 1] - oy, af = ((Math.atan2(y, x) / TAU + 1) % 1) * A, a0 = Math.floor(af) % A, hb = clamp(Math.ceil(z), 0, bins - 1);
+    const l0 = inner[a0 * bins + hb], l1 = inner[((a0 + 1) % A) * bins + hb];
+    if (Number.isFinite(l0) && Number.isFinite(l1)) gap = Math.min(gap, l0 + (l1 - l0) * (af - Math.floor(af)) - Math.hypot(x, y));
+  }
+  return { gap, head };
+}
+const ins = [
+  ['flat bottom', {}, {}], ['flat bottom, two keyholes', {}, { mountCount: 2 }], ['tapered, flared rim, two screw holes', { base: 0.5, top: 1.1 }, { mountCount: 2, mount: 'screw' }],
+  ['narrow rim, tall reservoir', { top: 0.7, belly: 0.4 }, { reservoir: 30 }], ['round bottom', { bottom: 'round' }, {}], ['round bottom, deep back, two keyholes', { bottom: 'round' }, { back: 0.5, mountCount: 2 }],
+  ['pointed bottom', { bottom: 'point' }, { reservoir: 50 }], ['pointed bottom, long slots low down', { bottom: 'point' }, { mountSlot: 25, mountDrop: 45 }], ['small', { height: 100, diameter: 110 }, {}],
+];
+for (const [name, form, extras] of ins) {
+  const d = design({ object: 'wall', form, extras: { base: 'insert', gap: 1.5, drain: 8, ...extras }, surface: prism }), r = generate(d, 0.7);
+  const pot = r.parts.find((p) => p.key === 'pot'), part = r.parts.find((p) => p.key === 'insert'), fit = insertFit(r, d), domed = d.form.bottom === 'round' || d.form.bottom === 'point';
+  const ml = +(r.checks.find((c) => /^Self-watering/.test(c.text))?.text.match(/about (\d+) ml/) || [0, 0])[1];
+  const open = openEdges(part) + openEdges(pot), bb = part.stats.bbox, potTall = pot.stats.bbox[5] - pot.stats.bbox[2];
+  const ok = !open && fit.gap > 0.8 && fit.head > 5.5 && part.stats.overhang < 30 && Math.abs(bb[2]) < 1e-6 && ml >= 10 && !r.checks.some((c) => c.level === 'bad')
+    // (the pot keeps its water: no drainage hole through a flat floor, or through a dome's tip)
+    && (!domed || potTall > d.form.height - 0.6) && (d.form.bottom === 'round' || pot.stats.overhang < 60);
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} insert, ${name}: clearance ${fit.gap.toFixed(2)} mm all round, ${fit.head.toFixed(1)} mm behind each screw, ${Math.round(bb[5])} mm tall, reservoir about ${ml} ml, overhang ${part.stats.overhang.toFixed(0)} mm², ${open} open edges`);
+  if (!ok) fail(`wall insert ${name}`);
 }
 }
 

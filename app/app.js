@@ -1363,7 +1363,8 @@ let profileMemo = { key: '', fn: null };
 // a hanging or wall planter whose bottom closes in a dome (round or pointed) instead of a flat base
 const isDomed = (d) => (d.object === 'hanging' || d.object === 'wall') && !isFacet(d) && (d.form.bottom === 'round' || d.form.bottom === 'point');
 function displayProfile(d) {
-  const domed = isDomed(d), back = domed && d.object === 'wall' ? clamp(d.extras.back ?? 0.3, 0.1, 0.6) : 0;
+  // (a wall planter's front leans further than its silhouette, by its depth: the engine eases it for that)
+  const domed = isDomed(d), back = d.object === 'wall' && !isFacet(d) ? clamp(d.extras.back ?? 0.3, 0.1, 0.6) : 0;
   const F = domed || !d.form.bottom || d.form.bottom === 'flat' ? d.form : { ...d.form, bottom: 'flat' };
   const key = JSON.stringify(F) + back;
   if (profileMemo.key !== key) profileMemo = { key, fn: shapeProfile(F, back).fn };
@@ -1876,8 +1877,29 @@ function renderObject() {
     opts.push(h('p', { class: 'note' }, 'The geometric wall planter, exactly as the original: upright walls round a pointed opening, a bottom of two slopes meeting in a keel, and a steep diamond facet in front, with two Ø 6 mm screw holes near the top corners of the back. Scale it under Form; it keeps its exact shape. It prints from the open end, rim on the bed. No drainage hole: water sparingly, or stand a nursery pot inside.'));
   } else if (d.object === 'wall') {
     opts.push(sliderCtl('x-back', 'Depth from the wall', { min: 0.1, max: 0.6, step: 0.01, fmt: (v) => `${Math.round((d.form.diameter / 2) * (1 + v))} mm` }, () => X.back ?? 0.3, (v) => { X.back = v; }));
-    opts.push(sliderCtl('x-wdrain', 'Drainage hole', { min: 0, max: 20, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
-    opts.push(h('p', { class: 'note' }, 'The back is flat and plain, with a keyhole for one screw (head up to 8 mm). The cross-section is always the D shape, and it does not twist.'));
+    opts.push(h('p', { class: 'note' }, 'The cross-section is always a D standing on the wall, and it does not twist. The pattern runs round to the back, where the wall cuts it off flat.'));
+    // self-watering: an insert that drops in, or a drainage hole
+    opts.push(switchCtl('x-winsert', 'Self-watering insert', () => X.base === 'insert', (v) => { X.base = v ? 'insert' : 'none'; }, { structural: true }));
+    if (X.base === 'insert') {
+      opts.push(sliderCtl('x-wres', 'Water reservoir height', { min: 6, max: 90, step: 1, fmt: mm }, () => X.reservoir ?? 14, (v) => { X.reservoir = v; }));
+      opts.push(switchCtl('x-wslots', 'Water slots in the insert', () => X.slots !== false, (v) => { X.slots = v; }));
+      opts.push(sliderCtl('x-wgap', 'Gap between insert and pot', { min: 0.6, max: 4, step: 0.1, fmt: mm1 }, () => X.gap ?? 1.5, (v) => { X.gap = v; }));
+      opts.push(h('p', { class: 'note' }, `An inner pot, flat at the back like the planter, hangs from the rim and reaches down into a water reservoir. Pour water down the channel at its side; slots round its foot let the soil drink it back up. A groove down its back clears each mounting screw, so hang the planter first and drop the insert in after.${isDomed(d) ? ' With a round or pointed bottom the reservoir is the bowl itself, so the insert starts higher up: the print check says how much water it holds.' : ''} The pot has no drainage hole.`));
+    } else opts.push(sliderCtl('x-wdrain', 'Drainage hole', { min: 0, max: 20, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
+    // mounting: one or two holes in the flat back
+    const keyhole = X.mount !== 'screw', two = X.mountCount === 2;
+    opts.push(chipsCtl('Mounting holes', [{ value: 1, label: 'One' }, { value: 2, label: 'Two' }], () => (two ? 2 : 1), (v) => { X.mountCount = v; }, { structural: true }));
+    opts.push(chipsCtl('Hole type', [{ value: 'keyhole', label: 'Keyhole', title: 'Hooks over a screw left standing out of the wall' }, { value: 'screw', label: 'Screw hole', title: 'A plain hole: screw it on from inside the pot' }], () => (keyhole ? 'keyhole' : 'screw'), (v) => { X.mount = v; }, { structural: true }));
+    if (two) opts.push(sliderCtl('x-mspace', 'Distance between the holes', { min: 20, max: 240, step: 1, fmt: mm }, () => X.mountSpacing ?? 80, (v) => { X.mountSpacing = v; }));
+    if (keyhole) {
+      opts.push(sliderCtl('x-mslot', 'Slot length', { min: 3, max: 40, step: 0.5, fmt: mm1 }, () => X.mountSlot ?? 9, (v) => { X.mountSlot = v; }));
+      opts.push(sliderCtl('x-mhead', 'Opening for the screw head', { min: 6, max: 18, step: 0.2, fmt: (v) => `Ø ${v.toFixed(1)} mm` }, () => X.mountHead ?? 9.2, (v) => { X.mountHead = v; }));
+    }
+    opts.push(sliderCtl('x-mshaft', keyhole ? 'Slot width' : 'Hole size', { min: 2.4, max: 10, step: 0.1, fmt: (v) => (keyhole ? `${v.toFixed(1)} mm` : `Ø ${v.toFixed(1)} mm`) }, () => X.mountShaft ?? 4.6, (v) => { X.mountShaft = v; }));
+    opts.push(sliderCtl('x-mdrop', 'Distance under the rim', { min: 10, max: 120, step: 1, fmt: mm }, () => X.mountDrop ?? 22, (v) => { X.mountDrop = v; }));
+    opts.push(h('p', { class: 'note' }, keyhole
+      ? 'A keyhole hooks over a screw left standing 4 mm out of the wall: its head goes in through the round opening, and the planter drops the slot\'s length onto the shaft. Make the opening a little wider than the head and the slot a little wider than the shaft. The holes stay on the flat of the back, so they may end up closer together or lower than you ask: the print check under Export says where they are.'
+      : 'Plain holes: hold the planter to the wall and screw through them from inside. They stay on the flat of the back, so they may end up closer together or lower than you ask: the print check under Export says where they are.'));
   }
   if (d.object === 'orchid') {
     opts.push(sliderCtl('x-odrain', 'Drainage hole', { min: 0, max: 30, step: 1, fmt: (v) => (v ? `Ø ${v} mm` : 'none') }, () => X.drain, (v) => { X.drain = v; }));
@@ -2350,6 +2372,10 @@ function refreshListing() {
   const surf = facet ? 'faceted' : S.pattern === 'smooth' ? 'smooth' : `${P.label.toLowerCase()} ${S.mode === 'cut' ? 'openwork' : 'relief'}`;
   const obj = OBJECTS[d.object].label.toLowerCase();
   const supportsNeeded = allChecks().some((c) => /^Needs supports/.test(c.text));
+  // a wall planter's mounting holes, as the engine built them
+  const mt = res.info.mount, mountText = !mt ? 'a keyhole for one screw' : mt.screw
+    ? `${mt.count === 2 ? `two Ø ${mt.shaft.toFixed(1)} mm screw holes, ${Math.round(mt.spacing)} mm apart` : `a Ø ${mt.shaft.toFixed(1)} mm screw hole`}`
+    : `${mt.count === 2 ? `two keyholes, ${Math.round(mt.spacing)} mm apart, for screws` : 'a keyhole for one screw'} (head up to ${(mt.head - 1.2).toFixed(0)} mm)`;
   const noSupports = !supportsNeeded && !allChecks().some((c) => c.level === 'bad');
   const loops = Math.max(2, Math.round(d.form.wall / 0.45));
   const vase = d.object === 'vase' && d.extras.vaseMode && S.mode !== 'cut';
@@ -2373,10 +2399,11 @@ function refreshListing() {
     d.object === 'globe' ? `• Globe lamp: the globe stands in a groove in the base, which prints top-down and takes an E27 lamp kit in its Ø ${d.extras.socket} mm socket hole. Translucent filament glows best at 3 to 4 wall lines. LED bulbs only, 7 W or less.` : null,
     d.object === 'lamp' ? `• Table lamp: the base prints top-down and takes an E27 lamp kit in its Ø ${d.extras.socket} mm socket hole; the shade stands in a groove in the base. LED bulbs only, 10 W or less.` : null,
     d.object === 'planter' && d.extras.base === 'insert' ? '• Self-watering: print the insert too. Thread a cotton wick through its floor and fill the reservoir through the side channel.' : null,
+    d.object === 'wall' && !facet && d.extras.base === 'insert' ? '• Self-watering: print the insert too. Hang the planter first, then drop the insert in; fill the reservoir through its side channel.' : null,
     d.object === 'planter' && d.extras.drain && d.extras.base !== 'insert' ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
     d.object === 'planter' && d.extras.base === 'sleeve' ? '• Print the sleeve in a second colour for a two-tone look.' : null,
     d.object === 'hanging' ? `• Hangs from ${d.extras.hangers || 3} cords through teardrop holes under the rim (cord up to Ø 4 mm).${d.extras.drain ? ` Ø ${d.extras.drain} mm drainage hole.` : ' No drainage hole, so it never drips.'}` : null,
-    d.object === 'wall' ? (facet ? '• Flat back with two Ø 6 mm screw holes near its top corners. Prints from the open end, rim on the bed; no drainage hole.' : isDomed(d) ? `• Flat back with a keyhole for one screw (head up to 8 mm). The ${d.form.bottom === 'point' ? 'pointed' : 'round'} bottom closes onto the wall; it prints rim-down${supportsNeeded ? '' : ', without supports'}.` : '• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports.') : null,
+    d.object === 'wall' ? (facet ? '• Flat back with two Ø 6 mm screw holes near its top corners. Prints from the open end, rim on the bed; no drainage hole.' : isDomed(d) ? `• Flat back with ${mountText}. The ${d.form.bottom === 'point' ? 'pointed' : 'round'} bottom closes onto the wall; it prints rim-down${supportsNeeded ? '' : ', without supports'}.` : `• Flat back with ${mountText}. Prints upright, back and all, without supports.`) : null,
     d.object === 'hanging' && isDomed(d) ? `• The ${d.form.bottom === 'point' ? 'pointed' : 'round'} bottom is one piece with the wall, pattern and all; it prints rim-down${supportsNeeded ? '' : ', without supports'}.` : null,
     d.object === 'orchid' ? `• Open walls for air at the roots${d.extras.drain ? `, Ø ${d.extras.drain} mm drainage hole` : ''}${d.extras.base === 'saucer' ? ', saucer included' : ''}.` : null,
     d.object === 'lantern' ? '• For LED tealights only. Never use a real flame.' : null,

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.9.0
+
+- **Wall planters: the pattern runs all the way to the back.**
+  - Before, the pattern faded out on the sides, and the part of the side nearest the wall was stretched to reach it, which smeared whatever pattern was left into a plain strip. That strip was widest on tapered and pointed planters.
+  - Now every cross-section is the same D standing on the wall, only smaller where the planter narrows, so nothing is stretched and the pattern keeps its proportions round to the back. There the wall's plane cuts it off flat: the back is still flat, and nothing sticks out past it.
+  - What this changes in the shape: where a wall planter narrows, it now narrows toward the wall, so its front leans a little more than before and its sides the same. The silhouette is eased a little more to allow for that, so the front still stays under 45°.
+  - The back wall is now a full wall thick everywhere, and flat on the inside too.
+- **Adjustable mounting holes** (Object → Wall planter options):
+  - **One** or **Two** holes, with the **distance between** them.
+  - **Keyhole** (hooks over a screw left standing out of the wall) or **Screw hole** (a plain hole, screwed on from inside).
+  - **Slot length**, **Opening for the screw head**, **Slot width** (or hole size), and **Distance under the rim**.
+  - The holes always stay on the flat of the back. If you ask for more than fits, they move together or up, and the print check says where they ended up.
+  - Holes through a smooth wall now come out at their true size (the mesh is finer where there are holes).
+- **Self-watering insert for wall planters** (Object → Self-watering insert):
+  - A D-shaped inner pot, flat at the back like the planter, that hangs from the rim over a water reservoir, with the same side channel for filling and slots round its foot as the standing planter's insert.
+  - A groove down its back clears the head of each mounting screw, so you hang the planter first and drop the insert in after.
+  - It works with flat, round and pointed bottoms. With a round or pointed bottom the reservoir is the bowl itself, so the insert starts higher; the print check says how much water it holds.
+  - The insert prints the right way up with no supports, and the planter has no drainage hole.
+- New in the Collection: **Alcove**, a pointed wall planter in wave relief with a self-watering insert on two keyholes.
+
 ## 2.8.0
 
 - **Truly round bottoms on hanging and wall planters:**

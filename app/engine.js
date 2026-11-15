@@ -97,7 +97,7 @@ export function makeProfile(F, back = 0) {
 // Limit how far the silhouette may lean from vertical, so walls print without supports.
 // Returns the eased profile and how far (mm) it had to move.
 // (from `freeFrom` up it may narrow `capK` times as fast: without limit for a round dome closing over the
-// top of the print, less fast for a wall planter's pointed one, whose front leans further than its sides)
+// top of the print)
 export function easeProfile(rFn, H, maxDeg = 46, freeFrom = Infinity, capK = 1) {
   const n = 2400, dz = H / (n - 1), lim = Math.tan((maxDeg * Math.PI) / 180) * dz;
   const r = new Float64Array(n);
@@ -116,19 +116,22 @@ export function easeProfile(rFn, H, maxDeg = 46, freeFrom = Infinity, capK = 1) 
 
 // The silhouette as it is built, the right way up (z = 0 at its lowest point), eased so that it prints
 // without supports. A domed bottom prints rim-down, so it is eased from the rim, and a round end stays round.
+// (back: a wall planter's rows are all the same D standing on the wall, so its front leans 1 + back times
+// as far as the silhouette: the silhouette is eased that much more, and the front keeps to 44°)
 export function shapeProfile(F, back = 0) {
   const H = F.height, raw = makeProfile(F, back);
   if (F.printable === false) return { fn: raw, moved: 0 };
-  if (!domedBottom(F)) return easeProfile(raw, H, 44);
+  const deg = (Math.atan(Math.tan((44 * Math.PI) / 180) / (1 + back)) * 180) / Math.PI;
+  if (!domedBottom(F)) return easeProfile(raw, H, deg);
   const zb = clamp(F.belly, 0.08, 0.92) * H;
-  const e = easeProfile((z) => raw(H - z), H, 44, H - zb, F.bottom === 'round' ? Infinity : 1 / (1 + back));
+  const e = easeProfile((z) => raw(H - z), H, deg, H - zb, F.bottom === 'round' ? Infinity : 1);
   return { fn: (z) => e.fn(H - z), moved: e.moved };
 }
 
 // A domed bottom as it prints: the rim on the bed, the dome closing over the top. `rUp` is the silhouette
 // the right way up. The profile stops at a small ring near the tip, closed by a cap to each wall's pole,
 // or left open as a drainage hole.
-function domeShape(F, X, rUp) {
+function domeShape(F, X, rUp, back = 0) {
   const H = F.height, t = F.wall || 3, R = F.diameter / 2, point = F.bottom === 'point';
   const fn = (z) => rUp(H - z);
   const capFrom = H - clamp(F.belly, 0.08, 0.92) * H;
@@ -149,7 +152,7 @@ function domeShape(F, X, rUp) {
   const zEnd = zAt(rEnd), slEnd = Math.max(0.2, (fn(zEnd - 0.05) - fn(Math.min(H, zEnd + 0.05))) / (Math.min(H, zEnd + 0.05) - (zEnd - 0.05)));
   // where a round dome starts to lean past 45° (the inside needs supports from there up)
   let zOver = Infinity, rOver = 0;
-  if (!point) for (let z = capFrom; z < zEnd; z += 0.25) if (fn(z) - fn(z + 0.25) > 0.25) { zOver = z; rOver = fn(z); break; }
+  if (!point) for (let z = capFrom; z < zEnd; z += 0.25) if ((fn(z) - fn(z + 0.25)) * (1 + back) > 0.25) { zOver = z; rOver = fn(z); break; }
   const arcFrom = (rStop) => { let L = 0, z0 = zAt(rStop), rp = fn(z0); const n = 200; for (let q = 1; q <= n; q++) { const z = z0 + ((zEnd - z0) * q) / n, r = fn(z); L += Math.hypot(r - rp, (zEnd - z0) / n); rp = r; } return L; };
   return { fn, H: zEnd, top: H, R, rEnd, capFrom, point, zOver, rOver, arcFrom, hole: holeR > 0,
     // the inside comes to its own pole, a wall's thickness (measured square to the wall) under the tip
@@ -1126,8 +1129,8 @@ function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg 
       const below = (vx * c - vy * sn) * NX[i] + (vx * sn + vy * c) * NY[i];
       const kN = CX[i] * NX[i] + CY[i] * NY[i];
       const above = rows.r[j + 1] * kN + o1;
-      // a sliding back moves toward +y between the rows: its part along the normal is outward travel
-      const dSl = slide ? (slide.amt[j + 1] - slide.amt[j]) * slide.w[i] + (slide.all ? slide.all[j + 1] - slide.all[j] : 0) : 0;
+      // a flat-backed row moves toward +y between the rows: its part along the normal is outward travel
+      const dSl = slide ? slide.all[j + 1] - slide.all[j] : 0;
       const dR = above - below + dSl * NY[i];
       const raw = (rows.z[j + 1] - rows.z[j]) * T - dR;
       if (skipOverhung && raw < 0) continue;
@@ -1179,6 +1182,10 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
   // each row: outline scale r, outward offset off, twist angle; inner wall sits t further in
   const off = new Float64Array(NR), offIn = new Float64Array(NR), zIn = new Float64Array(NR), zw = new Float64Array(NR);
   const cphi = new Float64Array(NR), sphi = new Float64Array(NR);
+  // a flat-backed piece: how far each row's inside has moved toward the wall, and, where rows of the inside
+  // are collapsed onto one line at a flared rim, the outline scale they all take there (so that they
+  // really are one line all the way round a D, whose back does not move with its radius)
+  const slIn = slide ? Float64Array.from(slide.all, (a, j) => a + slide.inAll[j]) : null, colR = slide ? new Float64Array(NR) : null;
   const Htot = opts.H || rows.z[NR - 1] || 1;
   for (let j = 0; j < NR; j++) {
     off[j] = rows.off ? rows.off[j] : 0;
@@ -1235,7 +1242,8 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     if (b < NR - 1) {
       const a = b - 1, f = clamp((zTop - zIn[a]) / Math.max(1e-9, zIn[b] - zIn[a]), 0, 1);
       const rc = rows.r[a] + (rows.r[b] - rows.r[a]) * f, oc = offIn[a] + (offIn[b] - offIn[a]) * f;
-      for (let j = b; j < NR; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = zTop; }
+      const slc = slide ? slIn[a] + (slIn[b] - slIn[a]) * f : 0;
+      for (let j = b; j < NR; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = zTop; if (slide) { colR[j] = rc; slIn[j] = slc; } }
     }
   }
   // The same at the bottom of an open piece (rings, lamp shades) whose wall narrows going up: its inside
@@ -1247,11 +1255,13 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     if (b > 0) {
       const a = b + 1, f = clamp((z0 - zIn[b]) / Math.max(1e-9, zIn[a] - zIn[b]), 0, 1);
       const rc = rows.r[b] + (rows.r[a] - rows.r[b]) * f, oc = offIn[b] + (offIn[a] - offIn[b]) * f;
-      for (let j = 0; j <= b; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = z0; }
+      const slc = slide ? slIn[b] + (slIn[a] - slIn[b]) * f : 0;
+      for (let j = 0; j <= b; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = z0; if (slide) { colR[j] = rc; slIn[j] = slc; } }
     }
   }
   // a dome that comes to a sharp tip is tighter than the wall is thick: its inside stays open all the same
-  if (opts.dome) for (let j = 0; j < NR; j++) offIn[j] = Math.max(offIn[j], off[j] - 0.85 * rows.r[j]);
+  // (a D is only as deep as its front and back are apart: the inside keeps to less than half of that)
+  if (opts.dome) { const kG = slide ? (0.85 * (1 + slide.b)) / 2 : 0.85; for (let j = 0; j < NR; j++) offIn[j] = Math.max(offIn[j], off[j] - kG * rows.r[j]); }
   // keep the inner wall monotone so a flared rim or floor never folds over itself
   for (let j = NR - 2; j >= 0; j--) if (zIn[j] > zIn[j + 1] - 1e-3) zIn[j] = zIn[j + 1] - 1e-3;
   for (let j = 1; j < NR; j++) if (zIn[j] < zIn[j - 1] + 1e-3) zIn[j] = zIn[j - 1] + 1e-3;
@@ -1283,8 +1293,27 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     } else if (opts.normalRelief && D) { const dd = D[j * NU + i]; o = off[j] + dd * rows.nr[j]; zz = rows.z[j] + dd * rows.nz[j]; }
     else { o = off[j] + (D ? D[j * NU + i] : 0); zz = rows.z[j]; }
     if (zShift) zz += zShift[i] * zw[j];
-    const sc = rows.r[j];
-    const x0 = sc * CX[i] + o * NX[i], y0 = sc * CY[i] + o * NY[i] + (slide ? slide.w[i] * slide.amt[j] + (slide.all ? slide.all[j] + (inner ? slide.inAll[j] : 0) : 0) : 0);
+    let sc = rows.r[j];
+    if (inner && colR && colR[j] > 0) { o += sc - colR[j]; sc = colR[j]; }
+    let x0 = sc * CX[i] + o * NX[i], y0 = sc * CY[i] + o * NY[i];
+    // A D set in by more than its corners are round (the inside of a small section, or an insert's foot)
+    // has sharp corners there: where its inset arc meets its inset back. Every point that the plain
+    // offset would carry past that corner goes to it, instead of folding the outline over.
+    if (slide && o < -slide.c * sc) {
+      const d = -o, yI = slide.b * sc - d, rI = sc - d, xI = Math.sqrt(Math.max(0, rI * rI - yI * yI));
+      if (NY[i] > slide.fa + 1e-6 || y0 > yI) { x0 = NY[i] >= 0.9995 ? clamp(x0, -xI, xI) : CX[i] >= 0 ? xI : -xI; y0 = yI; }
+    }
+    if (slide) y0 += inner ? slIn[j] : slide.all[j];
+    if (slide) {
+      // a flat back stays flat: texture that would stand out past the wall's plane is cut off by it
+      if (!inner && y0 > slide.plane) y0 = slide.plane;
+      // grooves down the back, from top to bottom (a self-watering insert clears the heads of the mounting
+      // screws with them): nothing in a groove's width comes nearer the wall than its floor
+      if (slide.grooves) for (const g of slide.grooves) {
+        const xm = Math.abs(x0 - g.x);
+        if (xm < g.half + g.edge) { const lim = slide.plane - (inner ? g.wall : 0) - g.depth * (1 - smoothstep(g.half - g.edge, g.half + g.edge, xm)); if (y0 > lim) y0 = lim; }
+      }
+    }
     px = x0 * cphi[j] - y0 * sphi[j]; py = x0 * sphi[j] + y0 * cphi[j]; pz = zz;
   }
   function point(key, inner) {
@@ -1430,18 +1459,51 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     if (floor.type !== 'open' && hasInner) { point(i, true); ringI.push(mesh.v(px, py, pz, i + K)); }
   }
   const z0 = rows.z[0];
-  if (floor.type === 'solid') {
-    const cb = capV(0, 0, z0);
+  // A flat-backed outline is a D that has moved toward the wall: its floor's centre, and any hole in the
+  // floor, sit halfway between its front and its back (the back as it is in the middle, behind the hole,
+  // where an insert may have a groove), and the hole's points lie on the rays out to the outline's.
+  const midY = (ring) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of ring) { const x = mesh.P.a[v * 3], y = mesh.P.a[v * 3 + 1]; if (Math.abs(x) < 9) { if (y < lo) lo = y; if (y > hi) hi = y; } }
+    return Number.isFinite(lo) ? (lo + hi) / 2 : 0;
+  };
+  const cyO = slide ? midY(ringO) : 0, cyI = slide ? midY(ringI.length ? ringI : ringO) : 0;
+  // An outline with grooves in it cannot be fanned out from its middle (the grooves' far sides face away
+  // from it): its floor is cut into triangles ear by ear instead. Points that share a place (a sharp
+  // corner gathers several) are joined by flat slivers, so every edge of the wall still meets the floor.
+  const earFloor = !!(slide && slide.grooves) && floor.type !== 'open';
+  const earFace = (ring, hole, up) => {
+    const at = (v) => [mesh.P.a[v * 3], mesh.P.a[v * 3 + 1], v];
+    let o = ring.map(at);
+    if (signedArea2D(o) < 0) o.reverse();
+    const tri = (a, b, c) => (up ? mesh.tri(a, b, c) : mesh.tri(a, c, b));
+    const same = (p, q) => Math.abs(p[0] - q[0]) < 1e-7 && Math.abs(p[1] - q[1]) < 1e-7;
+    const kept = [];
+    for (let k = 0; k < o.length; k++) if (!same(o[k], o[(k + o.length - 1) % o.length])) kept.push(k);
+    for (let q = 0; q < kept.length; q++) {
+      // the run of points on top of kept[q], closed onto the next point that stands apart
+      const from = kept[q], to = kept[(q + 1) % kept.length], nxt = o[to][2];
+      for (let k = from; (k + 1) % o.length !== to; k = (k + 1) % o.length) tri(o[k][2], o[(k + 1) % o.length][2], nxt);
+    }
+    let pts = kept.map((k) => o[k]);
+    if (hole) { let hl = hole.map(at); if (signedArea2D(hl) > 0) hl.reverse(); pts = bridgeHoles(pts, [hl]); }
+    for (const [a, b, c] of earClip(pts)) tri(pts[a][2], pts[b][2], pts[c][2]);
+  };
+  if (earFloor && floor.type === 'solid') {
+    earFace(ringO, null, false);
+    if (hasInner) earFace(ringI, null, true);
+  } else if (floor.type === 'solid') {
+    const cb = capV(0, cyO, z0);
     for (let i = 0; i < NU; i++) mesh.tri(cb, ringO[(i + 1) % NU], ringO[i]);
     if (hasInner) {
-      const ct = capV(0, 0, zIn[0]);
+      const ct = capV(0, cyI, zIn[0]);
       for (let i = 0; i < NU; i++) mesh.tri(ct, ringI[i], ringI[(i + 1) % NU]);
     }
   } else if (floor.type === 'hole' || floor.type === 'groove') {
     const hb = [], ht = [], wb = [], wt = [];
     for (let i = 0; i < NU; i++) {
-      const a = ANG[i] + Math.atan2(sphi[0], cphi[0]);
-      const x = floor.holeR * Math.cos(a), y = floor.holeR * Math.sin(a);
+      const a = earFloor ? (TAU * i) / NU : slide ? Math.atan2(mesh.P.a[ringI[i] * 3 + 1] - cyI, mesh.P.a[ringI[i] * 3]) : ANG[i] + Math.atan2(sphi[0], cphi[0]);
+      const x = floor.holeR * Math.cos(a), y = floor.holeR * Math.sin(a) + cyI;
       const idB = extra++, idT = extra++;
       hb.push(mesh.v(x, y, z0, idB)); ht.push(mesh.v(x, y, zIn[0], idT));
       wb.push(mesh.v(x, y, z0, idB)); wt.push(mesh.v(x, y, zIn[0], idT));
@@ -1462,10 +1524,11 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
       strip(ringO, g0); strip(g0, g1);
       mesh.g = 1; strip(g1, g2); mesh.g = 0; // the groove's roof is a short bridge
       strip(g2, g3); strip(g3, hb);
-    } else strip(ringO, hb);
+    } else if (earFloor) { earFace(ringO, hb, false); earFace(ringI, ht, true); }
+    else strip(ringO, hb);
     for (let i = 0; i < NU; i++) {
       const i1 = (i + 1) % NU;
-      mesh.tri(ht[i], ringI[i], ringI[i1]); mesh.tri(ht[i], ringI[i1], ht[i1]);
+      if (!earFloor) { mesh.tri(ht[i], ringI[i], ringI[i1]); mesh.tri(ht[i], ringI[i1], ht[i1]); }
       mesh.tri(wb[i], wt[i1], wb[i1]); mesh.tri(wb[i], wt[i], wt[i1]);
     }
   }
@@ -1781,6 +1844,8 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   for (let j = 0; j < coarse.n; j++) { rMin = Math.min(rMin, coarse.r[j]); rMax = Math.max(rMax, coarse.r[j]); }
   rMax += extra.offset || 0;
   let cell = extra.cell || cellFor(S, mode, (extra.rMinCell ?? rMin) * perim, coarse.L, quality);
+  // holes through the wall need a grid fine enough to come out at their size (a smooth wall's is coarse)
+  if (extra.holes && extra.holes.length && !extra.cell) cell = Math.min(cell, Math.max(0.5, Math.min(...extra.holes.map((hl) => Math.min(hl.r, hl.w || hl.r))) / 2.4));
   // keep the grid within budget
   const budget = 2.4e6 * Math.min(quality, 1.6);
   const est = () => (Math.ceil((rMax * sec.L) / cell) * coarse.L) / cell;
@@ -1811,6 +1876,9 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const rows = sampleRows(rFn, H, cell, 0, zoneTot > 0 ? { zone: zoneTot, count: Math.min(180, Math.ceil(zoneTot / fine)) } : null, cuts,
     edgeBot ? { zone: edgeBot.zone * 1.15, count: Math.min(180, Math.ceil((edgeBot.zone * 1.15) / Math.min(cell, edgeBot.zone / 10))) } : null);
   if (extra.offset) rows.off = new Float64Array(rows.n).fill(extra.offset);
+  // (an insert inside a leaning wall: measured level, that wall is thicker than it is square to itself, by
+  // 1 / the cosine of its lean, so the insert stands that much further in there)
+  if (extra.offset && extra.offsetLean) for (let j = 0; j < rows.n; j++) if (rows.z[j] < extra.offsetLean.to) rows.off[j] -= extra.offsetLean.wall * (1 / Math.max(0.6, rows.nr[j]) - 1);
   if (rim) rMax += rim.extra || 0; else if (edgeBot) rMax += edgeBot.extra || 0;
   let NU = Math.ceil((rMax * sec.L) / cell);
   NU += (4 - (NU % 4)) % 4;
@@ -1869,38 +1937,29 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
       if (w > 1e-4) for (let j = 0; j < rows.n; j++) { D[j * NU + i] -= w; Din[j * NU + i] -= w; }
     }
   }
-  // a flat back (wall planters): it stands upright on one plane whatever the silhouette does. The back
-  // half of the wall slides toward the wall by however much narrower each row is than the widest one,
-  // fully on the flat back and fading out round the sides (a smooth slide: no creases, and never more lean)
+  // A flat back (wall planters): it stands upright on one plane whatever the silhouette does. Each row is
+  // the same D, moved toward the wall as a whole by however much narrower it is than the widest one, so
+  // the outline is never stretched (a pattern keeps its proportions right round to the back) and a dome
+  // closes onto a point on the wall. The front then leans 1 + b times as far as the silhouette does, which
+  // the silhouette's easing allows for. Inside, each row moves back out by what the wall's lean takes off
+  // the back's thickness, so the back wall is a full wall thick, and flat inside as well, from rim to tip.
   let slide = null;
   if (extra.flatBack) {
-    const cols = sectionColumns(sec, NU);
-    let rTop = 0;
-    for (let j = 0; j < rows.n; j++) rTop = Math.max(rTop, rows.r[j]);
-    slide = { w: new Float64Array(NU), amt: new Float64Array(rows.n), all: null, inAll: null };
-    for (let i = 0; i < NU; i++) slide.w[i] = cols.NY[i] > 0 ? smoothstep(0, 1, cols.NY[i]) : 0;
-    for (let j = 0; j < rows.n; j++) slide.amt[j] = extra.flatBack.b * (rTop - rows.r[j]);
-    // A dome closes onto the wall: from where it starts, each row moves toward the wall as a whole by what
-    // it has narrowed, so the outline shrinks to a point on the wall's plane and the back stays flat right
-    // to the tip. Inside, the rows move back out by what the wall's lean takes off the back's thickness,
-    // so the back wall is as thick at the tip as everywhere else.
-    // (it sets in over 20 mm, so the front's lean changes without a crease)
-    if (extra.flatBack.capFrom != null) {
-      let jc = 0, acc = 0;
-      while (jc < rows.n - 1 && rows.z[jc] < extra.flatBack.capFrom) jc++;
-      const b = extra.flatBack.b, tw = P.form.wall;
-      slide.all = new Float64Array(rows.n); slide.inAll = new Float64Array(rows.n);
-      for (let j = jc + 1; j < rows.n; j++) {
-        const ramp = smoothstep(0, 20, rows.l[j] - rows.l[jc]);
-        acc += b * Math.max(0, rows.r[j - 1] - rows.r[j]) * ramp;
-        slide.all[j] = acc;
-        slide.amt[j] = b * (rTop - rows.r[j]) - acc;
-        slide.inAll[j] = -tw * (1 - rows.nr[j]) * ramp;
-      }
+    const cols = sectionColumns(sec, NU), tw = P.form.wall;
+    let rTop = extra.flatBack.rTop || 0;
+    if (!rTop) for (let j = 0; j < rows.n; j++) rTop = Math.max(rTop, rows.r[j]);
+    const fb = extra.flatBack.b, fc = 0.16;
+    slide = { all: new Float64Array(rows.n), inAll: new Float64Array(rows.n), plane: fb * rTop + (extra.offset || 0), b: fb, c: fc, fa: (fb - fc) / (1 - fc) };
+    for (let j = 0; j < rows.n; j++) { slide.all[j] = extra.flatBack.b * (rTop - rows.r[j]); slide.inAll[j] = -tw * (1 - rows.nr[j]); }
+    // The texture runs on round the sides and the corners right to the back, where the wall's plane cuts
+    // it off flat (in the mesher: nothing may pass that plane). Only where the outline has all but turned
+    // onto the back does it ease off, and whatever is pressed into the wall eases off a little sooner, so
+    // the back itself is never dented.
+    if (D) for (let i = 0; i < NU; i++) {
+      const ny = cols.NY[i], kOut = 1 - smoothstep(0.93, 0.999, ny), kIn = 1 - smoothstep(0.7, 0.96, ny);
+      if (kIn < 1) for (let j = 0; j < rows.n; j++) { const id = j * NU + i; D[id] *= D[id] > 0 ? kOut : kIn; }
     }
-    // the texture fades out round the sides, before the corners that turn onto the back
-    const fa = extra.flatBack.nyArc;
-    if (D) for (let i = 0; i < NU; i++) { const k = 1 - smoothstep(fa - 0.3, fa - 0.02, cols.NY[i]); if (k < 1) for (let j = 0; j < rows.n; j++) D[j * NU + i] *= k; }
+    if (extra.flatBack.grooves && extra.flatBack.grooves.length) slide.grooves = extra.flatBack.grooves.map((g) => ({ x: g.x, half: g.width / 2, edge: Math.min(3, g.width / 4), depth: g.depth, wall: tw }));
   }
   if (D) processRelief(D, rows, NU, { sec, perim, mode, twist: extra.twist || 0, H, fillBelow: extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 1 : 0, slide, skipOverhung: extra.skipOverhung });
   // holes through the wall: teardrops for hanging cords, keyholes for a screw
@@ -1915,7 +1974,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
         if (dy < -reach || dy > reach) continue;
         const rr = rows.r[j] + (rows.off ? rows.off[j] : 0);
         for (let di = -NU / 2; di < NU / 2; di++) {
-          const sArc = di * du * rr;
+          const sArc = di * du * rr - (hole.dx || 0);
           if (Math.abs(sArc) > reach) continue;
           // a twist turns each row a little further round: follow it, so the hole stays upright
           const i = (ic + di + NU) % NU, g = holeField(hole, sArc + (rr * kN * (extra.twist || 0) * dy) / H, dy), id = j * NU + i;
@@ -1944,7 +2003,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     const view = (arr) => (arr ? arr.subarray(a * NU, (e + 1) * NU) : null);
     const fl = b === 0 ? { ...floor, band: bandB } : { type: 'open', cut: true };
     const tp = b + 2 === bounds.length ? top : 'cut';
-    bodies.push(buildShell(sub, NU, view(F), view(D), P.form.wall, fl, tp, { ...shellOpts, Din: view(Din), bedK: shellOpts.bedK && shellOpts.bedK.subarray(a, e + 1), slide: slide && { w: slide.w, amt: slide.amt.subarray(a, e + 1), all: slide.all && slide.all.subarray(a, e + 1), inAll: slide.inAll && slide.inAll.subarray(a, e + 1) } }));
+    bodies.push(buildShell(sub, NU, view(F), view(D), P.form.wall, fl, tp, { ...shellOpts, Din: view(Din), bedK: shellOpts.bedK && shellOpts.bedK.subarray(a, e + 1), slide: slide && { plane: slide.plane, b: slide.b, c: slide.c, fa: slide.fa, grooves: slide.grooves, all: slide.all.subarray(a, e + 1), inAll: slide.inAll.subarray(a, e + 1) } }));
   }
   const merged = mergeMeshes(bodies);
   // which original band each body falls in, so its filament slot survives clamping
@@ -2257,7 +2316,12 @@ export function generate(P, quality = 1) {
     if (need !== wallBack) { wallBack = need; shape(); }
   }
   // a domed bottom is built as it prints: rim on the bed, the dome closing over the top
-  const ds = domed ? domeShape(F, X, rFn) : null;
+  // (a self-watering pot keeps its water: no drainage hole through the tip)
+  const insert = (P.object === 'planter' || wallObj) && X.base === 'insert';
+  const ds = domed ? domeShape(F, insert ? { ...X, drain: 0 } : X, rFn, wallBack) : null;
+  // the widest the wall planter gets: its flat back stands that far (times its depth) behind the axis
+  let wallRTop = 0;
+  if (wallObj) for (let k = 0; k <= 1000; k++) wallRTop = Math.max(wallRTop, rFn((H * k) / 1000));
   const parts = [];
   const warnings = [];
   const mode = S.pattern === 'smooth' ? 'none' : S.mode;
@@ -2287,7 +2351,6 @@ export function generate(P, quality = 1) {
   let floor = { type: 'solid', thick: F.floor };
   let top = 'rim';
   let minTopBand = 0;
-  const insert = obj === 'planter' && X.base === 'insert';
   const lamp = obj === 'lamp';
   // table lamps and globes stand in a groove in a printed base that holds the lamp socket
   const onBase = lamp || globe;
@@ -2314,7 +2377,7 @@ export function generate(P, quality = 1) {
 
   // keep holes inside the floor
   if (floor.type === 'hole') {
-    const r0 = rFn(0) * sec.minR - F.wall - 3;
+    const r0 = (wallObj ? (rFn(0) * (1 + secF.back)) / 2 : rFn(0) * sec.minR) - F.wall - 3;
     if (floor.holeR > r0) { floor.holeR = Math.max(4, r0); warnings.push({ level: 'warn', text: 'The centre hole was reduced to fit inside the floor.' }); }
   }
 
@@ -2366,12 +2429,36 @@ export function generate(P, quality = 1) {
     if (domed) extraMain.minBottomBand = Math.max(extraMain.minBottomBand, H - zc + r + 2.5);
     else extraMain.minTopBand = Math.max(extraMain.minTopBand, H - zc + r + 2.5);
   }
-  // wall planter: a keyhole in the flat back for a screw (head up to 8 mm)
+  // wall planter: one or two mounting holes in the flat back. A keyhole hooks over a screw left standing
+  // out of the wall (a round opening for its head, and a slot above it for its shaft); a plain screw hole
+  // is screwed through from inside the pot.
+  let mount = null;
   if (wallObj) {
-    const zc = H - (shaped ? rimDrop : 0) - rimZone - 22;
-    holes.push({ angle: Math.PI / 2, z: zc, r: 4.6, slot: 9, w: 2.3 });
-    const b = secF.back, c = 0.16;
-    extraMain.flatBack = { b, nyArc: (b - c) / (1 - c), capFrom: domed ? ds.capFrom : null };
+    const b = secF.back, c = 0.16, flatU = Math.sqrt(Math.max(0, (1 - c) ** 2 - (b - c) ** 2));
+    const screw = X.mount === 'screw';
+    const headR = clamp((X.mountHead ?? 9.2) / 2, 3, 9);
+    const w = screw ? clamp((X.mountShaft ?? 4.6) / 2, 1.5, 5) : clamp((X.mountShaft ?? 4.6) / 2, 1.2, headR - 0.7);
+    const L = screw ? 0 : clamp(X.mountSlot ?? 9, 3, 40), R0 = screw ? w : headR;
+    // how far under the rim the round opening sits: the slot above it stays clear of the rim's edge, and
+    // the opening stays on the flat of the back, above the floor or the dome
+    const above = screw ? 1.7 * R0 + 3 : L + 1.3 * w + 3, below = (screw ? 1 : 1.7) * R0 + 3;
+    const dropMin = (shaped ? rimDrop : 0) + rimZone + above;
+    let zLow = (domed ? 0 : F.floor) + below + 2;
+    while (zLow < H - dropMin && flatU * rFn(zLow - below) < R0 + 5) zLow += 1;
+    const drop = clamp(X.mountDrop ?? 22, dropMin, Math.max(dropMin, H - zLow)), zc = H - drop;
+    // two holes: as far apart as asked, both on the flat of the back
+    let rFlat = Infinity;
+    for (let q = 0; q <= 12; q++) rFlat = Math.min(rFlat, rFn(clamp(zc - below + ((below + above) * q) / 12, 0, H)));
+    const halfMax = flatU * rFlat - R0 - 3, halfMin = R0 + 3;
+    let count = X.mountCount === 2 ? 2 : 1, half = 0;
+    if (count === 2 && halfMax < halfMin) { count = 1; warnings.push({ level: 'warn', text: 'The back is too narrow there for two mounting holes, so it has one. Make the planter wider, the holes smaller, or move them up.' }); }
+    if (count === 2) {
+      half = clamp((X.mountSpacing ?? 80) / 2, halfMin, halfMax);
+      if (Math.abs(2 * half - (X.mountSpacing ?? 80)) > 1) warnings.push({ level: 'ok', text: `The mounting holes are ${Math.round(2 * half)} mm apart: that is as ${2 * half < (X.mountSpacing ?? 80) ? 'far apart as the flat of the back allows' : 'close as they can be'}.` });
+    }
+    for (const dx of count === 2 ? [-half, half] : [0]) holes.push({ angle: Math.PI / 2, z: zc, r: R0, slot: L || 0, w, dx });
+    mount = { count, screw, head: 2 * headR, shaft: 2 * w, slot: L, spacing: 2 * half, drop, xs: count === 2 ? [-half, half] : [0] };
+    extraMain.flatBack = { b, rTop: wallRTop };
   }
   // as it prints, a domed planter is upside down: so are its holes (a keyhole's slot runs down the print),
   // its plain bands, its pattern's gradient and its colour bands
@@ -2455,15 +2542,31 @@ export function generate(P, quality = 1) {
   // floor. Water goes in through a channel down one side, which also leaves a pour gap in the flare.
   let reservoirMl = 0;
   if (insert) {
-    const gap = clamp(X.gap ?? 1.5, 0.8, 4), tI = clamp(F.wall, 1.6, 3), zr = clamp(X.reservoir ?? 14, F.floor + 6, H * 0.45);
+    const gap = clamp(X.gap ?? 1.5, 0.8, 4), tI = clamp(F.wall, 1.6, 3);
+    // In a domed pot the insert stands above the part of the dome that is too steep to print the right
+    // way up, and where the pot is wide enough for its floor: the bowl under it is the reservoir.
+    let zrMin = F.floor + 6;
+    if (domed) {
+      const lim = Math.tan((44.5 * Math.PI) / 180) / (1 + wallBack), zb = clamp(F.belly, 0.08, 0.92) * H;
+      let z = zb;
+      // (a D's floor is as deep as its front and back are apart; it has to hold the wick hole and the
+      // groove behind the mounting screw)
+      const need = wallObj ? (2 * (F.wall + gap) + 2 * tI + 5.5 + 18) / (1 + wallBack) : 18 + F.wall + gap;
+      while (z > 2 && (rFn(z) - rFn(z - 0.5)) / 0.5 <= lim && rFn(z - 0.5) >= need) z -= 0.5;
+      zrMin = z + 1;
+    }
+    const zr = clamp(X.reservoir ?? 14, zrMin, Math.max(zrMin, H * 0.45));
     const fH = F.wall + gap + 1.5, Hi = H - zr + fH;
+    // (a wall planter's rows are Ds on the wall, whose front moves 1 + back times as far as their radius
+    // changes: the flare is that much gentler, so its front still rises at 45°)
+    const flare = 1 / (1 + wallBack);
     // the insert has to drop in from above: at each height it may be no wider than the narrowest part of
     // the pot above it (a round insert in a twisted outline keeps to the circle inside that outline)
     const scaleIn = accSec === sec ? 1 : sec.minR, steps = 400, sufMin = new Float64Array(steps + 1);
     sufMin[steps] = rFn(H) * scaleIn;
     for (let k = steps - 1; k >= 0; k--) sufMin[k] = Math.min(sufMin[k + 1], rFn((H * k) / steps) * scaleIn);
     const fit = (z) => { const x = clamp((z / H) * steps, 0, steps), k = Math.min(steps - 1, Math.floor(x)); return sufMin[k] + (sufMin[k + 1] - sufMin[k]) * (x - k); };
-    const iFn = (z) => fit(Math.min(H, z + zr)) + Math.max(0, z - (H - zr));
+    const iFn = (z) => fit(Math.min(H, z + zr)) + Math.max(0, z - (H - zr)) * flare;
     const PI2 = { ...P, form: { ...F, wall: tI, floor: tI, height: Hi }, surface: { ...S, pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0, swirl: 0 } };
     // water slots round the bottom of the insert: water poured in drains straight down, and the soil
     // drinks back up through them. Each has a round foot and a pointed top, so it prints; none sits in
@@ -2477,9 +2580,31 @@ export function generate(P, quality = 1) {
         if (da > keepOut) slots.push({ angle: a, z: zc, r: w, slot: L, w });
       }
     }
-    const ins = makePatternedShell(iFn, Hi, PI2, quality, { type: 'hole', thick: tI, holeR: 7 }, 'rim', {
-      cell: 1.6 / quality, sec: accSec, offset: -(F.wall + gap), channel: { angle: -0.6, width: 26, depth: 7 }, holes: slots,
-    });
+    const insExtra = { cell: 1.6 / quality, sec: accSec, offset: -(F.wall + gap), channel: { angle: -0.6, width: 26, depth: 7 }, holes: slots };
+    // the wick hole: Ø 14 mm, less where a small D-shaped floor has no room for it
+    const insHole = wallObj ? clamp(((1 + secF.back) * iFn(0)) / 2 - (F.wall + gap) - tI - 5, 3, 7) : 7;
+    // In a wall planter the insert is a D as well, its back a clearance in front of the pot's. A groove
+    // down its back at each mounting hole clears the screw's head, so it drops in after the pot is hung.
+    if (wallObj) {
+      // (the floor keeps room for its wick hole in front of the groove)
+      const room = (1 + secF.back) * iFn(0) - 2 * (F.wall + gap) - 2 * tI - 2 * insHole - 3, depth = Math.min(5.5, room);
+      const headW = mount.screw ? Math.max(11, 2.4 * mount.shaft) : mount.head;
+      // (no water slot sits in a groove: its pointed top would lose its slope where the groove sets the wall back)
+      if (depth > 1 && slots.length) {
+        const cols = sectionColumns(accSec, 720);
+        insExtra.holes = slots.filter((sl) => {
+          let ic = 0, best = Infinity;
+          for (let i = 0; i < 720; i++) { const da = Math.abs(Math.atan2(Math.sin(cols.A[i] - sl.angle), Math.cos(cols.A[i] - sl.angle))); if (da < best) { best = da; ic = i; } }
+          // (from its foot to its tip: the wall widens on the way up, and carries the slot sideways with it)
+          const clear = (z) => { const x = iFn(z) * cols.CX[ic] - (F.wall + gap) * cols.NX[ic]; return mount.xs.every((gx) => Math.abs(x - gx) > (headW + 7) / 2 + 5); };
+          return cols.NY[ic] < 0.3 || (clear(sl.z - sl.r) && clear(sl.z + sl.slot / 2) && clear(sl.z + sl.slot + 3));
+        });
+      }
+      insExtra.offsetLean = { wall: F.wall, to: Hi - fH - 0.5 };
+      insExtra.flatBack = { b: secF.back, rTop: wallRTop, grooves: depth > 1 ? mount.xs.map((x) => ({ x, width: headW + 7, depth })) : [] };
+      if (depth < 4.5) warnings.push({ level: 'warn', text: `The insert is too shallow at the back for a full groove behind the mounting screw: its groove is ${Math.max(0, depth).toFixed(1)} mm deep. Use a screw with a head no thicker than ${Math.max(0, depth - 1.5 + gap).toFixed(1)} mm, or make the planter deeper under Object.` });
+    }
+    const ins = makePatternedShell(iFn, Hi, PI2, quality, { type: 'hole', thick: tI, holeR: insHole }, 'rim', insExtra);
     add('insert', 'Self-watering insert', ins.mesh, { z: zr, color: 1 });
     // water below the insert: the inner outline's area times the depth
     const cols = sectionColumns(accSec, 256), rIn = rFn(zr * 0.5);
@@ -2491,6 +2616,12 @@ export function generate(P, quality = 1) {
       area += (xa * yb - xb * ya) / 2;
     }
     reservoirMl = (Math.abs(area) * Math.max(0, zr - F.floor - 2)) / 1000;
+    // (in a dome the reservoir is the bowl itself: its inside, slice by slice, up to just under the insert)
+    if (domed) {
+      const unit = Math.abs(area) / Math.max(1e-6, (rIn - F.wall) ** 2), z0 = F.wall * 1.2, n = 40;
+      reservoirMl = 0;
+      for (let q = 0; q < n; q++) { const z = z0 + ((zr - 2 - z0) * (q + 0.5)) / n; reservoirMl += (unit * Math.max(0, rFn(z) - F.wall) ** 2 * Math.max(0, zr - 2 - z0)) / n / 1000; }
+    }
     if (zr > H - 25) warnings.push({ level: 'warn', text: 'The reservoir is very tall; the insert has little room for soil.' });
   }
 
@@ -2498,7 +2629,7 @@ export function generate(P, quality = 1) {
   // wall, so a flat back stays on the wall)
   add(mainKey, mainLabel, shell.mesh, domed ? { z: H, flipZ: true, turnY: true, color: 0 } : { z: mainLift, color: 0, flip: obj === 'pendant' });
   // (relief near the tip stands a little past it: the piece is lifted by that much, so nothing dips under z = 0)
-  if (domed) { const pm = parts[parts.length - 1]; mainLift = Math.max(0, pm.stats.bbox[5] - H); pm.place.z = H + mainLift; }
+  if (domed) { const pm = parts[parts.length - 1]; mainLift = Math.max(0, pm.stats.bbox[5] - H); pm.place.z = H + mainLift; for (const p of parts) if (p !== pm) p.place.z = (p.place.z || 0) + mainLift; }
   if (shell.regions) parts[parts.length - 1].regions = shell.regions;
 
   // ---- box lid + knob
@@ -2623,7 +2754,12 @@ export function generate(P, quality = 1) {
   if (eased > 0.5) checks.push({ level: 'ok', text: `Silhouette eased by up to ${eased.toFixed(1)} mm to keep walls under 44°.` });
   if (domed) checks.push({ level: 'ok', text: `Prints rim-down, the ${ds.point ? 'pointed' : 'round'} bottom last, and the pattern runs over it to the tip.${ds.hole ? ` The Ø ${Math.round(X.drain)} mm drainage hole is at the tip.` : ''}${F.rimShape && F.rimShape !== 'level' && (F.rimDepth || 0) > 0.5 ? ' The rim is level, as it stands on the bed.' : ''}` });
   if (obj === 'hanging') checks.push({ level: 'ok', text: `Hangs from ${holes.length} cords through teardrop holes under the rim (up to Ø 4 mm cord).${floor.type === 'hole' || (domed && ds.hole) ? ' Water drips from the drainage hole.' : ' No drainage hole: water sparingly.'}` });
-  if (wallObj) checks.push({ level: 'ok', text: 'The flat back has a keyhole for a screw with a head up to 8 mm. Leave the head 4 mm out of the wall and hook the planter over it.' });
+  if (wallObj && mount) {
+    const two = mount.count === 2, apart = two ? `, ${Math.round(mount.spacing)} mm apart` : '';
+    checks.push({ level: 'ok', text: mount.screw
+      ? `The flat back has ${two ? 'two' : 'a'} Ø ${mount.shaft.toFixed(1)} mm screw hole${two ? 's' : ''}${apart}, ${Math.round(mount.drop)} mm under the rim: screw it to the wall from inside the pot.`
+      : `The flat back has ${two ? 'two keyholes' : 'a keyhole'}${apart}, for ${two ? 'screws' : 'a screw'} with a head up to ${(mount.head - 1.2).toFixed(0)} mm and a shaft up to ${(mount.shaft - 0.4).toFixed(1)} mm. Leave the head${two ? 's' : ''} 4 mm out of the wall and hook the planter over ${two ? 'them' : 'it'}; it drops ${Math.round(mount.slot)} mm onto the shaft${two ? 's' : ''}.` });
+  }
   if (standInfo) checks.push({ level: 'ok', text: `Stand: two flat pieces that slot together into a cross; the pot sits ${Math.round(standInfo.lift)} mm up on the crossbars. Both print flat with no supports.` });
   if (candle) {
     let rMin = Infinity; for (let j = 0; j < shell.rows.n; j++) if (shell.rows.z[j] > H - candle.depth - 1) rMin = Math.min(rMin, shell.rows.r[j] * sec.minR);
@@ -2631,7 +2767,7 @@ export function generate(P, quality = 1) {
     else checks.push({ level: 'ok', text: `The ${candle.label} sits in a Ø ${candle.d} × ${Math.round(extraMain.pocket.depth)} mm pocket in the top. Print it solid with 15% infill. LED candles are safest; a real one needs a glass or metal cup.` });
   }
   if (obj === 'lantern') checks.push({ level: 'ok', text: 'For LED tealights only, never a real flame: PLA and PETG soften from about 60 °C.' });
-  if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert${X.slots !== false ? ', and the slots round its foot let the soil drink from it' : ''}. Fill it through the channel at the rim${X.slots !== false ? '' : ", and thread a cotton wick through the hole in the insert's floor"}.` });
+  if (insert) checks.push({ level: 'ok', text: `Self-watering: the reservoir holds about ${Math.round(reservoirMl / 10) * 10} ml under the insert${X.slots !== false ? ', and the slots round its foot let the soil drink from it' : ''}. Fill it through the channel at the rim${X.slots !== false ? '' : ", and thread a cotton wick through the hole in the insert's floor"}.${wallObj ? ` The insert is flat at the back like the pot, with a groove behind ${mount.count === 2 ? 'each mounting screw' : 'the mounting screw'}: hang the pot first, then drop the insert in.${domed ? ' It prints the right way up, on its own floor.' : ''}` : ''}` });
   if (globe) {
     const lines = Math.max(1, Math.round(F.wall / 0.44)), inner = 2 * (gs.rn - F.wall - 0.45);
     if (inner < 64) checks.push({ level: 'warn', text: `The opening is Ø ${Math.round(inner)} mm inside, too narrow to lift the globe over an A60 bulb (Ø 60 mm). Widen it, or use a G45 or P45 bulb (Ø 45 mm).` });
@@ -2658,7 +2794,7 @@ export function generate(P, quality = 1) {
   const colorChanges = mc && (top === 'cap' || top === 'pocket') ? mc.cuts.map((z) => Math.round(clamp(z, 3, H - 3) / 0.2) * 0.2) : shell.cuts || [];
   // where the wall is, for the preview: the plane of a wall planter's flat back
   let wallY = null;
-  if (wallObj) { let rTop = 0; for (let j = 0; j < shell.rows.n; j++) rTop = Math.max(rTop, shell.rows.r[j]); wallY = secF.back * rTop; }
+  if (wallObj) wallY = secF.back * wallRTop;
   // and where the hanging cords leave the holes (just outside the wall, after any twist)
   let hangers = null;
   if (obj === 'hanging') {
@@ -2672,7 +2808,7 @@ export function generate(P, quality = 1) {
       return { x: (domed ? -1 : 1) * (x0 * Math.cos(phi) - y0 * Math.sin(phi)), y: x0 * Math.sin(phi) + y0 * Math.cos(phi), z: hl.z };
     });
   }
-  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers, domed, stand: standInfo, globe: gs ? { top: gs.top, R: gs.R, zc: gs.zc, rn: gs.rn, peak: gs.peak, cone: gs.cone } : null } };
+  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers, domed, mount, stand: standInfo, globe: gs ? { top: gs.top, R: gs.R, zc: gs.zc, rn: gs.rn, peak: gs.peak, cone: gs.cone } : null } };
 }
 
 // ---------------------------------------------------------------- pattern swatches
