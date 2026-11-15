@@ -57,8 +57,12 @@ class Mesh {
 }
 
 // ---------------------------------------------------------------- silhouettes
+// a bottom that closes in a dome: truly round, or a cone to a point
+export const domedBottom = (F) => F.bottom === 'round' || F.bottom === 'point';
+const POINT_DEG = 43.5;
 // r(z) from a handful of designer-facing parameters.
-export function makeProfile(F) {
+// (back: how far behind the centre a wall planter's flat back is, as a fraction of its radius)
+export function makeProfile(F, back = 0) {
   const H = F.height, R = F.diameter / 2;
   const rb = R * F.base, rm = R, rt = R * F.top;
   const tb = clamp(F.belly, 0.08, 0.92);
@@ -67,33 +71,40 @@ export function makeProfile(F) {
   const m0 = s0 * (1 - f), m2 = s1 * (1 - f);
   const m1 = s0 * s1 <= 0 ? 0 : (2 * s0 * s1) / (s0 + s1);
   const lipH = Math.min(F.lipH || 0, H * 0.5), lip = F.lip || 0;
-  // a rounded bottom (hanging and wall planters): the silhouette carries on down at 40°, blending in,
-  // to a small foot that it stands on while printing
-  const round = F.bottom === 'round', inset = round ? 0 : F.inset || 0;
+  // a domed bottom (hanging and wall planters) closes in a point on the axis instead of a flat base. Round:
+  // below its widest point the silhouette is a quarter ellipse, a true hemisphere when the widest point is
+  // as high up as the piece is wide across the middle. Pointed: it closes as a 43.5° cone instead, which
+  // prints without supports. Either way the piece prints rim-down, the dome last. (A wall planter's dome
+  // closes onto the wall, which leans its front further: its cone is that much steeper, so the front is 43.5°.)
+  const dome = domedBottom(F), point = F.bottom === 'point', inset = dome ? 0 : F.inset || 0;
   // the base chamfer runs at 45°, steeper (35°) on twisted shaped pieces, whose flanks the twist leans further
   const chk = F.twist && F.section && F.section !== 'round' ? 0.7 : 1;
-  const tip = Math.max(10, (F.wall || 3) * 2 + 6), k = R * 0.35, slope = Math.tan((40 * Math.PI) / 180);
+  const k = R * 0.3, slope = Math.tan((POINT_DEG * Math.PI) / 180) / (1 + back);
   return (z) => {
     const t = clamp(z / H, 0, 1);
     let r;
-    if (t <= tb) r = hermite(rb, rm, m0 * tb, m1 * tb, t / tb);
-    else r = hermite(rm, rt, m1 * (1 - tb), m2 * (1 - tb), (t - tb) / (1 - tb));
+    if (dome && t <= tb) { const u = 1 - t / tb; r = rm * Math.sqrt(Math.max(0, 1 - u * u)); }
+    else if (t <= tb) r = hermite(rb, rm, m0 * tb, m1 * tb, t / tb);
+    else r = hermite(rm, rt, (dome ? 0 : m1) * (1 - tb), m2 * (1 - tb), (t - tb) / (1 - tb));
     if (lip && lipH > 0 && z > H - lipH) { const q = (z - (H - lipH)) / lipH; r += lip * q * q; }
     if (inset > 0 && z < inset / chk) r -= inset - z * chk;
-    if (round) r = smin(r, tip + z * slope, k);
-    return Math.max(r, 2);
+    // (the blend narrows toward the tip, so the cone runs true to its point)
+    if (point) { const c = z * slope; r = smin(r, c, Math.min(k, 0.8 * c)); }
+    return dome ? Math.max(r, 0) : Math.max(r, 2);
   };
 }
 
 // Limit how far the silhouette may lean from vertical, so walls print without supports.
 // Returns the eased profile and how far (mm) it had to move.
-export function easeProfile(rFn, H, maxDeg = 46) {
+// (from `freeFrom` up it may narrow `capK` times as fast: without limit for a round dome closing over the
+// top of the print, less fast for a wall planter's pointed one, whose front leans further than its sides)
+export function easeProfile(rFn, H, maxDeg = 46, freeFrom = Infinity, capK = 1) {
   const n = 2400, dz = H / (n - 1), lim = Math.tan((maxDeg * Math.PI) / 180) * dz;
   const r = new Float64Array(n);
   let moved = 0;
   for (let k = 0; k < n; k++) {
     const want = rFn(k * dz);
-    r[k] = k ? clamp(want, r[k - 1] - lim, r[k - 1] + lim) : want;
+    r[k] = k ? clamp(want, r[k - 1] - lim * (k * dz >= freeFrom ? capK : 1), r[k - 1] + lim) : want;
     moved = Math.max(moved, Math.abs(r[k] - want));
   }
   const fn = (z) => {
@@ -101,6 +112,48 @@ export function easeProfile(rFn, H, maxDeg = 46) {
     return r[k] + (r[k + 1] - r[k]) * w;
   };
   return { fn, moved };
+}
+
+// The silhouette as it is built, the right way up (z = 0 at its lowest point), eased so that it prints
+// without supports. A domed bottom prints rim-down, so it is eased from the rim, and a round end stays round.
+export function shapeProfile(F, back = 0) {
+  const H = F.height, raw = makeProfile(F, back);
+  if (F.printable === false) return { fn: raw, moved: 0 };
+  if (!domedBottom(F)) return easeProfile(raw, H, 44);
+  const zb = clamp(F.belly, 0.08, 0.92) * H;
+  const e = easeProfile((z) => raw(H - z), H, 44, H - zb, F.bottom === 'round' ? Infinity : 1 / (1 + back));
+  return { fn: (z) => e.fn(H - z), moved: e.moved };
+}
+
+// A domed bottom as it prints: the rim on the bed, the dome closing over the top. `rUp` is the silhouette
+// the right way up. The profile stops at a small ring near the tip, closed by a cap to each wall's pole,
+// or left open as a drainage hole.
+function domeShape(F, X, rUp) {
+  const H = F.height, t = F.wall || 3, R = F.diameter / 2, point = F.bottom === 'point';
+  const fn = (z) => rUp(H - z);
+  const capFrom = H - clamp(F.belly, 0.08, 0.92) * H;
+  // the height at which the dome has narrowed to radius r
+  const zAt = (r) => {
+    let hi = H, lo = H;
+    while (lo > capFrom * 0.5 && fn(lo) < r) lo -= 0.25;
+    for (let it = 0; it < 50; it++) { const mid = (lo + hi) / 2; if (fn(mid) >= r) lo = mid; else hi = mid; }
+    return (lo + hi) / 2;
+  };
+  const holeR = X.drain > 0 ? X.drain / 2 : 0;
+  let rEnd = point ? Math.max(3, t + 1.2) : Math.max(2.5, 0.02 * R);
+  if (holeR > 0) {
+    // the hole is as wide as asked on the inside, where the wall's thickness narrows it
+    rEnd = holeR;
+    for (let it = 0; it < 4; it++) { const z = zAt(rEnd), sl = (fn(z - 0.05) - fn(Math.min(H, z + 0.05))) / 0.1; rEnd = Math.max(1.2, holeR + t / Math.sqrt(1 + sl * sl)); }
+  }
+  const zEnd = zAt(rEnd), slEnd = Math.max(0.2, (fn(zEnd - 0.05) - fn(Math.min(H, zEnd + 0.05))) / (Math.min(H, zEnd + 0.05) - (zEnd - 0.05)));
+  // where a round dome starts to lean past 45° (the inside needs supports from there up)
+  let zOver = Infinity, rOver = 0;
+  if (!point) for (let z = capFrom; z < zEnd; z += 0.25) if (fn(z) - fn(z + 0.25) > 0.25) { zOver = z; rOver = fn(z); break; }
+  const arcFrom = (rStop) => { let L = 0, z0 = zAt(rStop), rp = fn(z0); const n = 200; for (let q = 1; q <= n; q++) { const z = z0 + ((zEnd - z0) * q) / n, r = fn(z); L += Math.hypot(r - rp, (zEnd - z0) / n); rp = r; } return L; };
+  return { fn, H: zEnd, top: H, R, rEnd, capFrom, point, zOver, rOver, arcFrom, hole: holeR > 0,
+    // the inside comes to its own pole, a wall's thickness (measured square to the wall) under the tip
+    dome: { zOut: H, zIn: H - (t * Math.sqrt(1 + slEnd * slEnd)) / slEnd, hole: holeR > 0 } };
 }
 
 // ---------------------------------------------------------------- globe lamps
@@ -1074,7 +1127,7 @@ function limitUndersides(D, rows, NU, sec, twist = 0, H = 0, fillBelow = 0, deg 
       const kN = CX[i] * NX[i] + CY[i] * NY[i];
       const above = rows.r[j + 1] * kN + o1;
       // a sliding back moves toward +y between the rows: its part along the normal is outward travel
-      const dSl = slide ? (slide.amt[j + 1] - slide.amt[j]) * slide.w[i] : 0;
+      const dSl = slide ? (slide.amt[j + 1] - slide.amt[j]) * slide.w[i] + (slide.all ? slide.all[j + 1] - slide.all[j] : 0) : 0;
       const dR = above - below + dSl * NY[i];
       const raw = (rows.z[j + 1] - rows.z[j]) * T - dR;
       if (skipOverhung && raw < 0) continue;
@@ -1197,14 +1250,17 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
       for (let j = 0; j <= b; j++) { offIn[j] = oc + (rc - rows.r[j]); zIn[j] = z0; }
     }
   }
+  // a dome that comes to a sharp tip is tighter than the wall is thick: its inside stays open all the same
+  if (opts.dome) for (let j = 0; j < NR; j++) offIn[j] = Math.max(offIn[j], off[j] - 0.85 * rows.r[j]);
   // keep the inner wall monotone so a flared rim or floor never folds over itself
   for (let j = NR - 2; j >= 0; j--) if (zIn[j] > zIn[j + 1] - 1e-3) zIn[j] = zIn[j + 1] - 1e-3;
   for (let j = 1; j < NR; j++) if (zIn[j] < zIn[j - 1] + 1e-3) zIn[j] = zIn[j - 1] + 1e-3;
   // Where the wall bends sharply inward (a tight belly under the rim), the inside, a wall's thickness in,
   // folds back on itself, and keeping it monotone flattens the fold into a little ceiling. Going up, the
   // inside may step in no faster than 45°: the wall is a little thinner across the bend instead.
-  // (A closed globe's dome leans past 45° on purpose, and is printed with supports.)
-  if (top !== 'dome') {
+  // (A closed globe's dome leans past 45° on purpose, and is printed with supports: every colour band of
+  // a domed piece is left as it is, so the bands still meet exactly.)
+  if (!opts.dome) {
     for (let j = 1; j < NR; j++) {
       const rPrev = rows.r[j - 1] + offIn[j - 1], rIn = rows.r[j] + offIn[j], lo = rPrev - (zIn[j] - zIn[j - 1]);
       if (rIn < lo) offIn[j] += Math.min(lo, rows.r[j] + off[j] - 0.8) - rIn;
@@ -1218,11 +1274,17 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
   function corner(i, j, inner) {
     let o, zz;
     if (inner) { o = offIn[j] + (Din ? Din[j * NU + i] : 0); zz = zIn[j]; }
-    else if (opts.normalRelief && D) { const dd = D[j * NU + i]; o = off[j] + dd * rows.nr[j]; zz = rows.z[j] + dd * rows.nz[j]; }
+    else if (opts.normalRelief && D && opts.bedK) {
+      // (it follows the surface only where the wall leans in, as a dome does; where the wall leans out, and
+      // just above the bed, it stands straight out sideways like any other relief, so that its undersides
+      // are held at 45° and nothing dips under the bed)
+      const dd = D[j * NU + i], up = rows.nz[j] > 0 ? opts.bedK[j] : 0;
+      o = off[j] + dd * (1 + (rows.nr[j] - 1) * up); zz = rows.z[j] + dd * rows.nz[j] * up;
+    } else if (opts.normalRelief && D) { const dd = D[j * NU + i]; o = off[j] + dd * rows.nr[j]; zz = rows.z[j] + dd * rows.nz[j]; }
     else { o = off[j] + (D ? D[j * NU + i] : 0); zz = rows.z[j]; }
     if (zShift) zz += zShift[i] * zw[j];
     const sc = rows.r[j];
-    const x0 = sc * CX[i] + o * NX[i], y0 = sc * CY[i] + o * NY[i] + (slide ? slide.w[i] * slide.amt[j] : 0);
+    const x0 = sc * CX[i] + o * NX[i], y0 = sc * CY[i] + o * NY[i] + (slide ? slide.w[i] * slide.amt[j] + (slide.all ? slide.all[j] + (inner ? slide.inAll[j] : 0) : 0) : 0);
     px = x0 * cphi[j] - y0 * sphi[j]; py = x0 * sphi[j] + y0 * cphi[j]; pz = zz;
   }
   function point(key, inner) {
@@ -1417,12 +1479,20 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
   if (top === 'dome') {
     // a closed top (globe lamps): the outer and the inner wall each end in a small ring near the top,
     // and each ring closes onto its own pole
-    const jt = NR - 1, po = capV(0, 0, opts.dome.zOut), pi = capV(0, 0, opts.dome.zIn), ro = [], ri = [];
+    // (a flat-backed dome closes onto the wall, so its poles sit in the middle of their rings; and a
+    // drainage hole leaves the tip open: the two rings are joined by the hole's own wall instead)
+    const jt = NR - 1, ro = [], ri = [];
+    let ox = 0, oy = 0, ix = 0, iy = 0;
     for (let i = 0; i < NU; i++) {
-      point(jt * NU + i, false); ro.push(mesh.v(px, py, pz, jt * NU + i));
-      point(jt * NU + i, true); ri.push(mesh.v(px, py, pz, jt * NU + i + K));
+      point(jt * NU + i, false); ro.push(mesh.v(px, py, pz, jt * NU + i)); ox += px / NU; oy += py / NU;
+      point(jt * NU + i, true); ri.push(mesh.v(px, py, pz, jt * NU + i + K)); ix += px / NU; iy += py / NU;
     }
-    for (let i = 0; i < NU; i++) { const i1 = (i + 1) % NU; mesh.tri(po, ro[i], ro[i1]); mesh.tri(pi, ri[i1], ri[i]); }
+    if (!slide) ox = oy = ix = iy = 0;
+    if (opts.dome.hole) for (let i = 0; i < NU; i++) { const i1 = (i + 1) % NU; mesh.tri(ro[i], ri[i1], ri[i]); mesh.tri(ro[i], ro[i1], ri[i1]); }
+    else {
+      const po = capV(ox, oy, opts.dome.zOut), pi = capV(ix, iy, opts.dome.zIn);
+      for (let i = 0; i < NU; i++) { const i1 = (i + 1) % NU; mesh.tri(po, ro[i], ro[i1]); mesh.tri(pi, ri[i1], ri[i]); }
+    }
   }
   if (top === 'pocket') {
     // a solid body with a round pocket in its top (a candle holder): a flat ring from the outside in to
@@ -1716,11 +1786,12 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const est = () => (Math.ceil((rMax * sec.L) / cell) * coarse.L) / cell;
   while (est() > budget) cell *= 1.12;
   const rimSet = top === 'rim' ? extra.rim : null;
-  const rimEdgeP = rimSet ? rimProfile(rimSet.edge, P.form.wall) : null;
+  // (a piece that prints rim-down has its rim edge at the bottom)
+  const rimEdgeP = rimSet ? rimProfile(rimSet.edge, P.form.wall) : extra.rimBottom ? rimProfile(extra.rimBottom, P.form.wall) : null;
   // edge profiles at the rim and, on open pieces, at the bottom (the same edge mirrored, an inside chamfer)
   const chamfer = extra.innerChamfer > 0 ? chamferEdge(extra.innerChamfer) : null;
   const rim = top === 'rim' ? combineEdges(rimEdgeP, chamfer) : null;
-  const edgeBot = floor.type === 'open' && !floor.cut ? combineEdges(extra.edgeBoth && rimEdgeP ? bottomEdge(rimEdgeP) : null, chamfer) : null;
+  const edgeBot = floor.type === 'open' && !floor.cut ? combineEdges((extra.edgeBoth || extra.rimBottom) && rimEdgeP ? bottomEdge(rimEdgeP) : null, chamfer) : null;
   const drop = rimSet && rimSet.shape !== 'level' ? rimSet.drop : 0;
   // dense rows where the rim edge and any wavy rim line live
   const notchD = extra.notch ? extra.notch.depth : 0;
@@ -1740,7 +1811,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const rows = sampleRows(rFn, H, cell, 0, zoneTot > 0 ? { zone: zoneTot, count: Math.min(180, Math.ceil(zoneTot / fine)) } : null, cuts,
     edgeBot ? { zone: edgeBot.zone * 1.15, count: Math.min(180, Math.ceil((edgeBot.zone * 1.15) / Math.min(cell, edgeBot.zone / 10))) } : null);
   if (extra.offset) rows.off = new Float64Array(rows.n).fill(extra.offset);
-  if (rim) rMax += rim.extra || 0;
+  if (rim) rMax += rim.extra || 0; else if (edgeBot) rMax += edgeBot.extra || 0;
   let NU = Math.ceil((rMax * sec.L) / cell);
   NU += (4 - (NU % 4)) % 4;
   let topL = null;
@@ -1806,9 +1877,27 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     const cols = sectionColumns(sec, NU);
     let rTop = 0;
     for (let j = 0; j < rows.n; j++) rTop = Math.max(rTop, rows.r[j]);
-    slide = { w: new Float64Array(NU), amt: new Float64Array(rows.n) };
+    slide = { w: new Float64Array(NU), amt: new Float64Array(rows.n), all: null, inAll: null };
     for (let i = 0; i < NU; i++) slide.w[i] = cols.NY[i] > 0 ? smoothstep(0, 1, cols.NY[i]) : 0;
     for (let j = 0; j < rows.n; j++) slide.amt[j] = extra.flatBack.b * (rTop - rows.r[j]);
+    // A dome closes onto the wall: from where it starts, each row moves toward the wall as a whole by what
+    // it has narrowed, so the outline shrinks to a point on the wall's plane and the back stays flat right
+    // to the tip. Inside, the rows move back out by what the wall's lean takes off the back's thickness,
+    // so the back wall is as thick at the tip as everywhere else.
+    // (it sets in over 20 mm, so the front's lean changes without a crease)
+    if (extra.flatBack.capFrom != null) {
+      let jc = 0, acc = 0;
+      while (jc < rows.n - 1 && rows.z[jc] < extra.flatBack.capFrom) jc++;
+      const b = extra.flatBack.b, tw = P.form.wall;
+      slide.all = new Float64Array(rows.n); slide.inAll = new Float64Array(rows.n);
+      for (let j = jc + 1; j < rows.n; j++) {
+        const ramp = smoothstep(0, 20, rows.l[j] - rows.l[jc]);
+        acc += b * Math.max(0, rows.r[j - 1] - rows.r[j]) * ramp;
+        slide.all[j] = acc;
+        slide.amt[j] = b * (rTop - rows.r[j]) - acc;
+        slide.inAll[j] = -tw * (1 - rows.nr[j]) * ramp;
+      }
+    }
     // the texture fades out round the sides, before the corners that turn onto the back
     const fa = extra.flatBack.nyArc;
     if (D) for (let i = 0; i < NU; i++) { const k = 1 - smoothstep(fa - 0.3, fa - 0.02, cols.NY[i]); if (k < 1) for (let j = 0; j < rows.n; j++) D[j * NU + i] *= k; }
@@ -1836,6 +1925,8 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     }
   }
   const shellOpts = { sec, twist: extra.twist || 0, H, zShift: extra.zShift, shiftFrom: extra.shiftFrom, Din, innerStep: mode === 'relief' ? 4 : 1, slide, pocket: extra.pocket, dome: extra.dome, normalRelief: extra.normalRelief };
+  // relief that stands out along the surface, on a wall that starts at the bed: sideways for the first few mm
+  if (extra.normalRelief && extra.reliefFromBed) shellOpts.bedK = Float64Array.from(rows.z, (z) => smoothstep(0, 5, z - rows.z[0]));
   if (!cuts.length) {
     const mesh = buildShell(rows, NU, F, D, P.form.wall, { ...floor, band: bandB }, top, shellOpts);
     return { mesh, rows, NU, cell, rMax, rMin, perim };
@@ -1853,7 +1944,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
     const view = (arr) => (arr ? arr.subarray(a * NU, (e + 1) * NU) : null);
     const fl = b === 0 ? { ...floor, band: bandB } : { type: 'open', cut: true };
     const tp = b + 2 === bounds.length ? top : 'cut';
-    bodies.push(buildShell(sub, NU, view(F), view(D), P.form.wall, fl, tp, { ...shellOpts, Din: view(Din), slide: slide && { w: slide.w, amt: slide.amt.subarray(a, e + 1) } }));
+    bodies.push(buildShell(sub, NU, view(F), view(D), P.form.wall, fl, tp, { ...shellOpts, Din: view(Din), bedK: shellOpts.bedK && shellOpts.bedK.subarray(a, e + 1), slide: slide && { w: slide.w, amt: slide.amt.subarray(a, e + 1), all: slide.all && slide.all.subarray(a, e + 1), inAll: slide.inAll && slide.inAll.subarray(a, e + 1) } }));
   }
   const merged = mergeMeshes(bodies);
   // which original band each body falls in, so its filament slot survives clamping
@@ -1942,7 +2033,10 @@ function holeField(hole, s, dy) {
   if (hole.slot) {
     // keyhole: a narrow slot rising from the round opening; the screw shaft rests at its pointed top
     const w = hole.w || 2.3, L = hole.slot;
-    d = Math.min(d, Math.max(ax - w, -dy, Math.min(dy - L, 0.766 * ax + 0.643 * (dy - L) - 0.766 * w)));
+    // (on a piece that prints rim-down the slot runs down the print instead, to a round end, and the
+    // round opening above it keeps its pointed top)
+    if (hole.down) d = Math.min(d, dy > -L ? Math.max(ax - w, dy) : Math.hypot(ax, dy + L) - w);
+    else d = Math.min(d, Math.max(ax - w, -dy, Math.min(dy - L, 0.766 * ax + 0.643 * (dy - L) - 0.766 * w)));
   }
   return d;
 }
@@ -2137,18 +2231,33 @@ function generateFaceted(P) {
 
 export function generate(P, quality = 1) {
   if (P.object === 'wall' && P.extras.wallStyle === 'facet') return generateFaceted(P);
-  // only hanging and wall planters can have a rounded bottom; it has no base chamfer
-  if (P.form.bottom === 'round') P = { ...P, form: P.object === 'hanging' || P.object === 'wall' ? { ...P.form, inset: 0 } : { ...P.form, bottom: 'flat' } };
+  // only hanging and wall planters can have a domed bottom; it has no base chamfer
+  if (domedBottom(P.form)) P = { ...P, form: P.object === 'hanging' || P.object === 'wall' ? { ...P.form, inset: 0 } : { ...P.form, bottom: 'flat' } };
   const F = P.form, X = P.extras;
+  const domed = domedBottom(F);
   let S = P.surface;
   if (WATERTIGHT.has(P.object) && S.mode === 'cut') { S = { ...S, mode: 'relief' }; P = { ...P, surface: S }; }
   // a globe lamp has a shape of its own; everything else follows the silhouette
   const globe = P.object === 'globe';
   const gs = globe ? globeShape(F, X, F.wall) : null;
   const H = globe ? gs.H : F.height;
-  let rFn = globe ? gs.fn : makeProfile(F);
-  let eased = 0;
-  if (!globe && F.printable !== false) { const e = easeProfile(rFn, H, 44); rFn = e.fn; eased = e.moved; }
+  // wall planters always have the flat back; their outline cannot twist away from the wall
+  const wallObj = P.object === 'wall';
+  let wallBack = wallObj ? clamp(X.back ?? 0.3, 0.1, 0.6) : 0;
+  let rFn = gs ? gs.fn : null, eased = 0;
+  const shape = () => { const sp = shapeProfile(F, wallBack); rFn = sp.fn; eased = sp.moved; };
+  if (!globe) shape();
+  // (the back stays far enough behind the centre for the floor and the inner wall; a dome is left out of
+  // that, as it narrows to nothing)
+  if (wallObj) {
+    let rLo = Infinity;
+    const z0 = domed ? clamp(F.belly, 0.08, 0.92) * H : 0;
+    for (let k = 0; k <= 100; k++) rLo = Math.min(rLo, rFn(z0 + ((H - z0) * k) / 100));
+    const need = clamp(Math.max(wallBack, (F.wall + 3) / Math.max(10, rLo)), 0.1, 0.6);
+    if (need !== wallBack) { wallBack = need; shape(); }
+  }
+  // a domed bottom is built as it prints: rim on the bed, the dome closing over the top
+  const ds = domed ? domeShape(F, X, rFn) : null;
   const parts = [];
   const warnings = [];
   const mode = S.pattern === 'smooth' ? 'none' : S.mode;
@@ -2162,15 +2271,9 @@ export function generate(P, quality = 1) {
   let rMinAll = Infinity;
   for (let k = 0; k <= 200; k++) rMinAll = Math.min(rMinAll, rFn((H * k) / 200));
   if (globe) rMinAll = gs.rBand;
+  if (domed) rMinAll = 0.34 * ds.R;
   let secF = F;
-  // wall planters always have the flat back; their outline cannot twist away from the wall
-  const wallObj = P.object === 'wall';
-  // (the back stays far enough behind the centre for the floor and the inner wall)
-  if (wallObj) {
-    let rLo = Infinity;
-    for (let k = 0; k <= 100; k++) rLo = Math.min(rLo, rFn((H * k) / 100));
-    secF = { ...F, section: 'flatback', back: clamp(Math.max(X.back ?? 0.3, (F.wall + 3) / Math.max(10, rLo)), 0.1, 0.6), twist: 0 };
-  }
+  if (wallObj) secF = { ...F, section: 'flatback', back: wallBack, twist: 0 };
   if (secF.section === 'polygon') {
     const need = (F.wall + relief + 1) / Math.max(5, rMinAll);
     if ((F.corner ?? 0.2) < need) { secF = { ...F, corner: Math.min(0.85, need) }; warnings.push({ level: 'ok', text: 'Corners were rounded a little more so the inner wall stays clean.' }); }
@@ -2199,8 +2302,8 @@ export function generate(P, quality = 1) {
   if (obj === 'pendant') floor = { type: 'hole', thick: F.floor, holeR: X.socket / 2 };
   // a table-lamp shade is open at both ends and stands in a groove in the base; so is a napkin ring
   const GROOVE = 3;
-  if (onBase || obj === 'ring') floor = { type: 'open' };
-  if (globe) top = 'dome';
+  if (onBase || obj === 'ring' || domed) floor = { type: 'open' };
+  if (globe || domed) top = 'dome';
   if (obj === 'vase' && X.vaseMode && mode !== 'cut') top = 'cap';
   // a candle holder is solid, with a pocket in the top just the size of the candle
   const CANDLES = { tealight: { d: 40, depth: 17, label: 'tealight' }, maxi: { d: 60, depth: 24, label: 'maxi tealight' }, taper: { d: 22.5, depth: 20, label: 'taper candle' } };
@@ -2216,9 +2319,10 @@ export function generate(P, quality = 1) {
   }
 
   // rim: an edge profile, and a wavy or slanted top line (not where a lid has to sit flat)
-  const rimEdge = top === 'rim' ? F.rimEdge || 'flat' : 'flat';
+  // (a domed planter prints rim-down: its rim edge is on the bed, and its rim line has to be level)
+  const rimEdge = top === 'rim' || domed ? F.rimEdge || 'flat' : 'flat';
   // a lid or a self-watering insert has to sit on a level rim
-  const rimShape = top === 'rim' && !lidOn && !insert ? F.rimShape || 'level' : 'level';
+  const rimShape = top === 'rim' && !lidOn && !insert && !domed ? F.rimShape || 'level' : 'level';
   const rimDrop = clamp(F.rimDepth || 0, 0, H * 0.35);
   const shaped = rimShape !== 'level' && rimDrop > 0.5;
   const extraMain = { minTopBand, sec, twist, freezeChamfer: floor.type !== 'open', minBottomBand: onBase ? GROOVE + 3 : 0 };
@@ -2239,36 +2343,53 @@ export function generate(P, quality = 1) {
   // napkin rings: the rim edge at both ends, and an inside chamfer
   if (obj === 'ring') { extraMain.edgeBoth = X.edgeBoth !== false; extraMain.innerChamfer = clamp(X.innerChamfer || 0, 0, Math.max(0, F.wall - 0.8)); }
   if (candle) extraMain.pocket = { r: candle.d / 2, depth: Math.min(candle.depth, H - 6) };
-  // a rounded bottom stays plain where it narrows to its foot: cells there would crowd into a knot
-  if (F.bottom === 'round') {
-    const R = F.diameter / 2;
-    let l = 0, z = 0, r = rFn(0);
-    while (z < H * 0.6 && r < 0.45 * R) { const z2 = z + 0.5, r2 = rFn(z2); l += Math.hypot(0.5, r2 - r); z = z2; r = r2; }
-    extraMain.minBottomBand = Math.max(extraMain.minBottomBand, l);
+  // A domed bottom is one piece with the wall: the pattern runs on over the dome right to its tip. Relief
+  // stands out along the surface there, and eases off only at the very tip, where its cells shrink below
+  // its depth.
+  if (domed) {
+    Object.assign(extraMain, {
+      dome: ds.dome, rimBottom: rimEdge !== 'flat' ? rimEdge : null, rMinCell: 0.4 * ds.R, normalRelief: true, reliefFromBed: true,
+      minTopBand: ds.hole ? 2 : ds.arcFrom(Math.max(ds.rEnd + 0.5, 3)) + 0.5,
+      poleFade: mode === 'relief' ? clamp((relief * Math.max(1, S.count)) / Math.PI, 6, 0.25 * ds.R) : 0,
+    });
   }
   // hanging planter: teardrop holes for the cords in a plain collar under the rim
   const holes = [];
   const rimZone = rimEdge !== 'flat' ? (rimProfile(rimEdge, F.wall)?.zone || 0) + 1.5 : 0;
+  // (heights here are the right way up; on a domed planter each hole is turned over with the print below)
   if (obj === 'hanging') {
     const n = clamp(Math.round(X.hangers || 3), 2, 6), r = 2.6, zc = H - (shaped ? rimDrop : 0) - rimZone - 8;
     // on a shaped outline each hole goes on the nearest lobe crest or flat face, where the wall is even
     const lobes = secF.section === 'lobed' ? clamp(Math.round(F.lobes || 8), 2, 24) : secF.section === 'polygon' ? clamp(Math.round(F.sides || 6), 3, 12) : 0;
     const snap = (a) => (lobes ? Math.round((a * lobes) / TAU) * (TAU / lobes) : a);
     for (let k = 0; k < n; k++) holes.push({ angle: snap(-Math.PI / 2 + (TAU * k) / n), z: zc, r });
-    extraMain.minTopBand = Math.max(extraMain.minTopBand, H - zc + r + 2.5);
+    if (domed) extraMain.minBottomBand = Math.max(extraMain.minBottomBand, H - zc + r + 2.5);
+    else extraMain.minTopBand = Math.max(extraMain.minTopBand, H - zc + r + 2.5);
   }
   // wall planter: a keyhole in the flat back for a screw (head up to 8 mm)
   if (wallObj) {
     const zc = H - (shaped ? rimDrop : 0) - rimZone - 22;
     holes.push({ angle: Math.PI / 2, z: zc, r: 4.6, slot: 9, w: 2.3 });
     const b = secF.back, c = 0.16;
-    extraMain.flatBack = { b, nyArc: (b - c) / (1 - c) };
+    extraMain.flatBack = { b, nyArc: (b - c) / (1 - c), capFrom: domed ? ds.capFrom : null };
   }
-  if (holes.length) extraMain.holes = holes;
+  // as it prints, a domed planter is upside down: so are its holes (a keyhole's slot runs down the print),
+  // its plain bands, its pattern's gradient and its colour bands
   const mc = P.multicolor && P.multicolor.cuts && P.multicolor.cuts.length ? P.multicolor : null;
-  if (mc) extraMain.bands = mc;
-  if (rimEdge !== 'flat' || shaped) extraMain.rim = { edge: rimEdge, shape: shaped ? rimShape : 'level', drop: rimDrop, waves: clamp(Math.round(F.rimWaves || 6), 2, 24) };
-  const shell = makePatternedShell(rFn, H, P, quality, floor, top, extraMain);
+  let Pmain = P;
+  if (domed) {
+    Pmain = { ...P, surface: { ...S, bandBottom: S.bandTop, bandTop: S.bandBottom, gradient: -(S.gradient || 0) } };
+    if (holes.length) extraMain.holes = holes.map((hl) => ({ ...hl, z: H - hl.z, down: !!hl.slot }));
+    if (mc) {
+      const order = mc.cuts.map((z, k) => [z, k]).sort((a, b) => a[0] - b[0]), nb = order.length + 1;
+      extraMain.bands = { cuts: order.map(([z]) => H - z).reverse(), slots: Array.from({ length: nb }, (_, k) => mc.slots[nb - 1 - k] ?? 0) };
+    }
+  } else {
+    if (holes.length) extraMain.holes = holes;
+    if (mc) extraMain.bands = mc;
+  }
+  if (!domed && (rimEdge !== 'flat' || shaped)) extraMain.rim = { edge: rimEdge, shape: shaped ? rimShape : 'level', drop: rimDrop, waves: clamp(Math.round(F.rimWaves || 6), 2, 24) };
+  const shell = makePatternedShell(domed ? ds.fn : rFn, domed ? ds.H : H, Pmain, quality, floor, top, extraMain);
   const mainKey = { globe: 'globe', candle: 'holder', planter: 'pot', hanging: 'pot', wall: 'pot', orchid: 'pot', box: 'box', pendant: 'shade', lamp: 'shade', lantern: 'lantern', bowl: 'bowl', tray: 'tray', vase: 'vase', cup: 'cup', ring: 'ring' }[obj];
   const mainLabel = { globe: 'Globe', candle: 'Candle holder', planter: 'Pot', hanging: 'Pot', wall: 'Pot', orchid: 'Pot', box: 'Box', pendant: 'Shade', lamp: 'Shade', lantern: 'Lantern', bowl: 'Bowl', tray: 'Tray', vase: top === 'cap' ? 'Vase (solid, for spiral vase mode)' : 'Vase', cup: 'Cup', ring: 'Ring' }[obj];
 
@@ -2373,7 +2494,11 @@ export function generate(P, quality = 1) {
     if (zr > H - 25) warnings.push({ level: 'warn', text: 'The reservoir is very tall; the insert has little room for soil.' });
   }
 
-  add(mainKey, mainLabel, shell.mesh, { z: mainLift, color: 0, flip: obj === 'pendant' });
+  // (a domed planter is shown the right way up by turning the print over, about the axis square to the
+  // wall, so a flat back stays on the wall)
+  add(mainKey, mainLabel, shell.mesh, domed ? { z: H, flipZ: true, turnY: true, color: 0 } : { z: mainLift, color: 0, flip: obj === 'pendant' });
+  // (relief near the tip stands a little past it: the piece is lifted by that much, so nothing dips under z = 0)
+  if (domed) { const pm = parts[parts.length - 1]; mainLift = Math.max(0, pm.stats.bbox[5] - H); pm.place.z = H + mainLift; }
   if (shell.regions) parts[parts.length - 1].regions = shell.regions;
 
   // ---- box lid + knob
@@ -2478,6 +2603,9 @@ export function generate(P, quality = 1) {
   if (globeNeeds.length) {
     const fix = [!gs.peak ? 'a Peak top' : null, gs.underTo > 0 ? 'a Cone underside' : null].filter(Boolean).join(' and ');
     checks.push({ level: 'warn', text: `Needs supports. This is a closed globe: ${globeNeeds.join('; ')}. Use tree supports on the build plate only: inside the ball they grow up through the Ø ${Math.round(2 * (gs.rn - F.wall))} mm opening and come out through it. Supports leave marks that show when it is lit.${fix ? ` ${fix[0].toUpperCase()}${fix.slice(1)} would print without them (striped on the model).` : ''}` });
+  } else if (domed && !ds.point && overArea > 60) {
+    // a round dome closes over the top of the print: inside, it leans past 45° from here up
+    checks.push({ level: 'warn', text: `Needs supports inside. It prints rim-down, and the round bottom closes over the top of the print: inside, it leans past 45° for the last ${Math.round(H - ds.zOver)} mm (Ø ${Math.round(2 * ds.rOver)} mm, ${(overArea / 100).toFixed(0)} cm², striped in Print check). Use tree supports on the build plate only: they grow up inside the pot and come out through the opening. A Pointed bottom closes at 45° and prints without them.` });
   } else if (overArea / totalArea > 0.01 || overArea > 500) checks.push({ level: 'bad', text: `${(overArea / 100).toFixed(1)} cm² overhangs past 46°. It is striped on the model; add supports or change the shape.` });
   else if (overArea > 60) checks.push({ level: 'warn', text: `${(overArea / 100).toFixed(1)} cm² of small overhangs past 46°, striped on the model. Usually prints fine.` });
   else checks.push({ level: 'ok', text: 'No overhangs past 46°. Prints without supports.' });
@@ -2493,8 +2621,8 @@ export function generate(P, quality = 1) {
     else checks.push({ level: 'ok', text: 'Opening tops are short bridges or self-supporting.' });
   }
   if (eased > 0.5) checks.push({ level: 'ok', text: `Silhouette eased by up to ${eased.toFixed(1)} mm to keep walls under 44°.` });
-  if (F.bottom === 'round') checks.push({ level: 'ok', text: `The rounded bottom stands on a ${Math.round(2 * rFn(0))} mm foot while it prints: use a brim for a firm hold.` });
-  if (obj === 'hanging') checks.push({ level: 'ok', text: `Hangs from ${holes.length} cords through teardrop holes under the rim (up to Ø 4 mm cord).${floor.type === 'hole' ? ' Water drips from the drainage hole.' : ' No drainage hole: water sparingly.'}` });
+  if (domed) checks.push({ level: 'ok', text: `Prints rim-down, the ${ds.point ? 'pointed' : 'round'} bottom last, and the pattern runs over it to the tip.${ds.hole ? ` The Ø ${Math.round(X.drain)} mm drainage hole is at the tip.` : ''}${F.rimShape && F.rimShape !== 'level' && (F.rimDepth || 0) > 0.5 ? ' The rim is level, as it stands on the bed.' : ''}` });
+  if (obj === 'hanging') checks.push({ level: 'ok', text: `Hangs from ${holes.length} cords through teardrop holes under the rim (up to Ø 4 mm cord).${floor.type === 'hole' || (domed && ds.hole) ? ' Water drips from the drainage hole.' : ' No drainage hole: water sparingly.'}` });
   if (wallObj) checks.push({ level: 'ok', text: 'The flat back has a keyhole for a screw with a head up to 8 mm. Leave the head 4 mm out of the wall and hook the planter over it.' });
   if (standInfo) checks.push({ level: 'ok', text: `Stand: two flat pieces that slot together into a cross; the pot sits ${Math.round(standInfo.lift)} mm up on the crossbars. Both print flat with no supports.` });
   if (candle) {
@@ -2538,12 +2666,13 @@ export function generate(P, quality = 1) {
     hangers = holes.map((hl) => {
       let ic = 0, best = Infinity;
       for (let i = 0; i < 720; i++) { const da = Math.abs(Math.atan2(Math.sin(cols.A[i] - hl.angle), Math.cos(cols.A[i] - hl.angle))); if (da < best) { best = da; ic = i; } }
-      const r = rFn(hl.z), phi = (twist * hl.z) / H;
+      // (a domed planter is built upside down and turned over for the view: its twist runs from the rim)
+      const r = rFn(hl.z), phi = (twist * (domed ? H - hl.z : hl.z)) / (domed ? ds.H : H);
       const x0 = r * cols.CX[ic] + 1.5 * cols.NX[ic], y0 = r * cols.CY[ic] + 1.5 * cols.NY[ic];
-      return { x: x0 * Math.cos(phi) - y0 * Math.sin(phi), y: x0 * Math.sin(phi) + y0 * Math.cos(phi), z: hl.z };
+      return { x: (domed ? -1 : 1) * (x0 * Math.cos(phi) - y0 * Math.sin(phi)), y: x0 * Math.sin(phi) + y0 * Math.cos(phi), z: hl.z };
     });
   }
-  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers, stand: standInfo, globe: gs ? { top: gs.top, R: gs.R, zc: gs.zc, rn: gs.rn, peak: gs.peak, cone: gs.cone } : null } };
+  return { parts, checks, info: { cell: shell.cell, NU: shell.NU, rows: shell.rows.n, mainKey, eased, lift: mainLift, colorChanges, wallY, hangers, domed, stand: standInfo, globe: gs ? { top: gs.top, R: gs.R, zc: gs.zc, rn: gs.rn, peak: gs.peak, cone: gs.cone } : null } };
 }
 
 // ---------------------------------------------------------------- pattern swatches

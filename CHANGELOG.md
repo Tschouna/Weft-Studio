@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.8.0
+
+- **Truly round bottoms on hanging and wall planters:**
+  - Form → Bottom → **Round** is now a real round bowl. Below its widest point the shape is a true ellipse (a hemisphere when the widest point is as high up as the piece is wide across the middle) that closes in a single point. The old version ran down as a 40° cone onto a small flat foot.
+  - It is one piece with the wall: the pattern runs on over the bowl right to the tip, standing out along the surface. It only eases off in the last few millimetres, where its cells shrink below its depth.
+  - On a wall planter the bowl closes onto the wall: the flat back runs right down to the tip, and the back wall is a full wall thick all the way.
+  - **It prints rim-down**, the open end on the bed and the bowl last. The export is already turned that way, and Print check shows it so.
+  - The inside of a round bowl leans past 45° near its tip, so it **needs tree supports inside** (build plate only; they come out through the opening). The print check says how far down, and stripes the area.
+  - "Widest point" under Shape sets how deep the bowl is. Base width, Base chamfer and Floor are gone for these bottoms, since they have no base.
+- **Pointed bottoms (new):** Bottom → **Pointed** closes the same way as a 45° cone, pattern and all, and prints rim-down **with no supports**. Shuffle uses this one.
+- **What follows from printing rim-down:**
+  - The rim is level (it is what the planter stands on), so the wavy and slanted rim lines are off for these bottoms. Rim edges still work: a rounded edge or rolled lip turns into a 45° chamfer where it would hang out over the bed.
+  - Cord holes and the wall planter's keyhole are turned over with the print, so they still print cleanly: the keyhole's slot ends round, and its wide opening keeps a pointed top.
+  - A drainage hole goes through the very tip.
+  - Plain bands, a pattern's gradient and multicolour bands are all still set the right way up; the studio turns them over for you.
+- New in the Collection: **Acorn** (a round-bottomed wall planter in prism relief) and **Plumb** (a pointed hanging planter in ribs). Pendula and Sconce are now truly round.
+
 ## 2.7.3
 
 - **Faceted wall planters, 1:1 with the original:**

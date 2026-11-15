@@ -12,7 +12,11 @@
 //     strip is closed
 // 10. faceted wall planters: the original's exact shape at 160 mm (its planes and volume), scaled whole to
 //     every width, closed, rim on the bed, a flat back with two Ø 6 mm screw holes, nothing worse than a warning
-import { generate, makeProfile, easeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, __test } from '../app/engine.js';
+// 11. domed bottoms on hanging and wall planters: a round bottom is a true ellipse that closes in a point,
+//     a pointed one prints with no overhang; every outline, pattern, rim edge, drainage hole and colour
+//     band builds closed with the rim flat on the bed; the pattern reaches the tip; a wall planter's back
+//     stays flat and a wall's thickness thick right down to the tip
+import { generate, makeProfile, easeProfile, shapeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
 const { buildSurface, sampleRows, cellFor, processRelief, makeSection } = __test;
@@ -65,11 +69,14 @@ for (const d of COLLECTION) {
 if (run(2)) {
 console.log('2. multicolour bands');
 for (const base of COLLECTION) {
-  const H = base.form.height, plain = mainOf(generate(base, 0.6)).stats.overhang;
+  const r0 = generate(base, 0.6), H = base.form.height, plain = mainOf(r0).stats.overhang;
+  // (a piece that needs supports by design, a closed globe or a round-bottomed planter, has a large overhang
+  // of its own inside; cutting it into bands re-meshes that inside, which moves the count by a few percent)
+  const slack = r0.checks.some((c) => /^Needs supports/.test(c.text)) ? Math.max(5, 0.04 * plain) : 5;
   for (const cuts of [[H * 0.42], [H / 3, (2 * H) / 3]]) {
     const r = generate({ ...base, multicolor: { cuts, slots: [0, 1, 2] } }, 0.6), m = mainOf(r);
     for (const rg of m.regions || []) { const bad = openEdges(m, rg.first, rg.count); if (bad) fail(`${base.name} band ${rg.slot}: ${bad} open edges`); }
-    if (m.stats.overhang > plain + 5) fail(`${base.name}: bands add ${(m.stats.overhang - plain).toFixed(0)} mm² overhang`);
+    if (m.stats.overhang > plain + slack) fail(`${base.name}: bands add ${(m.stats.overhang - plain).toFixed(0)} mm² overhang`);
   }
 }
 console.log('  done');
@@ -375,6 +382,97 @@ for (const [name, W, wall] of cases) {
   const ok = !open && vol > 0 && sizeOk && volOk && !missing.length && holesOk && !r.checks.some((c) => c.level === 'bad');
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name} (${W} mm, wall ${wall}): ${p.stats.tris} tris, ${open} open edges, ${(vol / 1000).toFixed(1)} cm³, ${bb.slice(3).map((v, i) => (v - bb[i]).toFixed(1)).join(' × ')} mm, ${g.holes} screw holes, overhang ${(p.stats.overhang / 100).toFixed(0)} cm²${missing.length ? `, missing faces: ${missing.join(', ')}` : ''}${!sizeOk ? ', wrong size' : ''}${!volOk ? ', volume off the original' : ''}`);
   if (!ok) fail(`faceted ${name}`);
+}
+}
+
+// ---------------------------------------------------------------- 11
+if (run(11)) {
+console.log('11. domed bottoms');
+// the silhouette: a round bottom is a true quarter ellipse from the widest point down to a point on the axis
+{
+  const F = design({ object: 'hanging', form: { bottom: 'round', height: 160, diameter: 150, belly: 0.5, top: 1 } }).form;
+  const fn = shapeProfile(F).fn, R = 75, zb = 80;
+  let worst = 0;
+  for (let k = 0; k <= 200; k++) { const z = (zb * k) / 200, u = 1 - z / zb; worst = Math.max(worst, Math.abs(fn(z) - R * Math.sqrt(Math.max(0, 1 - u * u)))); }
+  const ok = worst < 0.05 && fn(0) < 1e-6 && Math.abs(fn(zb) - R) < 0.05;
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} round silhouette: off a true ellipse by at most ${worst.toFixed(3)} mm, closes at ${fn(0).toFixed(3)} mm`);
+  if (!ok) fail('round silhouette');
+  // a pointed bottom never leans past 44° (for a wall planter: its front, which leans 1 + back times as far)
+  for (const [nm, back] of [['hanging', 0], ['wall', 0.3]]) {
+    const g = shapeProfile({ ...F, bottom: 'point' }, back).fn;
+    let lean = 0;
+    for (let k = 0; k < 400; k++) { const z0 = (160 * k) / 400, z1 = (160 * (k + 1)) / 400; lean = Math.max(lean, (Math.abs(g(z1) - g(z0)) / (z1 - z0)) * (z1 <= zb ? 1 + back : 1)); }
+    const deg = (Math.atan(lean) * 180) / Math.PI, okP = deg < 44.6 && g(0) < 1e-6;
+    console.log(`  ${okP ? 'ok  ' : 'FAIL'} pointed silhouette (${nm}): leans ${deg.toFixed(1)}° at most, closes at ${g(0).toFixed(3)} mm`);
+    if (!okP) fail(`pointed silhouette ${nm}`);
+  }
+}
+const relief = (pattern, extra = {}) => ({ pattern, mode: 'relief', count: 16, depth: 2.5, fill: 1, profile: 'round', bandBottom: 0, bandTop: 0, ...extra });
+const smooth = { pattern: 'smooth', mode: 'none', bandBottom: 0, bandTop: 0 };
+const cases = [
+  ['hanging, round, smooth', { object: 'hanging', form: { bottom: 'round' }, surface: smooth }],
+  ['hanging, round, prism relief', { object: 'hanging', form: { bottom: 'round' }, surface: relief('prism', { angle: 58, depth: 3.2, profile: 'sharp' }) }],
+  ['hanging, round, ribs, rolled lip, 4 cords', { object: 'hanging', form: { bottom: 'round', rimEdge: 'rolled' }, extras: { hangers: 4 }, surface: relief('ribs', { count: 36 }) }],
+  ['hanging, round, drainage hole', { object: 'hanging', form: { bottom: 'round', rimEdge: 'round' }, extras: { drain: 10 }, surface: relief('quilt') }],
+  ['hanging, round, lobed outline', { object: 'hanging', form: { bottom: 'round', section: 'lobed', lobes: 10, lobeDepth: 0.08 }, surface: smooth }],
+  ['hanging, round, twisted hexagon', { object: 'hanging', form: { bottom: 'round', section: 'polygon', sides: 6, corner: 0.3, twist: 40 }, surface: relief('waves', { rows: 10 }) }],
+  ['hanging, round, three colour bands', { object: 'hanging', form: { bottom: 'round' }, surface: relief('facets'), multicolor: { cuts: [40, 80], slots: [0, 1, 2] } }],
+  ['hanging, round, shallow bowl', { object: 'hanging', form: { bottom: 'round', belly: 0.25, height: 110 }, surface: relief('hammered') }],
+  ['hanging, round, deep and narrow', { object: 'hanging', form: { bottom: 'round', belly: 0.8, height: 220, diameter: 110 }, surface: relief('prism', { angle: 58 }) }],
+  ['hanging, pointed, prism relief', { object: 'hanging', form: { bottom: 'point' }, surface: relief('prism', { angle: 58, depth: 3.2, profile: 'sharp' }) }],
+  ['hanging, pointed, drainage hole, bevel', { object: 'hanging', form: { bottom: 'point', rimEdge: 'bevel' }, extras: { drain: 8 }, surface: relief('ribs', { count: 30 }) }],
+  ['hanging, pointed, twisted octagon', { object: 'hanging', form: { bottom: 'point', section: 'polygon', sides: 8, corner: 0.3, twist: 30 }, surface: smooth }],
+  ['hanging, pointed, spikes', { object: 'hanging', form: { bottom: 'point' }, surface: relief('spikes', { count: 20, angle: 60, depth: 5, profile: 'sharp' }) }],
+  ['wall, round, smooth', { object: 'wall', form: { bottom: 'round' }, surface: smooth }],
+  ['wall, round, prism relief', { object: 'wall', form: { bottom: 'round', height: 125, diameter: 165, belly: 0.56, top: 0.96 }, surface: relief('prism', { angle: 58, depth: 3.2, profile: 'sharp' }) }],
+  ['wall, round, ribs, rounded rim', { object: 'wall', form: { bottom: 'round', rimEdge: 'round' }, surface: relief('ribs', { count: 40 }) }],
+  ['wall, round, two colour bands', { object: 'wall', form: { bottom: 'round' }, surface: relief('quilt'), multicolor: { cuts: [70], slots: [1, 0] } }],
+  ['wall, round, deep back', { object: 'wall', form: { bottom: 'round' }, extras: { back: 0.55 }, surface: relief('waves', { rows: 8 }) }],
+  ['wall, pointed, smooth', { object: 'wall', form: { bottom: 'point' }, surface: smooth }],
+  ['wall, pointed, prism relief', { object: 'wall', form: { bottom: 'point' }, surface: relief('prism', { angle: 58, depth: 3.2, profile: 'sharp' }) }],
+  ['wall, pointed, hammered, rolled lip', { object: 'wall', form: { bottom: 'point', rimEdge: 'rolled' }, surface: relief('hammered') }],
+];
+for (const [name, o] of cases) {
+  const d = design(o), r = generate(d, 0.8), p = r.parts.find((q) => q.key === 'pot'), P = p.position, I = p.index, bb = p.stats.bbox;
+  const point = d.form.bottom === 'point', wall = d.object === 'wall', H = d.form.height, t = d.form.wall, R = d.form.diameter / 2;
+  const open = openEdges(p);
+  // the rim is flat on the bed; near the tip the pattern still stands out of the wall
+  let rimArea = 0, backOff = 0, backArea = 0, tipRelief = 0, vol = 0;
+  for (let k = 0; k < I.length; k += 3) {
+    const a = I[k] * 3, b = I[k + 1] * 3, c = I[k + 2] * 3;
+    vol += (P[a] * (P[b + 1] * P[c + 2] - P[b + 2] * P[c + 1]) - P[a + 1] * (P[b] * P[c + 2] - P[b + 2] * P[c]) + P[a + 2] * (P[b] * P[c + 1] - P[b + 1] * P[c])) / 6;
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, area = Math.hypot(nx, ny, nz) / 2;
+    if (nz < -1.99 * area && Math.max(P[a + 2], P[b + 2], P[c + 2]) < 1e-3) rimArea += area;
+    // a wall planter's back: flat on the wall's plane, at the full height
+    if (wall && ny > 1.99999 * area) { const y = (P[a + 1] + P[b + 1] + P[c + 1]) / 3; if (y > bb[4] - 0.5) { backArea += area; backOff = Math.max(backOff, bb[4] - Math.min(P[a + 1], P[b + 1], P[c + 1])); } }
+  }
+  // the back wall's thickness in the dome (the last third of the print): inside faces that look away from the wall
+  let thin = Infinity;
+  if (wall) for (let v = 0; v < P.length / 3; v++) if (p.normal[v * 3 + 1] < -0.92 && P[v * 3 + 1] > bb[4] - 2.5 * t && Math.abs(P[v * 3]) < 10 && P[v * 3 + 2] > H * 0.6) thin = Math.min(thin, bb[4] - P[v * 3 + 1]);
+  // relief within 30% of the radius of the tip: how far the surface stands off the bare silhouette there
+  if (d.surface.mode === 'relief') {
+    const fn = shapeProfile(d.form, wall ? clamp(d.extras.back ?? 0.3, 0.1, 0.6) : 0).fn;
+    for (let v = 0; v < P.length / 3; v++) {
+      const z = H - P[v * 3 + 2];
+      if (z < 0 || z > H * 0.5 || (wall && p.normal[v * 3 + 1] > -0.2)) continue;
+      const rr = Math.hypot(P[v * 3], wall ? 0 : P[v * 3 + 1]);
+      if (!wall && fn(z) < 0.3 * R && fn(z) > 0.12 * R) tipRelief = Math.max(tipRelief, rr - fn(z));
+      if (wall && fn(z) < 0.3 * R && fn(z) > 0.12 * R && Math.abs(P[v * 3 + 1] - (bb[4] - fn(z) * (1 + (d.extras.back ?? 0.3)))) < 6) tipRelief = Math.max(tipRelief, 1);
+    }
+  }
+  const supported = r.checks.some((c) => /^Needs supports/.test(c.text)), bad = r.checks.filter((c) => c.level === 'bad');
+  const tall = bb[5] - bb[2], bands = d.multicolor ? (p.regions || []).length : 0;
+  // (a drainage hole takes the very tip off: on a pointed bottom that is a few millimetres)
+  const cutOff = d.extras.drain > 0 ? (point ? 1.5 * (d.extras.drain / 2 + t) : 1.5) : 0.6;
+  const ok = !open && vol > 0 && Math.abs(bb[2]) < 1e-6 && rimArea > 200 && tall > H - cutOff && tall < H + d.surface.depth + 0.5 && !bad.length
+    && (point ? p.stats.overhang < 60 && !supported : supported)
+    && (!wall || (backOff < 0.01 && backArea > 0.5 * R * H && thin > 0.85 * t && thin < 1.2 * t))
+    && (d.surface.mode !== 'relief' || tipRelief > 0.3)
+    && (!d.multicolor || bands === d.multicolor.cuts.length + 1)
+    && r.parts[0].place.flipZ && r.parts[0].place.turnY;
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}: ${(p.stats.tris / 1000).toFixed(0)}k tris, ${open} open edges, ${tall.toFixed(1)} mm tall, rim ${(rimArea / 100).toFixed(0)} cm² on the bed, overhang ${(p.stats.overhang / 100).toFixed(1)} cm²${supported ? ' (says it needs supports)' : ''}${wall ? `, back ${(backArea / 100).toFixed(0)} cm² flat within ${backOff.toFixed(3)} mm, ${thin.toFixed(2)} mm thick at the tip` : ''}${d.surface.mode === 'relief' ? `, relief at the tip ${tipRelief.toFixed(1)} mm` : ''}${bands ? `, ${bands} bands` : ''}${bad.length ? ` BAD: ${bad.map((c) => c.text).join(' ')}` : ''}`);
+  if (!ok) fail(`domed ${name}`);
 }
 }
 

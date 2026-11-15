@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
-import { generate, swatch, makeProfile, easeProfile, makeSection, glowTest, GLOW_STEPS } from './engine.js';
+import { generate, swatch, makeProfile, easeProfile, shapeProfile, makeSection, glowTest, GLOW_STEPS } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 import { initPanels } from './panels.js';
 
@@ -658,7 +658,7 @@ function buildDisplay(res, d, opts) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = !opts.xray; mesh.receiveShadow = true;
     if (p.place.flip) { mesh.rotation.x = Math.PI; mesh.position.z = H + hang; }
-    else if (p.place.flipZ) { mesh.rotation.x = Math.PI; mesh.position.z = p.place.z + (p.place.lidLift ? lift : 0); }
+    else if (p.place.flipZ) { mesh.rotation[p.place.turnY ? 'y' : 'x'] = Math.PI; mesh.position.z = p.place.z + (p.place.lidLift ? lift : 0); }
     else if (p.place.rot) {
       // flat-printed parts (the stand) stand up in place
       mesh.rotation.order = 'ZYX'; mesh.rotation.set(...p.place.rot);
@@ -1007,10 +1007,10 @@ function dimLayout(minGap = 0) {
   };
   const fmtW = (v) => `${round ? 'Ø ' : ''}${Math.round(v)} mm`;
   if (round) across('rim', rRim, yRim, g, fmtW(2 * rRim));
-  if (round && Math.abs(rBase - rRim) > 2) across('base', rBase, yBase, g, fmtW(2 * rBase));
+  if (round && !isDomed(d) && Math.abs(rBase - rRim) > 2) across('base', rBase, yBase, g, fmtW(2 * rBase));
   if (!round || w / 2 > Math.max(rRim, rBase) + 1.5) {
     // the widest point, dimensioned out past the base
-    const rFn = displayProfile(F);
+    const rFn = displayProfile(d);
     let zw = 0, rw = 0;
     for (let k = 0; k <= 48; k++) { const z = (F.height * k) / 48, r = rFn(z); if (r > rw) { rw = r; zw = z; } }
     const yw = pend ? F.height + pendantHang(d) - zw : zw + lift, s = out(yBase), yl = yBase + s * (round ? 2 * g : g);
@@ -1360,18 +1360,18 @@ const HANDLE_IDS = ['top', 'belly', 'full', 'base'];
 function refreshAccent() { handleState.accent.set(cssVar('--accent') || '#3243c4'); invalidate(); }
 
 let profileMemo = { key: '', fn: null };
-function displayProfile(F) {
-  const key = JSON.stringify(F);
-  if (profileMemo.key !== key) {
-    let fn = makeProfile(F);
-    if (F.printable !== false) fn = easeProfile(fn, F.height, 44).fn;
-    profileMemo = { key, fn };
-  }
+// a hanging or wall planter whose bottom closes in a dome (round or pointed) instead of a flat base
+const isDomed = (d) => (d.object === 'hanging' || d.object === 'wall') && !isFacet(d) && (d.form.bottom === 'round' || d.form.bottom === 'point');
+function displayProfile(d) {
+  const domed = isDomed(d), back = domed && d.object === 'wall' ? clamp(d.extras.back ?? 0.3, 0.1, 0.6) : 0;
+  const F = domed || !d.form.bottom || d.form.bottom === 'flat' ? d.form : { ...d.form, bottom: 'flat' };
+  const key = JSON.stringify(F) + back;
+  if (profileMemo.key !== key) profileMemo = { key, fn: shapeProfile(F, back).fn };
   return profileMemo.fn;
 }
 function handlePoints(d) {
   const F = d.form, R = F.diameter / 2, H = F.height;
-  const rFn = displayProfile(F);
+  const rFn = displayProfile(d);
   const zf = F.belly * H * 0.5;
   return { rFn, pts: { base: [R * F.base, 0], belly: [R, F.belly * H], full: [rFn(zf), zf], top: [R * F.top + (F.lip || 0), H] } };
 }
@@ -1393,6 +1393,8 @@ function updateHandles() {
   const { rFn, pts } = handlePoints(d);
   for (const m of handleState.items) {
     const id = m.userData.handle;
+    // a domed bottom has no base to drag, and its lower curve is fixed
+    m.visible = !(isDomed(d) && (id === 'base' || id === 'full'));
     const [hr, hz] = pts[id];
     engineToWorld(d, hr, hz, m.position);
     const hot = handleState.hover === id || handleState.drag?.id === id;
@@ -1418,7 +1420,7 @@ function pickHandle(e) {
   const rect = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(ndc, stage.camera);
-  const hits = raycaster.intersectObjects(handleState.items, false);
+  const hits = raycaster.intersectObjects(handleState.items.filter((m) => m.visible), false);
   return hits.length ? hits[0].object.userData.handle : null;
 }
 function handleText(id, F) {
@@ -1962,7 +1964,7 @@ function renderForm() {
     const on = Math.abs(F.base - s.base) < 0.015 && Math.abs(F.top - s.top) < 0.015 && Math.abs(F.belly - s.belly) < 0.015 && Math.abs(F.fullness - s.fullness) < 0.02 && Math.abs((F.lip || 0) - (s.lip || 0)) < 0.5;
     sil.append(h('button', { class: 'chip', type: 'button', 'aria-pressed': on, onclick: () => { Object.assign(F, { base: s.base, top: s.top, belly: s.belly, fullness: s.fullness, lip: s.lip || 0, lipH: s.lipH || F.lipH }); onEdit(true, true); } }, s.label));
   }
-  const wallObj = d.object === 'wall';
+  const wallObj = d.object === 'wall', domed = isDomed(d);
   const sec = wallObj ? 'flatback' : F.section || 'round';
   const secKids = wallObj ? [h('p', { class: 'note' }, 'A D shape with a flat back against the wall. Set its depth under Object.')]
     : [chipsCtl('', [{ value: 'round', label: 'Round' }, { value: 'polygon', label: 'Polygon' }, { value: 'lobed', label: 'Lobed' }], () => sec, (v) => { F.section = v; }, { structural: true })];
@@ -1982,26 +1984,28 @@ function renderForm() {
   pane.replaceChildren(...[
     groupAct('Silhouette', pend ? 'Shown hanging; printed crown-down' : null, diceBtn('shape', 'Shape'), sil,
       switchCtl('f-handles', 'Drag points on the model', () => state.handles, (v) => setHandles(v), { local: true }),
-      h('p', { class: 'note' }, 'Drag the rim, widest point, curve and base right on the 3D view. Works on every object.')),
+      h('p', { class: 'note' }, domed ? 'Drag the rim and the widest point right on the 3D view.' : 'Drag the rim, widest point, curve and base right on the 3D view. Works on every object.')),
     d.object === 'hanging' || d.object === 'wall' ? group('Bottom', null,
-      chipsCtl('', [{ value: 'flat', label: 'Flat' }, { value: 'round', label: 'Rounded' }], () => F.bottom || 'flat', (v) => { F.bottom = v; }, { structural: true }),
-      h('p', { class: 'note' }, F.bottom === 'round' ? 'The shape carries on down and closes at 40°, onto a small foot it prints on (use a brim). The texture fades out where it narrows.' : 'A flat base it can stand on.')) : null,
+      chipsCtl('', [{ value: 'flat', label: 'Flat' }, { value: 'round', label: 'Round', title: 'A true round bowl' }, { value: 'point', label: 'Pointed', title: 'Closes at 45°: no supports' }], () => F.bottom || 'flat', (v) => { F.bottom = v; }, { structural: true }),
+      h('p', { class: 'note' }, F.bottom === 'round' ? `Truly round: below its widest point the shape is a round bowl that closes ${wallObj ? 'onto the wall' : 'in one point'}, and the pattern runs over it to the tip, all one piece. Move “Widest point” to make the bowl deeper or shallower. It prints rim-down, the bowl last, and the inside of the bowl needs tree supports (they come out through the opening).`
+        : F.bottom === 'point' ? `The shape closes as a 45° cone ${wallObj ? 'onto the wall' : 'to a point'}, with the pattern running to the tip. It prints rim-down with no supports.`
+          : 'A flat base it can stand on.')) : null,
     group('Cross-section', 'The outline seen from above', ...secKids),
     group('Size', null,
       sliderCtl('f-height', 'Height', { ...sz, min: d.object === 'ring' || d.object === 'tray' ? 12 : 30 }, () => F.height, (v) => { F.height = v; }),
       sliderCtl('f-diam', wallObj ? 'Widest width' : 'Widest diameter', { ...sz, min: d.object === 'ring' ? 30 : 40 }, () => F.diameter, (v) => { rescaleCount(F.diameter, v); F.diameter = v; })),
     group('Shape', null,
-      sliderCtl('f-base', pend ? 'Crown width' : 'Base width', { min: 0.3, max: 1.6, step: 0.01, fmt: pct }, () => F.base, (v) => { F.base = v; }),
+      domed ? null : sliderCtl('f-base', pend ? 'Crown width' : 'Base width', { min: 0.3, max: 1.6, step: 0.01, fmt: pct }, () => F.base, (v) => { F.base = v; }),
       sliderCtl('f-top', pend ? 'Opening width' : 'Rim width', { min: 0.3, max: 1.6, step: 0.01, fmt: pct }, () => F.top, (v) => { F.top = v; }),
       sliderCtl('f-belly', 'Widest point', { min: 0.15, max: 0.85, step: 0.01, fmt: (v) => `${pct(v)} up` }, () => F.belly, (v) => { F.belly = v; }),
       sliderCtl('f-full', 'Fullness', { min: -0.5, max: 1, step: 0.01, fmt: (v) => v.toFixed(2) }, () => F.fullness, (v) => { F.fullness = v; }),
       sliderCtl('f-lip', pend ? 'Opening flare' : 'Lip flare', { min: -15, max: 20, step: 0.5, fmt: (v) => (v ? `${v > 0 ? '+' : ''}${v} mm` : 'none') }, () => F.lip, (v) => { F.lip = v; }),
       sliderCtl('f-lipH', 'Flare height', { min: 4, max: 60, step: 1, fmt: (v) => `${v} mm` }, () => F.lipH, (v) => { F.lipH = v; }),
-      sliderCtl('f-inset', pend ? 'Crown chamfer' : 'Base chamfer', { min: 0, max: 5, step: 0.1, fmt: (v) => (v ? mm1(v) : 'none') }, () => F.inset, (v) => { F.inset = v; })),
+      domed ? null : sliderCtl('f-inset', pend ? 'Crown chamfer' : 'Base chamfer', { min: 0, max: 5, step: 0.1, fmt: (v) => (v ? mm1(v) : 'none') }, () => F.inset, (v) => { F.inset = v; })),
     rimGroup(d),
     group('Walls', null,
       sliderCtl('f-wall', 'Wall thickness', { min: 0.8, max: 6, step: 0.05, fmt: (v) => `${v.toFixed(2)} mm` }, () => F.wall, (v) => { F.wall = v; }),
-      sliderCtl('f-floor', pend ? 'Crown plate' : 'Floor', { min: 1.2, max: 6, step: 0.1, fmt: mm1 }, () => F.floor, (v) => { F.floor = v; }),
+      domed ? null : sliderCtl('f-floor', pend ? 'Crown plate' : 'Floor', { min: 1.2, max: 6, step: 0.1, fmt: mm1 }, () => F.floor, (v) => { F.floor = v; }),
       switchCtl('f-printable', 'Keep walls under 45° overhang', () => F.printable !== false, (v) => { F.printable = v; }),
       h('p', { class: 'note' }, 'Eases steep curves just enough that the silhouette prints without supports.')),
   ].filter(Boolean));
@@ -2050,11 +2054,12 @@ function rimGroup(d) {
   const pend = d.object === 'pendant';
   const title = pend ? 'Opening edge' : 'Rim';
   if (d.object === 'vase' && X.vaseMode) return group(title, null, h('p', { class: 'note' }, 'Spiral vase mode prints the rim as one open wall. Turn off the solid body in Object to shape the rim.'));
-  const lid = d.object === 'box' && X.lid;
-  const shape = lid ? 'level' : F.rimShape || 'level';
+  const lid = d.object === 'box' && X.lid, domed = isDomed(d);
+  const shape = lid || domed ? 'level' : F.rimShape || 'level';
   const kids = [
     chipsCtl('Edge', [{ value: 'flat', label: 'Square' }, { value: 'round', label: 'Rounded' }, { value: 'bevel', label: 'Bevel' }, { value: 'rolled', label: 'Rolled lip' }], () => F.rimEdge || 'flat', (v) => { F.rimEdge = v; }),
     lid ? h('p', { class: 'note' }, 'The rim stays level so the lid sits flat.')
+      : domed ? h('p', { class: 'note' }, 'The rim stays level: it is what the planter stands on while it prints. Curves that would hang out over the bed turn into 45° chamfers there.')
       : chipsCtl('Line', [{ value: 'level', label: 'Level' }, { value: 'wavy', label: 'Wavy' }, { value: 'slant', label: 'Slanted' }], () => shape, (v) => { F.rimShape = v; }, { structural: true }),
   ];
   // napkin rings are open at both ends: the edge can go on both, and the inside can be chamfered
@@ -2371,7 +2376,8 @@ function refreshListing() {
     d.object === 'planter' && d.extras.drain && d.extras.base !== 'insert' ? `• Ø ${d.extras.drain} mm drainage hole${d.extras.base !== 'none' ? `; the ${d.extras.base} catches the water` : ''}.` : null,
     d.object === 'planter' && d.extras.base === 'sleeve' ? '• Print the sleeve in a second colour for a two-tone look.' : null,
     d.object === 'hanging' ? `• Hangs from ${d.extras.hangers || 3} cords through teardrop holes under the rim (cord up to Ø 4 mm).${d.extras.drain ? ` Ø ${d.extras.drain} mm drainage hole.` : ' No drainage hole, so it never drips.'}` : null,
-    d.object === 'wall' ? (facet ? '• Flat back with two Ø 6 mm screw holes near its top corners. Prints from the open end, rim on the bed; no drainage hole.' : '• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports.') : null,
+    d.object === 'wall' ? (facet ? '• Flat back with two Ø 6 mm screw holes near its top corners. Prints from the open end, rim on the bed; no drainage hole.' : isDomed(d) ? `• Flat back with a keyhole for one screw (head up to 8 mm). The ${d.form.bottom === 'point' ? 'pointed' : 'round'} bottom closes onto the wall; it prints rim-down${supportsNeeded ? '' : ', without supports'}.` : '• Flat back with a keyhole for one screw (head up to 8 mm). Prints upright, back and all, without supports.') : null,
+    d.object === 'hanging' && isDomed(d) ? `• The ${d.form.bottom === 'point' ? 'pointed' : 'round'} bottom is one piece with the wall, pattern and all; it prints rim-down${supportsNeeded ? '' : ', without supports'}.` : null,
     d.object === 'orchid' ? `• Open walls for air at the roots${d.extras.drain ? `, Ø ${d.extras.drain} mm drainage hole` : ''}${d.extras.base === 'saucer' ? ', saucer included' : ''}.` : null,
     d.object === 'lantern' ? '• For LED tealights only. Never use a real flame.' : null,
     d.object === 'candle' ? `• A ${({ tealight: 'tealight', maxi: 'maxi tealight', taper: 'taper candle' })[d.extras.candle] || 'tealight'} sits in a pocket in the top. Print solid with 15% infill; LED candles are safest.` : null,
@@ -2989,7 +2995,7 @@ function shuffleShape(d) {
     if (X.wallStyle === 'facet') F.diameter = Math.round(rnd(120, 220));
   }
   if (obj === 'hanging') { X.hangers = pick([3, 3, 4]); }
-  if (obj === 'hanging' || obj === 'wall') F.bottom = pick(['flat', 'flat', 'round']);
+  if (obj === 'hanging' || obj === 'wall') F.bottom = pick(['flat', 'flat', 'point']);
   if (obj === 'ring') { X.edgeBoth = true; X.innerChamfer = pick([0, 0, 1, 1.5]); }
   if (obj === 'candle') {
     X.candle = pick(['tealight', 'tealight', 'maxi', 'taper']);

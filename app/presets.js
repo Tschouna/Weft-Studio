@@ -439,6 +439,21 @@ export const COLLECTION = [
     extras: { back: 0.3, drain: 0 },
     finish: { color: '#6f7d6b', material: 'matte' },
   }),
+  // ---- 2.8: truly round bottoms, printed rim-down, with the pattern running over them to the tip
+  design({
+    name: 'Acorn', object: 'wall',
+    form: { height: 125, diameter: 165, base: 0.62, top: 0.96, belly: 0.56, fullness: 0.6, inset: 0, wall: 3, floor: 3, bottom: 'round' },
+    surface: { pattern: 'prism', mode: 'relief', count: 12, angle: 58, fill: 0.6, depth: 3.2, profile: 'sharp', bandBottom: 0, bandTop: 7 },
+    extras: { back: 0.3, drain: 0 },
+    finish: { color: '#3a3b3d', material: 'matte' },
+  }),
+  design({
+    name: 'Plumb', object: 'hanging',
+    form: { height: 150, diameter: 150, base: 0.8, top: 0.94, belly: 0.62, fullness: 0.4, inset: 0, wall: 3, floor: 3, bottom: 'point', rimEdge: 'round' },
+    surface: { pattern: 'ribs', mode: 'relief', count: 36, angle: 0, fill: 1, depth: 2.6, profile: 'round', bandBottom: 0, bandTop: 0 },
+    extras: { hangers: 3, drain: 0 },
+    finish: { color: '#b5553c', material: 'matte' },
+  }),
   design({
     name: 'Gilt', object: 'ring',
     form: { height: 36, diameter: 52, base: 1, top: 1, belly: 0.5, fullness: 0.15, inset: 0, wall: 3, floor: 3, rimEdge: 'rolled' },
