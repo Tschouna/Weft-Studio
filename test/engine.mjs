@@ -20,7 +20,12 @@
 //     the back and the wall's plane cuts it off flat; one or two mounting holes, keyholes or screw holes,
 //     sized and spaced as asked and kept on the flat of the back; a self-watering insert drops in with its
 //     clearance all round, clears the mounting screws from its foot up, and prints without supports
-import { generate, makeProfile, easeProfile, shapeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, __test } from '../app/engine.js';
+// 13. even sizing: cells keep their size where a piece narrows (within about a quarter for rows of scales and
+//     tiles, which drop a cell at any row; within about a third for running patterns, which step at least a
+//     cell apart; ribs halve),
+//     wherever the piece is at least two fifths as wide as at its widest; every pattern builds closed on a domed planter, and openwork stays printable
+//     where its count steps; with even sizing off, the count is the same all the way round
+import { generate, makeProfile, easeProfile, shapeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, evenMin, evenStyle, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
 const { buildSurface, sampleRows, cellFor, processRelief, makeSection } = __test;
@@ -73,14 +78,31 @@ for (const d of COLLECTION) {
 if (run(2)) {
 console.log('2. multicolour bands');
 for (const base of COLLECTION) {
-  const r0 = generate(base, 0.6), H = base.form.height, plain = mainOf(r0).stats.overhang;
+  const r0 = generate(base, 0.6), H = base.form.height;
+  // Overhang where the bands meet: faces flagged within 3 mm of a cut, banded against plain. (Elsewhere the
+  // cut only moves the grid's rows a fraction, which can flip a facet or two at an openwork tip.)
+  const near = (m, cuts) => {
+    const P = m.position, I = m.index;
+    let a = 0;
+    for (let t = 0; t < I.length / 3; t++) {
+      if (m.overFace[t] !== 1) continue;
+      const i0 = I[t * 3] * 3, i1 = I[t * 3 + 1] * 3, i2 = I[t * 3 + 2] * 3, z = (P[i0 + 2] + P[i1 + 2] + P[i2 + 2]) / 3;
+      if (!cuts.some((c) => Math.abs(z - c) < 3)) continue;
+      const ux = P[i1] - P[i0], uy = P[i1 + 1] - P[i0 + 1], uz = P[i1 + 2] - P[i0 + 2], vx = P[i2] - P[i0], vy = P[i2 + 1] - P[i0 + 1], vz = P[i2 + 2] - P[i0 + 2];
+      a += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+    }
+    return a;
+  };
   // (a piece that needs supports by design, a closed globe or a round-bottomed planter, has a large overhang
   // of its own inside; cutting it into bands re-meshes that inside, which moves the count by a few percent)
-  const slack = r0.checks.some((c) => /^Needs supports/.test(c.text)) ? Math.max(5, 0.04 * plain) : 5;
+  const slack = r0.checks.some((c) => /^Needs supports/.test(c.text)) ? Math.max(5, 0.04 * mainOf(r0).stats.overhang) : 5;
   for (const cuts of [[H * 0.42], [H / 3, (2 * H) / 3]]) {
     const r = generate({ ...base, multicolor: { cuts, slots: [0, 1, 2] } }, 0.6), m = mainOf(r);
     for (const rg of m.regions || []) { const bad = openEdges(m, rg.first, rg.count); if (bad) fail(`${base.name} band ${rg.slot}: ${bad} open edges`); }
-    if (m.stats.overhang > plain + slack) fail(`${base.name}: bands add ${(m.stats.overhang - plain).toFixed(0)} mm² overhang`);
+    // (the cuts as built: a domed planter is built upside down)
+    const zc = m.place?.flipZ ? cuts.map((c) => m.place.z - c) : cuts;
+    const pn = near(mainOf(r0), zc), bn = near(m, zc);
+    if (bn > pn + slack) fail(`${base.name}: bands add ${(bn - pn).toFixed(0)} mm² overhang where they meet`);
   }
 }
 console.log('  done');
@@ -142,7 +164,9 @@ for (const [name, d] of [
 ]) {
   const a = accuracy(d);
   console.log(`  ${name.padEnd(9)} p99 ${a.p99.toFixed(3)}  max ${a.max.toFixed(3)}`);
-  if (a.p99 > 0.06 || a.max > 0.15) fail(`${name}: relief strays from the intended surface (p99 ${a.p99.toFixed(3)}, max ${a.max.toFixed(3)} mm)`);
+  // (a shingle's free edge is a 0.7 mm step: wherever it falls between grid points, one point is off by up to
+  // about 0.2 mm, at any sizing; everything else keeps within 0.15)
+  if (a.p99 > 0.06 || a.max > (name === 'shingles' ? 0.22 : 0.15)) fail(`${name}: relief strays from the intended surface (p99 ${a.p99.toFixed(3)}, max ${a.max.toFixed(3)} mm)`);
 }
 }
 
@@ -627,6 +651,84 @@ for (const [name, form, extras] of ins) {
     && (!domed || potTall > d.form.height - 0.6) && (d.form.bottom === 'round' || pot.stats.overhang < 60);
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} insert, ${name}: clearance ${fit.gap.toFixed(2)} mm all round, ${fit.head.toFixed(1)} mm behind each screw, ${Math.round(bb[5])} mm tall, reservoir about ${ml} ml, overhang ${part.stats.overhang.toFixed(0)} mm², ${open} open edges`);
   if (!ok) fail(`wall insert ${name}`);
+}
+}
+
+// ---------------------------------------------------------------- 13
+if (run(13)) {
+console.log('13. even sizing');
+// (a) cell sizes along the wall, from the courses buildSurface lays out
+const shapes = [
+  ['round bottom', { bottom: 'round', height: 150, diameter: 160, belly: 0.55 }],
+  ['pointed bottom', { bottom: 'point', height: 150, diameter: 160, belly: 0.55 }],
+  ['tapered vase', { height: 220, diameter: 150, base: 0.45, top: 0.5, belly: 0.5, fullness: 0.5 }],
+  ['flared bowl', { height: 80, diameter: 240, base: 0.45, top: 1, belly: 0.9, fullness: 0.2 }],
+];
+const pats = ['seigaiha', 'tiles', 'hammered', 'voronoi', 'knit', 'prism', 'quilt', 'ribs', 'waves', 'weave'];
+for (const [sname, form] of shapes) {
+  for (const pat of pats) {
+    const d = design({ object: form.bottom ? 'hanging' : 'vase', form, surface: { pattern: pat, mode: 'relief', count: 18, bandBottom: 0, bandTop: 0 } });
+    // (a domed bottom is built as it prints, rim-down, the tip last)
+    const F = d.form, S = d.surface, sp = shapeProfile(F), rows = sampleRows(F.bottom ? (z) => sp.fn(F.height - z) : sp.fn, F.height, 0.6), perim = 1;
+    const NU = 512, N = Math.round(S.count), fam = evenStyle(pat);
+    const { counts } = buildSurface(rows, NU, S, 'relief', { bandBottom: 0, bandTop: 0, perim, topL: null, edge: null });
+    let rRef = 0; for (let j = 0; j < rows.n; j++) rRef = Math.max(rRef, rows.r[j]);
+    const w0 = (TAU * rRef) / N, nMin = evenMin(N);
+    let lo = Infinity, hi = 0, steps = 0, lastL = -Infinity, closest = Infinity, halves = true;
+    for (let j = 0; j < rows.n; j++) {
+      if (j && counts[j] !== counts[j - 1]) {
+        steps++; closest = Math.min(closest, rows.l[j] - lastL); lastL = rows.l[j];
+        const a = Math.max(counts[j], counts[j - 1]), b = Math.min(counts[j], counts[j - 1]);
+        if (fam === 'flute' && a !== 2 * b && a !== 3 * b) halves = false;
+      }
+      // (where only a few fit round, near a tip, a row of cells spans much of the radius: sizes are checked
+      // where the piece is at least two fifths as wide as at its widest)
+      if (rows.r[j] < 0.4 * rRef) continue;
+      const w = (TAU * rows.r[j]) / counts[j] / w0;
+      lo = Math.min(lo, w); hi = Math.max(hi, w);
+    }
+    // rows on their own: within half a cell's change; running patterns: within their steps; ribs: halves
+    // (a basket weave's rows are a whole cell tall and its counts go in pairs, so it steps less often)
+    const [wl, wh] = fam === 'rows' ? [0.7, 1.3] : fam === 'flute' ? [0.6, 1.6] : pat === 'weave' ? [0.55, 1.45] : [0.68, 1.45];
+    const spaced = fam === 'rows' || closest >= 1.1 * w0 - 0.5;
+    const ok = lo >= wl && hi <= wh && spaced && halves && counts.every((c) => c >= Math.min(N, 2) && c <= N);
+    if (!ok) { console.log(`  FAIL ${sname}, ${pat}: cells ${lo.toFixed(2)} to ${hi.toFixed(2)} of their size at the widest, ${steps} steps${fam !== 'rows' ? `, closest ${(closest / w0).toFixed(1)} cells apart` : ''}${halves ? '' : ', ribs not halved'}`); fail(`even sizing ${sname} ${pat}`); }
+  }
+  console.log(`  ok   ${sname}: ${pats.length} patterns keep their size`);
+}
+// with even sizing off: the same count all the way round
+{
+  const d = design({ object: 'vase', form: shapes[2][1], surface: { pattern: 'prism', mode: 'relief', count: 18, sizing: 'count' } });
+  const rows = sampleRows(shapeProfile(d.form).fn, d.form.height, 0.6);
+  const { counts } = buildSurface(rows, 512, d.surface, 'relief', { bandBottom: 0, bandTop: 0, perim: 1, topL: null, edge: null });
+  const ok = counts.every((c) => c === 18);
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} even sizing off: ${ok ? 'the same count all the way round' : 'the count changes'}`);
+  if (!ok) fail('even sizing off');
+}
+// (b) every pattern on a pointed and a round planter, and openwork where its count steps
+const reliefPats = ['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'ribs', 'chevron', 'reeds', 'bark', 'waves', 'dunes', 'topo', 'rings', 'hammered', 'carved', 'gouge', 'cubes', 'knurl', 'knit', 'weave', 'petals', 'seigaiha', 'quilt', 'facets', 'tiles', 'herringbone', 'blocks', 'spikes', 'shards', 'fins', 'hobnail'];
+let bad = 0, n = 0;
+for (const bottom of ['point', 'round']) for (const pat of reliefPats) {
+  const d = design({ object: 'hanging', form: { bottom, height: 140, diameter: 150, belly: 0.55 }, surface: { pattern: pat, mode: 'relief', count: 16, bandBottom: 0, bandTop: 0 } });
+  const r = generate(d, 0.5), p = r.parts[0], open = openEdges(p);
+  n++;
+  const notes = [];
+  if (open) notes.push(`${open} open edges`);
+  if (r.checks.some((c) => c.level === 'bad')) notes.push(r.checks.filter((c) => c.level === 'bad').map((c) => c.text).join(' '));
+  if (bottom === 'point' && p.stats.overhang > 60) notes.push(`overhang ${(p.stats.overhang / 100).toFixed(1)} cm²`);
+  if (notes.length) { bad++; console.log(`  FAIL ${bottom} bottom, ${pat}: ${notes.join(', ')}`); }
+}
+console.log(`  ${bad ? 'FAIL' : 'ok  '} ${n} patterns on pointed and round bottoms build closed${bad ? '' : ', the pointed ones with no overhang'}`);
+if (bad) fail(`${bad} patterns on domed bottoms`);
+for (const [name, obj, form, pat] of [['lattice lantern', 'lantern', { height: 200, diameter: 160, base: 0.45, top: 0.5, belly: 0.5, fullness: 0.5 }, 'lattice'],
+  ['prism pendant', 'pendant', { height: 220, diameter: 220, base: 0.35, top: 0.9, belly: 0.6, fullness: 0.5 }, 'prism'],
+  ['ogee lamp', 'lamp', { height: 220, diameter: 200, base: 0.5, top: 0.55, belly: 0.5, fullness: 0.6 }, 'ogee'],
+  ['ribs vase', 'vase', { height: 220, diameter: 150, base: 0.55, top: 1, belly: 0.9, fullness: 0 }, 'ribs']]) {
+  const d = design({ object: obj, form, surface: { pattern: pat, mode: 'cut', count: 18, bandBottom: 6, bandTop: 6 } });
+  const r = generate(d, 0.5), p = r.parts.find((q) => q.key === r.info.mainKey), open = openEdges(p);
+  const ok = !open && p.stats.overhang < 60 && !r.checks.some((c) => c.level === 'bad');
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} openwork ${name}: ${open} open edges, overhang ${(p.stats.overhang / 100).toFixed(1)} cm², bridges ${(p.stats.bridge / 100).toFixed(1)} cm²`);
+  if (!ok) fail(`even openwork ${name}`);
 }
 }
 

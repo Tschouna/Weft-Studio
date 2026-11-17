@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
-import { generate, swatch, makeProfile, easeProfile, shapeProfile, makeSection, glowTest, GLOW_STEPS } from './engine.js';
+import { generate, swatch, makeProfile, easeProfile, shapeProfile, makeSection, glowTest, GLOW_STEPS, evenStyle } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 import { initPanels } from './panels.js';
 
@@ -2170,13 +2170,25 @@ function renderSurface() {
     } else {
       const spec = SURF_SPECS[c];
       const key = spec.key || c;
-      const label = c === 'count' ? P.count : spec.label;
+      const label = c === 'count' ? (S.sizing !== 'count' ? `${P.count} at the widest` : P.count) : spec.label;
       ctls.push(sliderCtl(`s-${c}`, label, spec, () => S[key], (v) => { S[key] = v; }));
     }
   }
   if (S.pattern !== 'smooth') {
     ctls.push(sliderCtl('s-swirl', SURF_SPECS.swirl.label, SURF_SPECS.swirl, () => S.swirl || 0, (v) => { S.swirl = v; }));
     if (mode === 'cut' && S.swirl) ctls.push(h('p', { class: 'note' }, 'Openwork turned by a swirl can lean past 45°; the stripes on the model show where.'));
+    // the pattern keeps its size where the piece narrows, or keeps its count round and shrinks
+    const even = S.sizing !== 'count', how = evenStyle(S.pattern);
+    ctls.push(switchCtl('s-even', 'Same size everywhere', () => even, (v) => { S.sizing = v ? 'even' : 'count'; }, { structural: true }));
+    ctls.push(h('p', { class: 'note' }, !even ? 'The same number all the way round: the pattern shrinks where the piece narrows, with no steps.'
+      : `The pattern keeps its size where the piece narrows: fewer fit round it there. ${{
+        rows: 'Each row holds as many as fit, like roof tiles on a dome, so it runs on without a break.',
+        ridge: mode === 'cut' ? 'It steps down to fewer at a solid strip round the piece.' : 'It steps down to fewer at a strut that runs round the piece.',
+        groove: 'It steps down to fewer at a fine line round the piece.',
+        flute: 'Where they get too wide, every other one tapers out and the rest run on.',
+        strand: 'It steps down to fewer at a strand round the piece.',
+        blend: 'It blends into fewer round where it steps.',
+      }[how]} Right at a tip a few are left, and they close into it.`));
   }
   if (ctls.length) kids.push(group(mode === 'cut' ? 'Openwork' : 'Relief', null, ...ctls));
   if (S.pattern !== 'smooth') {

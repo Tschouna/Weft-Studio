@@ -388,42 +388,162 @@ export const basePattern = (p) => ALIAS[p] || p;
 // Openings are closed cells: any that would reach into a rim is filled, so rims meet whole cells.
 const CELL_PATTERNS = new Set(['lattice', 'prism', 'ogee', 'arches', 'voronoi', 'honeycomb', 'dots', 'wicker']);
 
-function makeVoronoi(S, N, rowsY, jitter) {
+// ---------------------------------------------------------------- even sizing
+// A pattern keeps its size where the piece narrows: fewer cells fit round it there. The meridian is cut into
+// courses, each with a whole number of cells around (so the pattern still closes round the piece). Within a
+// course the pattern is conformal, as before: its cells keep their shape, and their size changes only as much
+// as the radius does inside the course. Courses start and end on the pattern's own row lines, so a seam
+// between two counts runs where the pattern already has a line.
+//  - patterns whose rows stand on their own (scales, tiles, bricks, stitches, scattered cells) may drop a
+//    cell at any row, like roof tiles on a dome: there is no seam to see.
+//  - running patterns (diamonds, waves) step by about a third at a time, at least two cells apart, so they
+//    have few seams; each is drawn as a strut, a fine plain line or a soft blend, whichever suits it.
+//  - ribs halve: every other rib tapers out and the rest run straight on, like the flutes of a dome.
+// The count asked for is the count at the widest point. Near a pole it stops falling at a few cells round,
+// and those few shrink into the tip.
+const PATTERN_ROWS = {
+  petals: 'scales', seigaiha: 'scales', tiles: 'rows', blocks: 'rows', arches: 'arches', knit: 'knit',
+  voronoi: 'seeds', honeycomb: 'seeds', dots: 'seeds', hammered: 'seeds', carved: 'seeds', rings: 'seeds', gouge: 'seeds',
+  lattice: 'ridge', prism: 'ridge', ogee: 'ridge', wicker: 'strand',
+  quilt: 'groove', chevron: 'groove', herringbone: 'groove', cubes: 'groove', facets: 'groove', weave: 'groove',
+  ribs: 'flute', reeds: 'flute', bark: 'flute',
+  waves: 'blend', topo: 'blend', dunes: 'blend',
+};
+const FINE_ROWS = new Set(['scales', 'rows', 'arches', 'knit', 'seeds']);
+// how a pattern keeps its size where the piece narrows (for the studio's notes)
+export const evenStyle = (pattern) => { const f = PATTERN_ROWS[basePattern(pattern)]; return FINE_ROWS.has(f) ? 'rows' : f || 'blend'; };
+// the fewest cells round a course, near a pole
+export const evenMin = (N) => Math.min(N, Math.max(3, Math.round(N / 5)));
+// rows: the sampled meridian; perim: outline perimeter / 2 pi; N: cells round at the widest
+// unit, phase: the pattern's row height and where its rows start, in t (one unit = one cell's width)
+// fine: the count may change at every row; otherwise in steps of about q (halve: by half), with some
+// hysteresis, and no sooner than two cells after the last step
+// pairs: counts are kept even (an over-under weave needs them in pairs)
+function makeCourses(rows, perim, N, { even = true, unit = 1, phase = 0, fine = false, q = 1.35, halve = false, pairs = false, seams = false } = {}) {
+  const n = rows.n, tau = new Float64Array(n), cnt = new Int32Array(n);
+  let rRef = 0;
+  for (let j = 0; j < n; j++) rRef = Math.max(rRef, rows.r[j]);
+  const pr = (j) => Math.max(0.5, rows.r[j]) * perim;
+  if (!even) {
+    for (let j = 1; j < n; j++) tau[j] = tau[j - 1] + ((rows.l[j] - rows.l[j - 1]) * 0.5 * (1 / pr(j) + 1 / pr(j - 1)) * N) / TAU;
+    cnt.fill(N);
+    return { tau, cnt, count: () => N, seamD: null, seamN: null, seamS: null, rRef };
+  }
+  const nMin = evenMin(N), L = rows.l[n - 1], lq = Math.log(halve ? 2 : q), hyst = halve ? 0.6 : 0.5;
+  const fix = (c) => (pairs ? Math.max(Math.min(N, 4), 2 * Math.round(c / 2)) : c);
+  // the count at each step down: by about q, or by half (a third, for an odd count that three divides)
+  const countOf = (i) => {
+    if (!halve) return fix(Math.max(nMin, Math.min(N, Math.round(N / q ** i))));
+    let c = N;
+    for (let s = 0; s < i; s++) { const nx = c % 2 === 0 ? c / 2 : c % 3 === 0 ? c / 3 : Math.round(c / 2); if (nx < nMin) break; c = nx; }
+    return c;
+  };
+  // (no sooner than a cell and a half's width, at the widest, after the last step; one level at a time,
+  // unless the piece narrows or widens so fast that the count falls more than a level and a half behind)
+  const minRun = fine ? 0 : (1.1 * TAU * rRef * perim) / N;
+  let lvMax = 0;
+  while (lvMax < 40 && countOf(lvMax + 1) !== countOf(lvMax)) lvMax++;
+  let idx = -1, lastL = -Infinity;
+  const countAt = (r, Nc, l) => {
+    if (fine) return fix(clamp(Math.round((r / rRef) * N), nMin, N));
+    const lv = clamp(Math.log(rRef / Math.max(1e-6, r)) / lq, 0, lvMax + 0.4);
+    if (idx < 0) { idx = Math.round(lv); return countOf(idx); }
+    if (l - lastL < minRun || Math.abs(lv - idx) <= hyst) return Nc;
+    idx = Math.abs(lv - idx) > 1.5 ? Math.round(lv) : idx + Math.sign(Math.round(lv) - idx);
+    return countOf(idx);
+  };
+  let pj = 0;
+  const rAt = (l) => {
+    if (l <= 0) return rows.r[0];
+    if (l >= L) return rows.r[n - 1];
+    while (pj > 0 && rows.l[pj] > l) pj--;
+    while (pj < n - 2 && rows.l[pj + 1] < l) pj++;
+    const w = clamp((l - rows.l[pj]) / (rows.l[pj + 1] - rows.l[pj] || 1), 0, 1);
+    return rows.r[pj] + (rows.r[pj + 1] - rows.r[pj]) * w;
+  };
+  // the count of a course is set by the radius halfway through it
+  const decide = (l, Nc) => countAt(rAt(Math.min(L, l + 0.5 * unit * ((TAU * Math.max(0.5, rAt(l)) * perim) / Nc))), Nc, l);
+  let k = Math.floor(-phase / unit), Nc = countAt(rAt(0), N, 0);
+  idx = -1; Nc = decide(0, Nc);
+  const k0 = k, counts = [Nc], seamL = [], seamA = [], seamB = [], seamT = [];
+  let tb = phase + (k + 1) * unit;
+  cnt[0] = Nc;
+  for (let j = 1; j < n; j++) {
+    let l0 = rows.l[j - 1], rem = rows.l[j] - l0, tc = tau[j - 1];
+    const ra = Math.max(0.5, (rows.r[j - 1] + rows.r[j]) / 2) * perim;
+    for (let guard = 0; guard < 100000; guard++) {
+      const rate = Nc / (TAU * ra), need = (tb - tc) / rate;
+      if (need > rem) { tc += rem * rate; break; }
+      tc = tb; rem -= need; l0 += need; k++;
+      const Nn = decide(l0, Nc);
+      if (Nn !== Nc) { seamL.push(l0); seamB.push(Nc); seamA.push(Nn); seamT.push(tc); lastL = l0; }
+      Nc = Nn; counts.push(Nc); tb = phase + (k + 1) * unit;
+    }
+    tau[j] = tc; cnt[j] = Nc;
+  }
+  const count = (kk) => counts[clamp(kk - k0, 0, counts.length - 1)];
+  // for each row, how far it is (mm along the wall) from the nearest seam, and the count across it
+  let seamD = null, seamN = null, seamS = null, seamTau = null;
+  if (seams && seamL.length) {
+    seamD = new Float64Array(n).fill(Infinity); seamN = new Int32Array(n); seamS = new Int8Array(n); seamTau = new Float64Array(n);
+    let q2 = 0;
+    for (let j = 0; j < n; j++) {
+      const l = rows.l[j];
+      while (q2 < seamL.length - 1 && Math.abs(seamL[q2 + 1] - l) <= Math.abs(seamL[q2] - l)) q2++;
+      seamD[j] = Math.abs(l - seamL[q2]); seamN[j] = l < seamL[q2] ? seamA[q2] : seamB[q2]; seamS[j] = l < seamL[q2] ? -1 : 1; seamTau[j] = seamT[q2];
+    }
+  }
+  return { tau, cnt, count, seamD, seamN, seamS, seamTau, rRef };
+}
+
+// Seeds for cell patterns, in rows of height h (in Y), each row with its own count (see makeCourses).
+function makeVoronoi(S, rowsY, jitter, countOf) {
   const h = Math.sqrt(3) / 2;
   const k0 = -3, k1 = Math.ceil(rowsY / h) + 3, nk = k1 - k0 + 1;
-  const sx = new Float64Array(nk * N), sy = new Float64Array(nk * N);
+  const cnt = new Int32Array(nk), base = new Int32Array(nk);
+  let tot = 0;
+  for (let k = k0; k <= k1; k++) { cnt[k - k0] = countOf(k); base[k - k0] = tot; tot += cnt[k - k0]; }
+  const sx = new Float64Array(tot), sy = new Float64Array(tot);
   const jit = clamp(jitter, 0, 1) * 0.9;
   for (let k = k0; k <= k1; k++) {
-    const off = (k & 1) * 0.5;
-    for (let m = 0; m < N; m++) {
-      const id = (k - k0) * N + m;
+    const off = (k & 1) * 0.5, Nk = cnt[k - k0];
+    for (let m = 0; m < Nk; m++) {
+      const id = base[k - k0] + m;
       sx[id] = m + off + (hash(m, k, S.seed) - 0.5) * jit;
       sy[id] = k * h + (hash(m + 7919, k, S.seed) - 0.5) * jit * h;
     }
   }
-  return { h, k0, k1, sx, sy };
+  return { h, k0, k1, sx, sy, cnt, base };
 }
 
-const C_X = new Float64Array(32), C_Y = new Float64Array(32), C_I = new Int32Array(32);
-let V_SX = 0, V_SY = 0, V_ID = 0; // offset from the sample to the owning seed (cell units), and its id
+const C_X = new Float64Array(32), C_Y = new Float64Array(32), C_I = new Int32Array(32), C_N = new Int32Array(32);
+// offset from the sample to the owning seed (in the sample's cell units), its id, and its row's count
+let V_SX = 0, V_SY = 0, V_ID = 0, V_N = 1;
+// where the sample is along the wall (mm) and how many mm one unit of Y is there: seeds placed along the wall
+// (V.sl) are measured from it in mm, so distances stay true where rows of different counts meet
+let V_LP = 0, V_VS = 1;
 
 // Physical distance from (X, Y) to the nearest edge of its Voronoi cell.
 // The highest point of each cell's opening, the cell shrunk by the strip half-width, relative to its seed in
 // units where the cell's shape is true (x = X, y = Y * stretch; multiply by the row's cell size for mm).
 // A cell is convex, so a 50° roof from this point leaves no flatter ceiling anywhere in the opening.
-function voronoiTops(V, N, stretch, halfWAt) {
+function voronoiTops(V, stretch, halfWAt) {
   const n = V.sx.length, tx = new Float64Array(n), ty = new Float64Array(n), ex = [], ey = [], eb = [];
   for (let k = V.k0; k <= V.k1; k++) {
-    for (let m = 0; m < N; m++) {
-      const id = (k - V.k0) * N + m, sx = V.sx[id], sy = V.sy[id], hw = halfWAt(sy);
+    const Nk = V.cnt[k - V.k0];
+    for (let m = 0; m < Nk; m++) {
+      const id = V.base[k - V.k0] + m, sx = V.sx[id], sy = V.sy[id], hw = halfWAt(sy, Nk);
       ex.length = ey.length = eb.length = 0;
       for (let kk = k - 2; kk <= k + 2; kk++) {
         if (kk < V.k0 || kk > V.k1) continue;
-        for (let mm = m - 3; mm <= m + 3; mm++) {
-          const nid = (kk - V.k0) * N + (((mm % N) + N) % N);
+        // (a neighbour row may have another count: its seeds are measured in this row's cells)
+        const Nq = V.cnt[kk - V.k0], bq = V.base[kk - V.k0], xq = (sx / Nk) * Nq, f = Nk / Nq, mc = Math.round(xq);
+        for (let mm = mc - 3; mm <= mc + 3; mm++) {
+          const nid = bq + (((mm % Nq) + Nq) % Nq);
           if (nid === id) continue;
-          let dx = V.sx[nid] - sx; if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
-          const dy = (V.sy[nid] - sy) * stretch, L = Math.hypot(dx, dy);
+          let dx = V.sx[nid] - xq; if (dx > Nq * 0.5) dx -= Nq; else if (dx < -Nq * 0.5) dx += Nq;
+          dx *= f;
+          const dy = V.sl ? (V.sl[nid] - V.sl[id]) / V.sc[id] : (V.sy[nid] - sy) * stretch, L = Math.hypot(dx, dy);
           if (L < 1e-9) continue;
           // half-plane: p . e <= |e|^2 / 2 - hw |e|   (inside the cell, at least hw from its edge)
           ex.push(dx); ey.push(dy); eb.push((L * L) / 2 - hw * L);
@@ -445,24 +565,29 @@ function voronoiTops(V, N, stretch, halfWAt) {
   return { tx, ty };
 }
 
-function evalVoronoi(V, N, X, Y, stretch, scale, kR) {
-  const kc = Math.round(Y / V.h);
+// The seeds near (X, Y), with X in cells of a row of N; each row's seeds in their own row's count.
+function seedsNear(V, N, X, Y, dk, dm) {
+  const kc = Math.round(Y / V.h), th = X / N;
   let nc = 0;
-  for (let k = kc - 1; k <= kc + 1; k++) {
+  for (let k = kc - dk; k <= kc + dk; k++) {
     if (k < V.k0 || k > V.k1) continue;
-    const base = (k - V.k0) * N, off = (k & 1) * 0.5, mc = Math.round(X - off);
-    for (let m = mc - 2; m <= mc + 2; m++) {
-      let mm = m % N; if (mm < 0) mm += N;
+    const Nk = V.cnt[k - V.k0], base = V.base[k - V.k0], off = (k & 1) * 0.5, Xk = th * Nk, f = N / Nk, mc = Math.round(Xk - off);
+    for (let m = mc - dm; m <= mc + dm; m++) {
+      let mm = m % Nk; if (mm < 0) mm += Nk;
       const id = base + mm;
-      let dx = V.sx[id] - X;
-      if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
-      C_X[nc] = dx; C_Y[nc] = V.sy[id] - Y; C_I[nc] = id; nc++;
+      let dx = V.sx[id] - Xk;
+      if (dx > Nk * 0.5) dx -= Nk; else if (dx < -Nk * 0.5) dx += Nk;
+      C_X[nc] = dx * f; C_Y[nc] = V.sl ? (V.sl[id] - V_LP) / V_VS : V.sy[id] - Y; C_I[nc] = id; C_N[nc] = Nk; nc++;
     }
   }
+  return nc;
+}
+function evalVoronoi(V, N, X, Y, stretch, scale, kR) {
+  const nc = seedsNear(V, N, X, Y, 1, 2);
   let best = 0, bd = Infinity;
   for (let c = 0; c < nc; c++) { const d = C_X[c] * C_X[c] + C_Y[c] * C_Y[c]; if (d < bd) { bd = d; best = c; } }
   const bx = C_X[best], by = C_Y[best];
-  V_SX = bx; V_SY = by; V_ID = C_I[best];
+  V_SX = bx; V_SY = by; V_ID = C_I[best]; V_N = C_N[best];
   let D = Infinity;
   const s2 = stretch * stretch;
   for (let c = 0; c < nc; c++) {
@@ -477,20 +602,9 @@ function evalVoronoi(V, N, X, Y, stretch, scale, kR) {
   return D;
 }
 function nearestSeed(V, N, X, Y) {
-  const kc = Math.round(Y / V.h);
+  const nc = seedsNear(V, N, X, Y, 1, 1);
   let bd = Infinity;
-  for (let k = kc - 1; k <= kc + 1; k++) {
-    if (k < V.k0 || k > V.k1) continue;
-    const base = (k - V.k0) * N, off = (k & 1) * 0.5, mc = Math.round(X - off);
-    for (let m = mc - 1; m <= mc + 1; m++) {
-      let mm = m % N; if (mm < 0) mm += N;
-      const id = base + mm;
-      let dx = V.sx[id] - X;
-      if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
-      const dy = V.sy[id] - Y, d = dx * dx + dy * dy;
-      if (d < bd) { bd = d; V_SX = dx; V_SY = dy; V_ID = id; }
-    }
-  }
+  for (let c = 0; c < nc; c++) { const d = C_X[c] * C_X[c] + C_Y[c] * C_Y[c]; if (d < bd) { bd = d; V_SX = C_X[c]; V_SY = C_Y[c]; V_ID = C_I[c]; V_N = C_N[c]; } }
 }
 
 function interpTau(rows, tau, l) {
@@ -552,35 +666,83 @@ function buildSurface(rows, NU, S, mode, opts) {
   const follow = S.edge !== 'straight';
   const cellFill = mode === 'cut' && follow && CELL_PATTERNS.has(pid);
 
-  // conformal coordinate along the meridian (one unit = one repeat around)
-  const tau = new Float64Array(n);
-  for (let j = 1; j < n; j++) {
-    const dl = rows.l[j] - rows.l[j - 1];
-    tau[j] = tau[j - 1] + (dl * 0.5 * (1 / (rows.r[j] * perim) + 1 / (rows.r[j - 1] * perim)) * N) / TAU;
+  // The coordinate along the meridian, t: conformal within each course (one unit = one cell's width there),
+  // and the count of cells round each course (see makeCourses). With even sizing off, one course: the
+  // same number all the way round, and the cells shrink where the piece narrows.
+  const even = opts.even ?? S.sizing !== 'count';
+  const fam = PATTERN_ROWS[pid] || 'blend', fine = FINE_ROWS.has(fam);
+  const cotA0 = 1 / Math.tan((clamp(S.angle, 5, 85) * Math.PI) / 180);
+  const rowT = { lattice: 0.5 / cotA0, prism: 0.5 / cotA0, quilt: 0.5 / cotA0, ogee: stretch, wicker: stretch, chevron: stretch, weave: stretch, herringbone: stretch,
+    cubes: 0.866 * stretch, facets: 0.866 * stretch, tiles: 0.5 * stretch, blocks: 0.5 * stretch, petals: 0.5 * stretch, seigaiha: 0.5 * stretch, knit: stretch }[pid]
+    ?? (fam === 'seeds' ? 0.866 * stretch : 0.5);
+  const rowP = { chevron: -0.5 * stretch, cubes: 0.433 * stretch, petals: -0.25 * stretch, seigaiha: -0.25 * stretch }[pid] ?? (fam === 'seeds' ? -0.433 * stretch : 0);
+  const courseOpts = { even, unit: rowT, phase: rowP, fine, halve: fam === 'flute', pairs: pid === 'weave', seams: !fine && fam !== 'strand' };
+  let C = makeCourses(rows, perim, N, courseOpts);
+  // arches: whole rows that exactly fill the space between the rims (the rows are the courses, so this
+  // settles in a pass or two)
+  let tauBot = 0, archH = 1.6 * stretch;
+  if (pid === 'arches') {
+    let archRows = 0;
+    for (let pass = 0; pass < 5; pass++) {
+      const tb = interpTau(rows, C.tau, Math.max(0, bandB)), tt = interpTau(rows, C.tau, Math.max(0, L - Math.max(0, bandT)));
+      const span = Math.max(0.5, tt - tb);
+      if (!archRows) archRows = Math.max(1, Math.round(span / (1.6 * stretch)));
+      const h2 = span / archRows;
+      if (pass && Math.abs(tb - tauBot) < 1e-4 && Math.abs(h2 - archH) < 1e-4) break;
+      tauBot = tb; archH = h2;
+      C = makeCourses(rows, perim, N, { ...courseOpts, unit: archH, phase: tauBot });
+    }
   }
+  const tau = C.tau, cntRow = C.cnt, rowCount = C.count, seamD = C.seamD, seamN = C.seamN, seamS = C.seamS, seamTau = C.seamTau, rRefP = C.rRef * perim;
   const tauMax = tau[n - 1];
-  // arches: whole rows that exactly fill the space between the rims
-  const tauBot = interpTau(rows, tau, Math.max(0, bandB)), tauTop = interpTau(rows, tau, Math.max(0, L - Math.max(0, bandT)));
-  const archSpan = Math.max(0.5, tauTop - tauBot);
-  const archRows = Math.max(1, Math.round(archSpan / (1.6 * stretch)));
-  const archH = archSpan / archRows;
+  // the vertical coordinate of the organic patterns, in radians of the widest circle (or, with even sizing
+  // off, conformal as before)
+  const vArr = Float64Array.from(rows.l, (l, j) => (even ? l / Math.max(1e-6, rRefP) : (TAU * tau[j]) / N));
+  // a rib's lean, as turns round the piece (so ribs keep their angle, and stay in line where they halve)
+  const helix = new Float64Array(n);
+  for (let j = 1; j < n; j++) helix[j] = helix[j - 1] + ((rows.l[j] - rows.l[j - 1]) * tanB) / (TAU * Math.max(0.5, 0.5 * (rows.r[j] + rows.r[j - 1])) * perim);
+  const w0 = (TAU * rRefP) / N;
+  let scMin = Infinity;
   let V = null;
-  if (pid === 'voronoi' || pid === 'honeycomb') V = makeVoronoi(S, N, tauMax / stretch, pid === 'honeycomb' ? 0 : S.jitter);
+  // seeds, placed along the wall: each one's arc length and the cell's width in mm in its row
+  const seedRows = (jit) => {
+    const Vs = makeVoronoi(S, tauMax / stretch, jit, rowCount);
+    if (!even) return Vs;
+    const nS = Vs.sx.length, rate0 = (tau[1] - tau[0]) / Math.max(1e-9, rows.l[1] - rows.l[0]), rate1 = (tau[n - 1] - tau[n - 2]) / Math.max(1e-9, rows.l[n - 1] - rows.l[n - 2]);
+    Vs.sl = new Float64Array(nS); Vs.sc = new Float64Array(nS);
+    for (let k = Vs.k0; k <= Vs.k1; k++) {
+      const Nk = Vs.cnt[k - Vs.k0];
+      for (let m = 0; m < Nk; m++) {
+        const id = Vs.base[k - Vs.k0] + m, ts = Vs.sy[id] * stretch;
+        let ls, rs;
+        if (ts <= 0) { ls = ts / Math.max(1e-9, rate0); rs = rows.r[0]; }
+        else if (ts >= tauMax) { ls = rows.l[n - 1] + (ts - tauMax) / Math.max(1e-9, rate1); rs = rows.r[n - 1]; }
+        else {
+          let lo = 0, hi = n - 1;
+          while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (tau[mid] <= ts) lo = mid; else hi = mid; }
+          const w = (ts - tau[lo]) / Math.max(1e-12, tau[hi] - tau[lo]);
+          ls = rows.l[lo] + (rows.l[hi] - rows.l[lo]) * w; rs = rows.r[lo] + (rows.r[hi] - rows.r[lo]) * w;
+        }
+        Vs.sl[id] = ls; Vs.sc[id] = (TAU * Math.max(0.5, rs) * perim) / Nk;
+      }
+    }
+    return Vs;
+  };
+  if (pid === 'voronoi' || pid === 'honeycomb') V = seedRows(pid === 'honeycomb' ? 0 : S.jitter);
   // the top of every opening, for pointed roofs that really cover it: strip half-width in cell units at
   // the seed's height (cells scale with the radius, the strips do not)
   let vTops = null;
   if (pid === 'voronoi' && mode === 'cut' && S.arch) {
-    vTops = voronoiTops(V, N, stretch, (sy) => {
+    vTops = voronoiTops(V, stretch, (sy, Nk) => {
       const t = sy * stretch;
       let j = 0; while (j < n - 1 && tau[j + 1] < t) j++;
-      return Math.max(0.3, ((S.width || 2) / 2) / ((TAU * rows.r[j] * perim) / N));
+      return Math.max(0.3, ((S.width || 2) / 2) / ((TAU * rows.r[j] * perim) / Nk));
     });
   }
-  if (pid === 'dots') V = makeVoronoi(S, N, tauMax / stretch, S.jitter || 0);
-  if (pid === 'hammered' || pid === 'rings') V = makeVoronoi(S, N, tauMax / stretch, pid === 'rings' ? 0.95 : S.jitter ?? 0.85);
-  if (pid === 'gouge') V = makeVoronoi(S, N, tauMax / stretch, S.jitter ?? 0.8);
-  if (pid === 'carved') V = makeVoronoi(S, N, tauMax / stretch, 0);
-  const wN = pid === 'weave' && (N & 1) ? N + 1 : N;
+  if (pid === 'dots') V = seedRows(S.jitter || 0);
+  if (pid === 'hammered' || pid === 'rings') V = seedRows(pid === 'rings' ? 0.95 : S.jitter ?? 0.85);
+  if (pid === 'gouge') V = seedRows(S.jitter ?? 0.8);
+  if (pid === 'carved') V = seedRows(0);
 
   const waveA = S.wave || 0, waveF = S.waveFreq || 1;
   const rowsN = Math.max(2, S.rows || 24);
@@ -643,14 +805,41 @@ function buildSurface(rows, NU, S, mode, opts) {
     const dep = depth * Math.max(0, grad) * fadeLo * fadeHi * leanK[frozen ? jFreeze : j];
     const wavePhase = waveA * Math.sin(TAU * waveF * lt);
     const Y = t / stretch;
-    const NN = pid === 'weave' ? wN : N;
+    // this course's count round, and the cell's width in mm
+    const NN = frozen ? cntRow[jFreeze] : cntRow[j];
     const Sc = (TAU * r) / NN;
+    V_LP = frozen ? freezeL : l; V_VS = Sc * stretch;
+    if (l >= bandB && l <= L - bandT && Sc < scMin) scMin = Sc;
     const bulgeFade = smoothstep(0, 2, -(cellFill ? rimG : bandG));
-    const swirl = NN * (swirlTurns * (tau[j] / Math.max(1e-6, tauMax)) + unswirlTurns * (rows.z[j] / zTop));
+    const swT = swirlTurns * (tau[j] / Math.max(1e-6, tauMax)) + unswirlTurns * (rows.z[j] / zTop);
+    // where the count steps: how far this row is from the seam (mm), the count across it, and how much of
+    // that other course an organic pattern blends in (half, right at the seam)
+    const dS = seamD ? seamD[j] : Infinity, No = seamN ? seamN[j] : NN;
+    // (over the wider of the two cells: a rib that tapers out takes a cell and a half to do it)
+    const wB = (fam === 'blend' || fam === 'flute') && seamD ? 0.5 * (1 - smoothstep(0, (fam === 'flute' ? 1.5 : 0.6) * ((TAU * r) / Math.min(NN, No)), dS)) : 0;
+    // Openwork just under that strut: the strut cuts cells in half, and each half gets a pointed top (two
+    // 50° lines up to a point at its middle), so none has a flat ceiling. The cells' sides meet the strut at
+    // these points round the piece (in cells, from 0 to 1): diamonds' corners, and a prism's mullions.
+    const underSeam = mode === 'cut' && seamD && seamS[j] < 0 && dS < Sc;
+    let walls = null;
+    if (underSeam) {
+      const v0 = fract(-seamTau[j] * cotA0);
+      walls = pid === 'ogee' ? [0, 0.5] : pid === 'prism' ? (S.alt ? [0, v0] : [0, 0.5, v0, fract(v0 + 0.5)]) : [v0];
+      walls = [...new Set(walls.map((w) => Math.round(fract(w) * 1e6) / 1e6))].sort((a, b) => a - b);
+    }
+    // how far (mm, round the piece) a point is from the middle of the half cell it is in
+    const offMid = (sg) => {
+      const f = fract(sg);
+      let a = walls[walls.length - 1] - 1, b = walls[0];
+      for (let q = 0; q < walls.length; q++) { if (walls[q] <= f) a = walls[q]; if (walls[q] > f) { b = walls[q]; break; } if (q === walls.length - 1) b = walls[0] + 1; }
+      return Math.abs(f - (a + b) / 2) * Sc;
+    };
 
     for (let i = 0; i < NU; i++) {
-      let sig = (NN * i) / NU + swirl;
-      if (swirl) sig -= Math.floor(sig / NN) * NN;
+      // th: turns round the piece; sig: the same in this course's cells
+      const th = i / NU + swT;
+      let sig = NN * th;
+      sig -= Math.floor(sig / NN) * NN;
       // the rim line can vary around the piece (wavy or slanted tops)
       const lTop = topL ? topL[i] : L, u = lTop - l;
       const bandGi = topL ? Math.max(bandB - l, l - (lTop - bandT)) : bandG;
@@ -669,7 +858,11 @@ function buildSurface(rows, NU, S, mode, opts) {
             const vs = S.alt ? sig : sig * 2;
             d = smin(d, Math.abs(vs - Math.round(vs)) * Sc * (S.alt ? 1 : 0.5), kR);
           }
+          // where the count steps, a strut runs round the piece and the diamonds meet it at their points
+          const d0 = d;
+          if (dS < 1e3) d = smin(d, dS, kR);
           g = halfW - d;
+          if (underSeam) bandHere = Math.max(bandHere, halfW + 1.19 * offMid(sig) - dS);
           h = crest(d / Math.max(0.2, fill * Sc * sinA * (pid === 'prism' ? 0.3 : 0.5)), prof);
           break;
         }
@@ -677,8 +870,11 @@ function buildSurface(rows, NU, S, mode, opts) {
           const ph = (TAU * t) / ogP, sn = Math.sin(ph);
           const slope = ((ogA * TAU) / ogP) * Math.cos(ph), corr = 1 / Math.sqrt(1 + slope * slope);
           const x1 = sig - ogA * sn, x2 = sig + ogA * sn - 0.5;
-          const d = smin(Math.abs(x1 - Math.round(x1)) * Sc * corr, Math.abs(x2 - Math.round(x2)) * Sc * corr, kR);
+          let d = smin(Math.abs(x1 - Math.round(x1)) * Sc * corr, Math.abs(x2 - Math.round(x2)) * Sc * corr, kR);
+          const d0 = d;
+          if (dS < 1e3) d = smin(d, dS, kR);
           g = halfW - d;
+          if (underSeam) bandHere = Math.max(bandHere, halfW + 1.19 * offMid(sig) - dS);
           h = crest(d / Math.max(0.2, fill * Sc * 0.32), prof);
           break;
         }
@@ -699,37 +895,53 @@ function buildSurface(rows, NU, S, mode, opts) {
         case 'ribs':
         case 'chevron': {
           let s, d;
-          if (pid === 'ribs') { s = sig + t * tanB + wavePhase; d = Math.abs(s - Math.round(s)) * Sc * cosB; }
-          else { s = sig + chA * (1 - 4 * Math.abs(fract(t / chP + 0.25) - 0.5)); d = Math.abs(s - Math.round(s)) * Sc * cosZ; }
-          const half = Sc * (pid === 'ribs' ? cosB : cosZ) * 0.5;
-          g = halfW - d;
-          h = crest(d / Math.max(0.2, fill * half), prof);
+          if (pid === 'ribs') {
+            // the lean and the wave, as turns round the piece (with even sizing off: as before)
+            const offT = even ? helix[j] + (wavePhase * w0) / (TAU * r) : (t * tanB + wavePhase) / NN;
+            const rib = (Nz) => { const sz = Nz * (th + offT); return [sz, Math.abs(sz - Math.round(sz)) * ((TAU * r) / Nz) * cosB]; };
+            [s, d] = rib(NN);
+            g = halfW - d;
+            h = crest(d / Math.max(0.2, fill * Sc * cosB * 0.5), prof);
+            // where the count halves, every other rib tapers out and the rest widen to fill the space
+            if (wB > 0) { const [, d2] = rib(No); h = (1 - wB) * h + wB * crest(d2 / Math.max(0.2, fill * ((TAU * r) / No) * cosB * 0.5), prof); }
+          } else {
+            s = sig + chA * (1 - 4 * Math.abs(fract(t / chP + 0.25) - 0.5)); d = Math.abs(s - Math.round(s)) * Sc * cosZ;
+            g = halfW - d;
+            h = crest(d / Math.max(0.2, fill * Sc * cosZ * 0.5), prof);
+          }
+          const arch = follow && mode === 'cut' ? (Sc * 0.5 - Math.abs(s - Math.round(s)) * Sc) * archK : 0;
           if (follow && mode === 'cut') {
             // pointed slot ends: steep enough on the downhill side of a leaning slot to stay under 46°
-            const arch = (Sc * 0.5 - Math.abs(s - Math.round(s)) * Sc) * archK;
             bandHere = Math.max(bandB - l + arch, l - (lTop - bandT) + arch);
           }
+          // where the count steps, the slots end in a strip round the piece (pointed toward it, both ways)
+          if (mode === 'cut' && dS < 1e3) bandHere = Math.max(bandHere, halfW + arch - dS);
           break;
         }
         case 'reeds': {
-          const m = Math.round(sig), d = Math.abs(sig - m) * Sc;
-          let mm = m % N; if (mm < 0) mm += N;
-          const nodeP = Math.max(6, L / Math.max(1, rowsN));
-          const ph = l / nodeP + hash(mm, 17, S.seed);
-          const node = smoothstep(1.8, 0, Math.abs(ph - Math.round(ph)) * nodeP);
-          h = crest(d / Math.max(0.2, fill * Sc * 0.5), prof) * (0.84 + 0.16 * node);
+          const reed = (Nz) => {
+            const sz = Nz * th, Scz = (TAU * r) / Nz, m = Math.round(sz), d = Math.abs(sz - m) * Scz;
+            let mm = m % Nz; if (mm < 0) mm += Nz;
+            const nodeP = Math.max(6, L / Math.max(1, rowsN));
+            const ph = l / nodeP + hash(mm, 17, S.seed);
+            const node = smoothstep(1.8, 0, Math.abs(ph - Math.round(ph)) * nodeP);
+            return crest(d / Math.max(0.2, fill * Scz * 0.5), prof) * (0.84 + 0.16 * node);
+          };
+          // where the count halves, every other reed tapers out
+          h = wB > 0 ? (1 - wB) * reed(NN) + wB * reed(No) : reed(NN);
           break;
         }
         case 'voronoi':
         case 'honeycomb': {
-          const d = evalVoronoi(V, N, sig, Y, stretch, Sc, kR);
+          const d = evalVoronoi(V, NN, sig, Y, stretch, Sc, kR);
           g = halfW - d;
           h = crest(d / halfW, prof);
           if (mode === 'cut' && S.arch) {
             // 50° pointed roof over each opening so it prints without bridging, from the top of the
             // actual opening (cells are irregular, so it is worked out per cell)
             if (vTops) {
-              const px = -V_SX, py = -V_SY * stretch, ty = vTops.ty[V_ID];
+              // (measured in the cells of the seed's own row)
+              const px = (-V_SX * V_N) / NN, py = -V_SY * stretch, ty = vTops.ty[V_ID];
               g = ty === -Infinity ? Math.max(g, 1) : Math.max(g, ((py - ty + 1.2 * Math.abs(px - vTops.tx[V_ID])) * Sc) / 1.562);
             } else {
               const apex = (V_SY + 0.48) * stretch * Sc;
@@ -739,7 +951,7 @@ function buildSurface(rows, NU, S, mode, opts) {
           break;
         }
         case 'dots': {
-          nearestSeed(V, N, sig, Y);
+          nearestSeed(V, NN, sig, Y);
           const dx = -V_SX * Sc, dy = -V_SY * stretch * Sc;
           const R = Math.max(0.6, fill * 0.45 * Sc * (1 - (S.vary || 0) * 0.7 * hash(V_ID, 3, S.seed)));
           const ax = Math.abs(dx), dist = Math.sqrt(dx * dx + dy * dy);
@@ -766,28 +978,37 @@ function buildSurface(rows, NU, S, mode, opts) {
           break;
         }
         case 'waves': {
-          const s = rowsN * lt + waveA * Math.sin(TAU * sig);
+          // (where the count steps, the wiggle blends from one count into the other)
+          const wig = wB > 0 ? (1 - wB) * Math.sin(TAU * sig) + wB * Math.sin(TAU * No * th) : Math.sin(TAU * sig);
+          const s = rowsN * lt + waveA * wig;
           const d = Math.abs(s - Math.round(s));
           h = crest(d / (0.5 * fill), prof);
           break;
         }
         case 'topo': {
-          const u = (TAU * sig) / N, v = (TAU * t) / N;
+          // u: the angle round; v: up the wall (see vArr). The waves round are scaled to the course's count.
+          const u = TAU * th, v = vArr[j];
           let val = 0, gu = 0, gv = 0;
-          for (const w of topo) {
-            const arg = w.a * u + w.b * v + w.p, c = Math.cos(arg);
-            val += w.w * Math.sin(arg); gu += w.w * w.a * c; gv += w.w * w.b * c;
-          }
+          const sum = (Nz, wt) => {
+            const k = Nz / N;
+            for (const w of topo) {
+              const a = k === 1 ? w.a : Math.sign(w.a) * Math.max(1, Math.round(Math.abs(w.a) * k));
+              const arg = a * u + w.b * v + w.p, c = Math.cos(arg);
+              val += wt * w.w * Math.sin(arg); gu += wt * w.w * a * c; gv += wt * w.w * w.b * c;
+            }
+          };
+          sum(NN, 1 - wB); if (wB > 0) sum(No, wB);
           const lv = val * topoLv;
           const dn = Math.abs(lv - Math.round(lv)) / topoLv;
-          const dmm = (dn * r) / Math.max(0.25, Math.sqrt(gu * gu + gv * gv));
+          const vmm = even ? rRefP : r;
+          const dmm = dn / Math.max(0.25 / r, Math.hypot(gu / r, gv / vmm));
           h = crest(dmm / halfW, prof);
           break;
         }
         case 'hammered':
         case 'carved': {
           // a concave dish in every cell, meeting its neighbours in crisp ridges
-          const D = evalVoronoi(V, N, sig, Y, stretch, Sc, 0);
+          const D = evalVoronoi(V, NN, sig, Y, stretch, Sc, 0);
           const F1 = Math.sqrt((V_SX * Sc) ** 2 + (V_SY * stretch * Sc) ** 2);
           const tt = clamp(F1 / Math.max(1e-6, F1 + D), 0, 1);
           h = prof === 1 ? tt : prof === 2 ? smoothstep(0, 1, tt) : Math.pow(tt, pid === 'carved' ? 1.45 : 1.7);
@@ -795,19 +1016,9 @@ function buildSurface(rows, NU, S, mode, opts) {
         }
         case 'rings': {
           // ripples spreading from scattered drops, merging where they meet
-          const kc = Math.round(Y / V.h);
+          const nc = seedsNear(V, NN, sig, Y, 1, 2);
           let F = Infinity;
-          for (let k = kc - 1; k <= kc + 1; k++) {
-            if (k < V.k0 || k > V.k1) continue;
-            const base = (k - V.k0) * N, off = (k & 1) * 0.5, mc = Math.round(sig - off);
-            for (let m = mc - 2; m <= mc + 2; m++) {
-              let mm = m % N; if (mm < 0) mm += N;
-              let dx = V.sx[base + mm] - sig;
-              if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
-              const dy = (V.sy[base + mm] - Y) * stretch;
-              F = smin(F, Math.sqrt(dx * dx + dy * dy) * Sc, (S.width || 4) * 1.6);
-            }
-          }
+          for (let c = 0; c < nc; c++) { const dy = C_Y[c] * stretch; F = smin(F, Math.sqrt(C_X[c] * C_X[c] + dy * dy) * Sc, (S.width || 4) * 1.6); }
           const lam = Math.max(1.5, S.width || 4);
           const xr = Math.abs(fract(F / lam) - 0.5) * 2;
           h = crest(1 - xr / Math.max(0.2, fill), prof);
@@ -815,31 +1026,41 @@ function buildSurface(rows, NU, S, mode, opts) {
         }
         case 'dunes': {
           // wind ripples: a long gentle rise facing down and a short steep fall facing up, so they print
-          const u = (TAU * sig) / N, v = (TAU * t) / N;
+          const u = TAU * th, v = vArr[j];
           let w = 0;
-          for (const q of warp) w += q.w * Math.sin(q.a * u + q.b * v + q.p);
+          for (const [Nz, wt] of wB > 0 ? [[NN, 1 - wB], [No, wB]] : [[NN, 1]]) {
+            const k = Nz / N;
+            for (const q of warp) w += wt * q.w * Math.sin((k === 1 ? q.a : Math.sign(q.a) * Math.max(1, Math.round(Math.abs(q.a) * k))) * u + q.b * v + q.p);
+          }
           const ph = fract(rowsN * lt + waveA * w);
           const fall = 0.28;
           h = ph < 1 - fall ? smoothstep(0, 1, ph / (1 - fall)) : smoothstep(0, 1, (1 - ph) / fall);
           break;
         }
         case 'bark': {
-          // vertical ridges that wander, split and change depth like tree bark
-          const u = (TAU * sig) / N, v = (TAU * t) / N;
-          let w = 0;
-          for (const q of warp) w += q.w * Math.sin(q.a * u + q.b * v + q.p);
-          const s = sig + waveA * w * 0.6;
-          const m = Math.round(s), d = Math.abs(s - m) * Sc;
-          let mm = m % N; if (mm < 0) mm += N;
-          const seg = 0.55 + 0.45 * Math.sin(t * 0.9 + hash(mm, 5, S.seed) * TAU) * Math.sin(t * 0.37 + hash(mm, 9, S.seed) * TAU);
-          h = crest(d / Math.max(0.2, fill * Sc * 0.5), prof) * clamp(seg, 0.2, 1);
+          // vertical ridges that wander, split and change depth like tree bark (where the count steps, the
+          // ridges of the two courses blend into each other)
+          const u = TAU * th, v = vArr[j];
+          const ridge = (Nz) => {
+            const k = Nz / N, sz = Nz * th, Scz = (TAU * r) / Nz;
+            let w = 0;
+            for (const q of warp) w += q.w * Math.sin((k === 1 ? q.a : Math.sign(q.a) * Math.max(1, Math.round(Math.abs(q.a) * k))) * u + q.b * v + q.p);
+            const s = sz + waveA * w * 0.6;
+            const m = Math.round(s), d = Math.abs(s - m) * Scz;
+            let mm = m % Nz; if (mm < 0) mm += Nz;
+            const seg = 0.55 + 0.45 * Math.sin(t * 0.9 + hash(mm, 5, S.seed) * TAU) * Math.sin(t * 0.37 + hash(mm, 9, S.seed) * TAU);
+            return crest(d / Math.max(0.2, fill * Scz * 0.5), prof) * clamp(seg, 0.2, 1);
+          };
+          h = wB > 0 ? (1 - wB) * ridge(NN) + wB * ridge(No) : ridge(NN);
           break;
         }
         case 'knit': {
-          const m0 = Math.floor(sig), k0 = Math.floor(Y);
-          for (let k = k0 - 1; k <= k0 + 1; k++) for (let m = m0 - 1; m <= m0 + 1; m++) {
-            for (let side = 0; side < 2; side++) {
-              const dx = sig - (m + (side ? 0.74 : 0.26)), dy = Y - (k + 0.5);
+          // (each row of stitches has its own count: rows of fewer stitches decrease, as on a knitted hat)
+          const k0 = Math.floor(Y);
+          for (let k = k0 - 1; k <= k0 + 1; k++) {
+            const sk = rowCount(k) * th, m0 = Math.floor(sk);
+            for (let m = m0 - 1; m <= m0 + 1; m++) for (let side = 0; side < 2; side++) {
+              const dx = sk - (m + (side ? 0.74 : 0.26)), dy = Y - (k + 0.5);
               const sx = side ? knS : -knS;
               const along = (dx * sx + dy * knC) / knA, across = (dx * knC - dy * sx) / knB;
               const q = along * along + across * across;
@@ -863,19 +1084,21 @@ function buildSurface(rows, NU, S, mode, opts) {
           const kc = Math.floor(Y / rowH);
           // the scale on top and the one it overlaps, so the free edge can step down over a short ramp
           let top = -1, under = -1;
+          let topN = NN;
           for (let k = kc - 1; k <= kc + 2 && under < 0; k++) {
-            const off = (k & 1) * 0.5, dy = Y - k * rowH;
-            const mc = Math.round(sig - off);
+            // (each row of scales has its own count, so they keep their size, like roof tiles on a dome)
+            const Nk = rowCount(k), sk = Nk * th, off = (k & 1) * 0.5, dy = Y - k * rowH;
+            const mc = Math.round(sk - off);
             for (let m = mc - 1; m <= mc + 1; m++) {
-              let dx = sig - (m + off);
-              if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
+              let dx = sk - (m + off);
+              dx -= Math.round(dx / Nk) * Nk;
               const dd = Math.sqrt(dx * dx + dy * dy) / rho;
-              if (dd < 1) { if (top < 0) top = dd; else { under = dd; break; } }
+              if (dd < 1) { if (top < 0) { top = dd; topN = Nk; } else { under = dd; break; } }
             }
           }
           const sh = (dd) => (dd < 0 ? 0 : Math.pow(dd, 1.6) * (prof === 2 ? smoothstep(1, 0.9, dd) : 1));
           // a cliff would alias into a saw-tooth on any grid; a 0.7 mm ramp prints as a crisp step
-          const ramp = top < 0 ? 0 : smoothstep(1, 1 - 0.7 / (rho * Sc), top);
+          const ramp = top < 0 ? 0 : smoothstep(1, 1 - 0.7 / ((rho * TAU * r) / topN), top);
           h = sh(under) + (sh(top) - sh(under)) * ramp;
           break;
         }
@@ -890,10 +1113,10 @@ function buildSurface(rows, NU, S, mode, opts) {
           if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
           const cx = R * Math.sqrt(3) * (rx + rz / 2), cy = R * 1.5 * rz;
           let lx = x - cx; const ly = y - cy;
-          if (lx > N * 0.5) lx -= N; else if (lx < -N * 0.5) lx += N;
-          const th = (Math.atan2(ly, lx) * 180) / Math.PI;
+          if (lx > NN * 0.5) lx -= NN; else if (lx < -NN * 0.5) lx += NN;
+          const ang = (Math.atan2(ly, lx) * 180) / Math.PI;
           const v = (deg) => [R * Math.cos((deg * Math.PI) / 180), R * Math.sin((deg * Math.PI) / 180)];
-          const [s1, s2] = th >= 30 && th < 150 ? [v(30), v(150)] : th >= -90 && th < 30 ? [v(-90), v(30)] : [v(150), v(-90)];
+          const [s1, s2] = ang >= 30 && ang < 150 ? [v(30), v(150)] : ang >= -90 && ang < 30 ? [v(-90), v(30)] : [v(150), v(-90)];
           const det = s1[0] * s2[1] - s1[1] * s2[0];
           const a = (lx * s2[1] - ly * s2[0]) / det, b = (s1[0] * ly - s1[1] * lx) / det;
           h = clamp(1 - (a + b) * 0.5, 0, 1);
@@ -905,12 +1128,13 @@ function buildSurface(rows, NU, S, mode, opts) {
           let carve = 0;
           for (let k = kc - 2; k <= kc + 2; k++) {
             if (k < V.k0 || k > V.k1) continue;
-            const base = (k - V.k0) * N, off = (k & 1) * 0.5, mc = Math.round(sig - off);
+            const Nk = V.cnt[k - V.k0], base = V.base[k - V.k0], off = (k & 1) * 0.5, sk = Nk * th, f = NN / Nk, mc = Math.round(sk - off);
             for (let m = mc - 1; m <= mc + 1; m++) {
-              let mm = m % N; if (mm < 0) mm += N;
-              let dx = sig - V.sx[base + mm];
-              if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
-              const dy = (Y - V.sy[base + mm]) * stretch;
+              let mm = m % Nk; if (mm < 0) mm += Nk;
+              let dx = sk - V.sx[base + mm];
+              if (dx > Nk * 0.5) dx -= Nk; else if (dx < -Nk * 0.5) dx += Nk;
+              dx *= f;
+              const dy = V.sl ? (V_LP - V.sl[base + mm]) / Sc : (Y - V.sy[base + mm]) * stretch;
               const tilt = (hash(mm, k * 7 + 3, S.seed) - 0.5) * 0.8, ct = Math.cos(tilt), st = Math.sin(tilt);
               const u = (dx * ct - dy * st) / 0.74, w = (dx * st + dy * ct) / (1.05 * Math.max(0.6, stretch * 0.9));
               const q = u * u + w * w;
@@ -925,18 +1149,20 @@ function buildSurface(rows, NU, S, mode, opts) {
           const rowH = 0.5, rho = 0.62, nR = Math.max(2, Math.round(S.rows || 4));
           const kc = Math.floor(Y / rowH);
           let top = -1, under = -1;
+          let topN = NN;
           for (let k = kc - 1; k <= kc + 2 && under < 0; k++) {
-            const off = (k & 1) * 0.5, dy = Y - k * rowH;
-            const mc = Math.round(sig - off);
+            // (each row of scales has its own count, so they keep their size, like roof tiles on a dome)
+            const Nk = rowCount(k), sk = Nk * th, off = (k & 1) * 0.5, dy = Y - k * rowH;
+            const mc = Math.round(sk - off);
             for (let m = mc - 1; m <= mc + 1; m++) {
-              let dx = sig - (m + off);
-              if (dx > N * 0.5) dx -= N; else if (dx < -N * 0.5) dx += N;
+              let dx = sk - (m + off);
+              dx -= Math.round(dx / Nk) * Nk;
               const dd = Math.sqrt(dx * dx + dy * dy) / rho;
-              if (dd < 1) { if (top < 0) top = dd; else { under = dd; break; } }
+              if (dd < 1) { if (top < 0) { top = dd; topN = Nk; } else { under = dd; break; } }
             }
           }
           const fan = (dd) => (dd < 0 ? 0 : 0.3 + 0.7 * crest(Math.abs(fract(dd * nR + 0.5) - 0.5) * 2 / Math.max(0.3, fill), prof));
-          const ramp = top < 0 ? 0 : smoothstep(1, 1 - 0.7 / (rho * Sc), top);
+          const ramp = top < 0 ? 0 : smoothstep(1, 1 - 0.7 / ((rho * TAU * r) / topN), top);
           h = fan(under) + (fan(top) - fan(under)) * ramp;
           break;
         }
@@ -967,7 +1193,7 @@ function buildSurface(rows, NU, S, mode, opts) {
           const u = sig - ok - delta * fy, m = Math.floor(u), fu = u - m;
           const jit = clamp(S.jitter ?? 0.6, 0, 1);
           const hv = (kk, mm) => {
-            let w = mm % N; if (w < 0) w += N;
+            let w = mm % NN; if (w < 0) w += NN;
             return clamp(0.5 + ((kk & 1) ? 0.35 : -0.35) * (1 - jit) + (hash(w, kk, S.seed) - 0.5) * jit, 0, 1);
           };
           const hA = hv(k, m), hB = hv(k, m + 1), hD = hv(k + 1, m), hC = hv(k + 1, m + 1);
@@ -990,7 +1216,7 @@ function buildSurface(rows, NU, S, mode, opts) {
           // steep and their tops flat; the underside limiter turns each lower edge into a 45° chamfer.
           const rowH = 0.5 * stretch, k = Math.floor(t / rowH);
           const xs = sig - hash(k, 17, S.seed), m = Math.floor(xs), fx = xs - m;
-          let mm = m % N; if (mm < 0) mm += N;
+          let mm = m % NN; if (mm < 0) mm += NN;
           const split = hash(mm, k * 5 + 1, S.seed) < 0.4, part = split ? (fx < 0.5 ? 0 : 1) : 2;
           const ex = (split ? 0.25 - Math.abs(fx - 0.25 - 0.5 * part) : 0.5 - Math.abs(fx - 0.5)) * Sc;
           const ey = (0.5 - Math.abs(t / rowH - k - 0.5)) * rowH * Sc;
@@ -1003,8 +1229,11 @@ function buildSurface(rows, NU, S, mode, opts) {
         default: break;
       }
       if (S.invert && mode !== 'cut') h = 1 - h;
+      // where a running pattern's count steps, a fine plain line round the piece
+      if (fam === 'groove' && dS < 1e3) h *= smoothstep(0.35, 0.35 + Math.max(1, depth * 0.8), dS);
       const id = j * NU + i;
       if (l <= bandB || l >= lTop - bandT) zoneMask[id] = 1;
+
       let fv;
       if (mode === 'cut') {
         g = cellFill ? Math.max(g, bandHere) : smax(g, bandHere, kR);
@@ -1025,7 +1254,7 @@ function buildSurface(rows, NU, S, mode, opts) {
     }
   }
   if (cellFill) fillRimHoles(F, NU, n, zoneMask, 0.5);
-  return { F, D: mode === 'none' && !edge && !edgeBot ? null : Dsp, Din };
+  return { F, D: mode === 'none' && !edge && !edgeBot ? null : Dsp, Din, scMin, counts: cntRow };
 }
 function smax(a, b, k) { return -smin(-a, -b, k); }
 
@@ -1842,8 +2071,12 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const coarse = sampleRows(rFn, H, 4);
   let rMin = Infinity, rMax = 0;
   for (let j = 0; j < coarse.n; j++) { rMin = Math.min(rMin, coarse.r[j]); rMax = Math.max(rMax, coarse.r[j]); }
+  // the grid has to resolve the smallest cells: with even sizing they are all about the same size, except
+  // where a narrow part runs below the fewest a course may have round it
+  let rCell = extra.rMinCell ?? rMin;
+  if (S.sizing !== 'count' && mode !== 'none') { const N0 = Math.max(1, Math.round(S.count || 1)); rCell = Math.max(rCell, Math.min(rMax / 1.3, (rMin * N0) / evenMin(N0))); }
   rMax += extra.offset || 0;
-  let cell = extra.cell || cellFor(S, mode, (extra.rMinCell ?? rMin) * perim, coarse.L, quality);
+  let cell = extra.cell || cellFor(S, mode, rCell * perim, coarse.L, quality);
   // holes through the wall need a grid fine enough to come out at their size (a smooth wall's is coarse)
   if (extra.holes && extra.holes.length && !extra.cell) cell = Math.min(cell, Math.max(0.5, Math.min(...extra.holes.map((hl) => Math.min(hl.r, hl.w || hl.r))) / 2.4));
   // keep the grid within budget
@@ -1904,7 +2137,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const freezeL = extra.freezeChamfer ? (P.form.inset || 0) * 1.45 + 0.4 : 0;
   // openings must keep their printable orientation, so a twisted outline does not drag them round
   const unswirl = mode === 'cut' ? ((extra.twist || 0) / TAU) * (H / Math.max(1e-6, rows.z[rows.n - 1])) : 0;
-  let { F, D, Din } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, edgeBot, freezeL, unswirl, keepDepth: extra.keepDepth });
+  let { F, D, Din, scMin } = buildSurface(rows, NU, S, mode, { bandBottom: bandB, bandTop: bandT, perim, topL, edge: rim, edgeBot, freezeL, unswirl, keepDepth: extra.keepDepth });
   // toward a closed top (globes) the cells shrink to nothing: the relief eases off within poleFade of the axis
   if (D && extra.poleFade > 0) for (let j = 0; j < rows.n; j++) { const k = smoothstep(0, extra.poleFade, rows.r[j]); if (k < 1) for (let i = 0; i < NU; i++) D[j * NU + i] *= k; }
   // In the valleys of a shaped outline the inside of the wall is wider than the outside, so an opening is
@@ -1988,7 +2221,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   if (extra.normalRelief && extra.reliefFromBed) shellOpts.bedK = Float64Array.from(rows.z, (z) => smoothstep(0, 5, z - rows.z[0]));
   if (!cuts.length) {
     const mesh = buildShell(rows, NU, F, D, P.form.wall, { ...floor, band: bandB }, top, shellOpts);
-    return { mesh, rows, NU, cell, rMax, rMin, perim };
+    return { mesh, rows, NU, cell, rMax, rMin, perim, scMin };
   }
   // one closed body per band; neighbours share the exact same interface face
   const bounds = [0];
@@ -2010,7 +2243,7 @@ function makePatternedShell(rFn, H, P, quality, floor, top, extra = {}) {
   const req = [0, ...extra.bands.cuts.slice().sort((x, y) => x - y), Infinity];
   const slotAt = (z) => { for (let k = 0; k + 1 < req.length; k++) if (z < req[k + 1]) return extra.bands.slots[k] ?? 0; return 0; };
   const regions = merged.ranges.map((rg, b) => ({ ...rg, slot: slotAt((rows.z[bounds[b]] + rows.z[bounds[b + 1]]) / 2), z0: rows.z[bounds[b]], z1: rows.z[bounds[b + 1]] }));
-  return { mesh: merged.mesh, rows, NU, cell, rMax, rMin, perim, regions, cuts };
+  return { mesh: merged.mesh, rows, NU, cell, rMax, rMin, perim, regions, cuts, scMin };
 }
 
 // A flat part: a simple polygon (anticlockwise, in x/y) extruded t mm up. It prints lying as it is.
@@ -2400,7 +2633,7 @@ export function generate(P, quality = 1) {
       dome: gs.dome, minBottomBand: gs.bottomBand, rMinCell: gs.rBand,
       minTopBand: mode === 'cut' ? gs.topBandAt(cutStop) + 2 : gs.topBandAt(3) + 0.5,
       normalRelief: true, keepDepth: true, skipOverhung: true,
-      poleFade: mode === 'relief' ? clamp((relief * Math.max(1, S.count)) / Math.PI, 6, 0.25 * gs.R) : 0,
+      poleFade: mode === 'relief' ? clamp((relief * (S.sizing !== 'count' ? evenMin(Math.max(1, S.count)) : Math.max(1, S.count))) / Math.PI, 6, 0.25 * gs.R) : 0,
     });
   }
   // napkin rings: the rim edge at both ends, and an inside chamfer
@@ -2413,7 +2646,7 @@ export function generate(P, quality = 1) {
     Object.assign(extraMain, {
       dome: ds.dome, rimBottom: rimEdge !== 'flat' ? rimEdge : null, rMinCell: 0.4 * ds.R, normalRelief: true, reliefFromBed: true,
       minTopBand: ds.hole ? 2 : ds.arcFrom(Math.max(ds.rEnd + 0.5, 3)) + 0.5,
-      poleFade: mode === 'relief' ? clamp((relief * Math.max(1, S.count)) / Math.PI, 6, 0.25 * ds.R) : 0,
+      poleFade: mode === 'relief' ? clamp((relief * (S.sizing !== 'count' ? evenMin(Math.max(1, S.count)) : Math.max(1, S.count))) / Math.PI, 6, 0.25 * ds.R) : 0,
     });
   }
   // hanging planter: teardrop holes for the cords in a plain collar under the rim
@@ -2709,7 +2942,7 @@ export function generate(P, quality = 1) {
   // ---- checks
   const checks = [];
   const cellW = (TAU * shell.rMax * shell.perim) / Math.max(1, S.count);
-  const cellMin = (TAU * shell.rMin * shell.perim) / Math.max(1, S.count);
+  const cellMin = Number.isFinite(shell.scMin) ? shell.scMin : (TAU * shell.rMin * shell.perim) / Math.max(1, S.count);
   const pBase = basePattern(S.pattern);
   if (mode === 'cut') {
     const strip = pBase === 'dots' ? cellMin * (1 - 0.9 * (S.fill || 0.5)) : S.width;

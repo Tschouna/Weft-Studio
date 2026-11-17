@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.10.0
+
+- **Patterns keep the same size everywhere.** Before, every pattern had the same number of cells all the way round, so where a piece narrowed (a round or pointed bottom, a neck, a narrow base) its cells shrank and bunched up, down to nothing at a tip. Now cells keep the size they have at the widest point, and fewer fit round where it narrows. How a pattern does that depends on how it is built:
+  - **Rows that stand on their own** (Seigaiha, Shingles, Tiles, Blocks, Arches, Knit, and the scattered patterns: Voronoi, Honeycomb, Dots, Perforated, Hobnail, Hammered, Carved, Rings, Gouge) drop a cell at any row, like roof tiles on a dome. There is nothing to see where it happens.
+  - **Diamonds** (Lattice, Prism, Ogee) step down to fewer round at a strut that runs round the piece, with the diamonds meeting it at their points. In openwork, the half cells under a strut get a pointed top, so nothing bridges.
+  - **Other running patterns** (Quilt, Knurl, Spikes, Chevron, Herringbone, Cubes, Facets, Shards, Basket) step down at a fine plain line round the piece. **Ribs, Fins, Reeds and Bark** halve instead: every other rib tapers out and the rest run straight on. **Ripples, Dunes and Topo** blend from one count into the next.
+  - Steps come at least a cell apart, on the pattern's own row lines.
+  - Right at a tip a few cells are left, and they close into it.
+  - The count you set is now the count at the widest point (the slider says so).
+  - Surface → **Same size everywhere** (on by default) turns it off for a design: the same number all the way round, as before, shrinking where the piece narrows.
+- This changes how every tapered piece in the Collection looks a little, most of all the round- and pointed-bottomed planters. Designs you saved get the new sizing too; switch it off under Surface to get the old look back.
+- Openwork on a steeply narrowing piece no longer needs a finer print grid than its cells do, so those pieces build a little faster.
+
 ## 2.9.0
 
 - **Wall planters: the pattern runs all the way to the back.**
