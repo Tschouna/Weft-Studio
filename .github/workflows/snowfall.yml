@@ -10,13 +10,25 @@ on:
     paths: ['snowfall/**', '.github/workflows/snowfall.yml']
   workflow_dispatch:
 
+concurrency:
+  group: snowfall-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Install MinGW
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix imagemagick
+        timeout-minutes: 10
+        run: |
+          # skip the man-page index rebuild, which can take minutes on hosted runners
+          echo 'man-db man-db/auto-update boolean false' | sudo debconf-set-selections
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends g++-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64
+          command -v convert || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends imagemagick
       - name: Engine preview (pretend desktop, also times the engine)
         working-directory: snowfall
         run: |
@@ -40,6 +52,7 @@ jobs:
   try-on-windows:
     needs: build
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@v4
         with: { name: Snowfall }
