@@ -13,17 +13,21 @@ Snow for your Windows 11 desktop. It falls in front of everything and piles up o
 | Ctrl+Alt+S | Pause or resume the snow |
 | Ctrl+Alt+B | Snowstorm for 30 seconds |
 | Ctrl+Alt+H | Call Santa |
+| Ctrl+Alt+P | Send the snowplow |
 
 ## Things to try
 
-- **Shake a window** by dragging it quickly back and forth. The snow on top falls off and lands on whatever is below.
+- **Snowmen build themselves** on windows and the taskbar once the snow is deep. They wear Santa hats, top hats or bobble hats, and wave now and then.
+- **Push a snowball with the mouse.** It rolls, picking up snow and growing as it goes, and can roll off a window onto another window or the taskbar.
+- **Build your own snowman** by rolling a smaller snowball into a bigger one: it hops on top. Two or three balls make a snowman, with a hat and scarf.
+- **Flick the mouse fast** through a snowman to knock him into snowballs, or through a pile of snow to sweep it away.
+- **Shake a window** by dragging it quickly back and forth. The snow, snowballs and snowmen on top fall off.
 - **Minimise or close a window** that has snow on it.
-- **Wave the mouse** through the falling snow, or flick it fast through a pile to sweep it away.
-- **Let snow build up on the taskbar.** After a while a snowman builds himself at one end, and waves now and then.
+- **A snowplow** drives along the taskbar when the snow gets deep, pushing a heap of snow ahead of its blade.
 - **Wait for Santa.** Now and then he flies across the screen, and sometimes he drops a present onto a window.
 - Thick snow grows **icicles** that drip.
 
-The menu also sets how much snow falls (light flurry to blizzard), the wind, and the flake size. You can turn each extra on or off there.
+The menu also sets how much snow falls (light flurry to blizzard), the wind, and the flake size. You can turn each extra on or off there. It doesn't change your wallpaper.
 
 ## Light on your PC
 

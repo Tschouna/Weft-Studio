@@ -2,6 +2,10 @@
 // comes to rest on the top edges of app windows and on the taskbar. Each window's pile is a height per pixel
 // column that settles like real snow, moves with the window, and falls off when the window is shaken,
 // minimised or closed. Windows stacked in front hide the piles of windows behind them.
+//
+// On the piles live objects: snowballs (which roll when the mouse pushes them, and grow as they pick up
+// snow), snowmen (stacks of two or three balls, which build themselves or are built by rolling a smaller ball
+// into a bigger one) and Santa's presents. A snowplow clears the taskbar now and then.
 #include "engine.h"
 #include <algorithm>
 #include <cmath>
@@ -26,7 +30,8 @@ namespace {
 constexpr float PI = 3.14159265358979f;
 constexpr uint64_t kGroundTag = 0x5157000000000000ull;  // ground pile ids: tag | monitor index
 constexpr int kMaxClumps = 3000;
-constexpr int kMaxPresents = 6;
+constexpr int kMaxPresents = 6, kMaxSnowmen = 8, kMaxBalls = 14;
+constexpr float kGravity = 900.f;  // px/s² at 100% scale
 
 struct Rng {
   uint64_t s = 0x9E3779B97F4A7C15ull;
@@ -69,7 +74,7 @@ struct Flake {
   uint8_t crystal, variant, rbucket;
 };
 
-enum ClumpKind : uint8_t { kSnow, kGlitter, kDrop, kIce, kDebris };
+enum ClumpKind : uint8_t { kSnow, kGlitter, kDrop, kIce, kDebris, kSmoke };
 struct Clump {
   float x, y, vx, vy, r, life;
   uint32_t color;
@@ -89,6 +94,7 @@ struct Pile {
   float vx = 0, vy = 0, sinceMove = 1;
   float lostL = 0, lostR = 0;  // snow that slid off the ends, waiting to drip as a clump
   float active = 0;            // seconds of settling left
+  float deep = 0, check = 0;   // seconds the snow has been deep; countdown to the next look for snowmen
   bool visible = true, seen = true;
   std::vector<Rect> occ;       // windows in front that overlap the pile's band
   std::vector<Icicle> icicles;
@@ -109,15 +115,28 @@ struct Pile {
   float volume() const { float v = 0; for (float a : h) v += a; return v; }
 };
 
-struct Present {
-  float x, y, vx, vy, age, life, rel;
-  uint64_t pile;               // 0 while falling
-  int color, mon;
-};
-
-struct Snowman {
-  bool present = false;
-  float rel = 0, build = 0, waveT = 0, nextWave = 15, cooldown = 25, check = 0;
+// Things that sit on the snow: snowballs, snowmen and presents.
+enum ObjKind : uint8_t { kStack, kPresent };
+struct Obj {
+  ObjKind kind = kStack;
+  uint64_t pile = 0;           // the pile it sits on; 0 while in the air
+  float rel = 0;               // x on the pile, from its left edge
+  float x = 0, y = 0;          // bottom centre, screen pixels
+  float vx = 0, vy = 0;        // in the air
+  float roll = 0, spin = 0;    // a lone snowball rolling along its pile
+  float r[3] = {0, 0, 0};      // ball radii, bottom first
+  float target[3] = {0, 0, 0}; // a snowman building himself grows his balls to these
+  int n = 0, nTarget = 0;      // balls now / when built
+  float build = -1;            // >= 0 while building himself
+  int hat = 0, hatColor = 0;
+  bool right = true;
+  float waveT = 0, nextWave = 12;
+  float age = 0, life = 1e9f;  // presents vanish after a while
+  int color = 0;
+  float scale = 1, fallFrom = 0;
+  bool dead = false;
+  Sprite decor[2];
+  int decorKey = -1;
 };
 
 struct Santa {
@@ -126,9 +145,15 @@ struct Santa {
   float x = 0, y0 = 0, t = 0, vx = 0, S = 1, dropAt = 0, glitter = 0;
 };
 
+struct Plow {
+  bool on = false, right = true;
+  int mon = 0;
+  float x = 0, t = 0, S = 1, speed = 0, smoke = 0, blade = 0;
+};
+
 struct SpriteSet {
   std::vector<Sprite> crystals;  // [variant][bucket][angle]
-  Sprite santa[2][4], snowman[2], present[5];
+  Sprite santa[2][4], present[5], plow[2][4];
 };
 constexpr int kVariants = 3, kBuckets = 4, kAngles = 8;
 constexpr float kBucketR[kBuckets] = {3.2f, 4.3f, 5.4f, 6.6f};
@@ -137,8 +162,10 @@ struct MonState {
   std::vector<Rect> drawn;
   int count = 0;
   float spawnAcc = 0;
-  Snowman sm;
+  float plowCheck = 8, plowCooldown = 45;
 };
+
+float easeOut(float t) { t = std::clamp(t, 0.f, 1.f); return 1 - (1 - t) * (1 - t); }
 
 }  // namespace
 
@@ -150,12 +177,14 @@ struct World::Impl {
   float windSeed[4];
   std::vector<Flake> flakes;
   std::vector<Clump> clumps;
-  std::vector<Present> presents;
+  std::vector<Obj> objs, spawnQ;  // new objects wait in spawnQ until the loops over objs are done
   std::unordered_map<uint64_t, std::unique_ptr<Pile>> piles;
-  std::vector<Pile*> surfaces;  // piles snow can land on, topmost window first
+  std::vector<Pile*> surfaces;    // piles snow can land on, topmost window first
   std::vector<MonState> ms;
   std::map<int, std::unique_ptr<SpriteSet>> sprites;
+  std::unordered_map<int, Sprite> ballCache;
   Santa santa;
+  Plow plow;
   // the mouse
   bool cValid = false, cHad = false;
   float cx = 0, cy = 0, cpx = 0, cpy = 0, cvx = 0, cvy = 0;
@@ -186,12 +215,22 @@ struct World::Impl {
         for (int b = 0; b < kBuckets; ++b)
           for (int a = 0; a < kAngles; ++a)
             p->crystals.push_back(makeCrystal(kBucketR[b] * scale, a * (PI / 3) / kAngles, v));
-      for (int f = 0; f < 4; ++f) { p->santa[1][f] = makeSanta(scale * 1.35f, f, true); p->santa[0][f] = makeSanta(scale * 1.35f, f, false); }
-      p->snowman[0] = makeSnowman(scale, 0);
-      p->snowman[1] = makeSnowman(scale, 1);
+      for (int f = 0; f < 4; ++f) {
+        p->santa[1][f] = makeSanta(scale * 1.35f, f, true);
+        p->santa[0][f] = makeSanta(scale * 1.35f, f, false);
+        p->plow[1][f] = makeSnowplow(scale * 1.1f, f, true);
+        p->plow[0][f] = makeSnowplow(scale * 1.1f, f, false);
+      }
       for (int c = 0; c < 5; ++c) p->present[c] = makePresent(scale * 1.5f, c);
     }
     return *p;
+  }
+  const Sprite& ballSprite(float r) {
+    int key = (int)std::lround(r * 4);
+    auto it = ballCache.find(key);
+    if (it != ballCache.end()) return it->second;
+    if (ballCache.size() > 400) ballCache.clear();
+    return ballCache[key] = makeBall(key / 4.f);
   }
 
   // ------------------------------------------------------------------------------------- wind
@@ -208,6 +247,10 @@ struct World::Impl {
   // ------------------------------------------------------------------------------------- piles
   Pile* ground(int mi) {
     auto it = piles.find(kGroundTag | (uint64_t)mi);
+    return it == piles.end() ? nullptr : it->second.get();
+  }
+  Pile* pileById(uint64_t id) {
+    auto it = piles.find(id);
     return it == piles.end() ? nullptr : it->second.get();
   }
 
@@ -265,27 +308,32 @@ struct World::Impl {
     if (m < 0) return;
     clumps.push_back({x, y, vx, vy, r, life, color, (int16_t)m, kind});
   }
+  void sparkle(float x, float y, float s, int n = 14) {
+    for (int k = 0; k < n; ++k)
+      addClump(x + rng.r(-6, 6) * s, y + rng.r(-6, 6) * s, rng.r(-50, 50) * s, rng.r(-80, 10) * s, rng.r(0.6f, 1.2f) * s, kGlitter, glitterColor(), rng.r(0.6f, 1.3f));
+  }
 
   // Shake `frac` of the snow off a pile, flung with (vx, vy).
   void shed(Pile& p, float frac, float vx, float vy) {
     if (!p.visible || p.width <= 0) return;
     frac = std::clamp(frac, 0.f, 1.f);
     float total = p.volume() * frac;
-    if (total < 0.5f) return;
     const float s = p.scale;
-    // Bigger clumps when there's a lot of snow, so a full window doesn't become thousands of particles.
-    float rr = std::clamp(std::sqrt(total / (PI * 700.f)), 1.1f, 2.6f) * std::max(1.f, s * 0.8f);
-    float cv = PI * rr * rr;
-    float acc = 0;
-    for (int c = 0; c < p.width; ++c) {
-      float take = p.h[c] * frac;
-      if (take <= 0) continue;
-      float y = p.surfaceY(c) + p.h[c] * 0.5f;
-      p.h[c] -= take;
-      acc += take;
-      while (acc >= cv) {
-        acc -= cv;
-        if (!p.hidden(p.x0 + c, y)) addClump(p.x0 + c + rng.f(), y - rng.f() * 2 * s, vx + rng.r(-50, 50) * s, vy + rng.r(-170, -10) * s, rr * rng.r(0.75f, 1.15f), kSnow);
+    if (total >= 0.5f) {
+      // Bigger clumps when there's a lot of snow, so a full window doesn't become thousands of particles.
+      float rr = std::clamp(std::sqrt(total / (PI * 700.f)), 1.1f, 2.6f) * std::max(1.f, s * 0.8f);
+      float cv = PI * rr * rr;
+      float acc = 0;
+      for (int c = 0; c < p.width; ++c) {
+        float take = p.h[c] * frac;
+        if (take <= 0) continue;
+        float y = p.surfaceY(c) + p.h[c] * 0.5f;
+        p.h[c] -= take;
+        acc += take;
+        while (acc >= cv) {
+          acc -= cv;
+          if (!p.hidden(p.x0 + c, y)) addClump(p.x0 + c + rng.f(), y - rng.f() * 2 * s, vx + rng.r(-50, 50) * s, vy + rng.r(-170, -10) * s, rr * rng.r(0.75f, 1.15f), kSnow);
+        }
       }
     }
     if (frac > 0.3f) {
@@ -296,11 +344,8 @@ struct World::Impl {
         }
         ic.len = 0;
       }
-      for (auto& g : presents) {
-        if (g.pile != p.id) continue;
-        g.pile = 0; g.vx = vx * 0.6f + rng.r(-40, 40) * s; g.vy = vy * 0.6f - rng.r(80, 200) * s;
-      }
-      if (p.kind == Kind::Taskbar) breakSnowman(p.mon);
+      for (auto& o : objs)
+        if (o.pile == p.id && !o.dead) toAir(o, vx * 0.6f + rng.r(-50, 50) * s, vy * 0.6f - rng.r(80, 220) * s);
     }
     p.active = 2;
   }
@@ -311,7 +356,7 @@ struct World::Impl {
     float k = 1.f - fill * fill;
     if (k <= 0.02f) k = 0.02f;
     vol *= k;
-    int rad = 1 + (int)std::ceil(r * 1.2f);
+    int rad = 2 + (int)std::ceil(r * 2.2f);  // spread wide: thin snow on bare ground stays smooth
     float wsum = 0;
     for (int i = -rad; i <= rad; ++i) if (c + i >= 0 && c + i < p.width) wsum += (rad + 1 - std::abs(i));
     if (wsum <= 0) return;
@@ -326,7 +371,8 @@ struct World::Impl {
   void settle(Pile& p, float dt) {
     if (p.active <= 0 || p.width < 2) return;
     p.active -= dt;
-    const float s = 0.85f;  // steepest slope snow will hold, px per px
+    // Fresh snow is a little sticky: it holds a steep, rounded edge, like a cap on the window.
+    const float s = p.kind == Kind::Window ? 1.25f : 1.0f;
     float* h = p.h.data();
     const int n = p.width;
     for (int pass = 0; pass < 2; ++pass) {
@@ -337,7 +383,7 @@ struct World::Impl {
         if (d > s) { float m = (d - s) * 0.5f; h[i] -= m; h[i + 1] += m; }
         else if (d < -s) { float m = (-d - s) * 0.5f; h[i] += m; h[i + 1] -= m; }
       }
-      // a little diffusion rounds the surface off, like real fresh snow
+      // a little diffusion rounds the surface off
       if (pass == 0) {
         float prev = h[0];
         for (int i = 1; i < n - 1; ++i) {
@@ -347,7 +393,7 @@ struct World::Impl {
         }
       }
       if (p.kind == Kind::Window) {  // the ends of a window: snow slides off and drips
-        const float e = 0.9f;
+        const float e = 2.0f * p.scale;
         if (h[0] > e) { float m = (h[0] - e) * 0.5f; h[0] -= m; p.lostL += m; }
         if (h[n - 1] > e) { float m = (h[n - 1] - e) * 0.5f; h[n - 1] -= m; p.lostR += m; }
       }
@@ -358,7 +404,8 @@ struct World::Impl {
   }
 
   // Where does something falling from (x, y0) to (x, y1) land? Picks the first exposed surface it crosses.
-  Pile* landing(float x, float y0, float y1, int* col) {
+  // Snowflakes (passThrough) may be falling in front of a window further back and pass its edge.
+  Pile* landing(float x, float y0, float y1, int* col, bool passThrough = true) {
     Pile* best = nullptr;
     float bestY = 1e30f;
     for (Pile* p : surfaces) {
@@ -369,7 +416,7 @@ struct World::Impl {
       if (p->hidden(x, sy - 0.5f)) continue;
       best = p; bestY = sy; *col = c;
     }
-    if (best && best->kind == Kind::Window) {
+    if (passThrough && best && best->kind == Kind::Window) {
       for (Pile* f : surfaces) {
         if (f == best || f->kind != Kind::Window || f->z >= best->z) continue;
         int c = (int)std::floor(x - f->x0);
@@ -384,61 +431,342 @@ struct World::Impl {
     return best;
   }
 
-  // ------------------------------------------------------------------------------------- snowman
-  void breakSnowman(int mi) {
-    if (mi < 0 || mi >= (int)ms.size()) return;
-    Snowman& sm = ms[mi].sm;
-    Pile* g = ground(mi);
-    if (!sm.present || !g) { sm.present = false; return; }
-    const float s = g->scale;
-    float x = g->x0 + sm.rel;
-    int c = std::clamp((int)sm.rel, 0, g->width - 1);
-    float by = g->surfaceY(c);
-    for (int i = 0; i < 70; ++i) {
-      float yy = by - rng.f() * 40 * s * sm.build;
-      addClump(x + rng.r(-9, 9) * s, yy, rng.r(-160, 160) * s, rng.r(-320, -60) * s, rng.r(1.2f, 2.4f) * s, kSnow);
-    }
-    for (int i = 0; i < 8; ++i) addClump(x + rng.r(-4, 4) * s, by - 30 * s, rng.r(-140, 140) * s, rng.r(-300, -100) * s, 1.2f * s, kDebris, pm(25, 25, 30, 1));
-    for (int i = 0; i < 3; ++i) addClump(x + rng.r(-4, 4) * s, by - 30 * s, rng.r(-140, 140) * s, rng.r(-300, -100) * s, 1.3f * s, kDebris, pm(245, 130, 30, 1));
-    for (int i = 0; i < 5; ++i) addClump(x + rng.r(-4, 4) * s, by - 26 * s, rng.r(-140, 140) * s, rng.r(-300, -100) * s, 1.3f * s, kDebris, pm(205, 35, 40, 1));
-    sm.present = false;
-    sm.cooldown = 60;
+  // ------------------------------------------------------------------------------------- objects
+  float topR(const Obj& o) const { return o.n > 0 ? o.r[o.n - 1] : 0; }
+  bool built(const Obj& o) const { return o.kind == kStack && o.build < 0; }
+  bool decorated(const Obj& o) const { return o.kind == kStack && o.n >= 2 && (o.build < 0 || o.build >= o.nTarget); }
+  float topY(const Obj& o) const {  // the top of the top ball, screen y
+    float c[3];
+    snowmanCentres(o.r, o.n, c);
+    return o.y - c[o.n - 1] - topR(o);
   }
 
-  void updateSnowman(int mi, float dt) {
-    Snowman& sm = ms[mi].sm;
+  void toAir(Obj& o, float vx, float vy) {
+    o.pile = 0;
+    o.vx = vx; o.vy = vy;
+    o.roll = 0;
+    o.fallFrom = o.y;
+  }
+
+  Obj newBall(float x, float y, float r, float scale) {
+    Obj o;
+    o.kind = kStack;
+    o.x = x; o.y = y;
+    o.r[0] = r; o.n = o.nTarget = 1;
+    o.scale = scale;
+    o.hat = rng.f() < 0.6f ? 0 : (rng.f() < 0.5f ? 1 : 2);
+    o.hatColor = rng.i(4);
+    o.right = rng.f() < 0.5f;
+    o.fallFrom = y;
+    return o;
+  }
+
+  // A snowman falls apart into his balls (which can be rolled into a new one); his hat flies off.
+  void breakStack(Obj& o, float vx, float vy) {
+    if (o.dead) return;
+    const float s = o.scale;
+    float c[3];
+    snowmanCentres(o.r, o.n, c);
+    for (int i = 0; i < o.n; ++i) {
+      if (o.r[i] < 1.5f * s) continue;
+      Obj b = newBall(o.x + rng.r(-2, 2) * s, o.y - c[i] + o.r[i] * 0.92f, o.r[i], s);
+      b.vx = vx + rng.r(-110, 110) * s;
+      b.vy = vy - rng.r(60, 240) * s;
+      b.fallFrom = b.y;
+      spawnQ.push_back(b);
+    }
+    if (o.n >= 2) {
+      float hy = topY(o);
+      uint32_t hatCol = o.hat == 1 ? pm(25, 25, 30, 1) : pm(205, 35, 40, 1);
+      for (int i = 0; i < 6; ++i) addClump(o.x + rng.r(-4, 4) * s, hy, vx * 0.5f + rng.r(-140, 140) * s, rng.r(-300, -100) * s, 1.3f * s, kDebris, hatCol);
+      for (int i = 0; i < 4; ++i) addClump(o.x + rng.r(-4, 4) * s, hy + topR(o), rng.r(-140, 140) * s, rng.r(-260, -80) * s, 1.1f * s, kDebris, pm(25, 25, 30, 1));
+      addClump(o.x, hy + topR(o), rng.r(-140, 140) * s, rng.r(-260, -80) * s, 1.3f * s, kDebris, pm(245, 130, 30, 1));
+    }
+    for (int i = 0; i < 25; ++i) addClump(o.x + rng.r(-6, 6) * s, o.y - rng.f() * c[o.n - 1], vx * 0.3f + rng.r(-120, 120) * s, rng.r(-250, -40) * s, rng.r(1.f, 2.f) * s, kSnow);
+    o.dead = true;
+  }
+
+  // A lone ball rolled into a snowman (or a bigger ball): it hops up, to land on top.
+  void hop(Obj& o, const Obj& t) {
+    const float s = o.scale, g = kGravity * s;
+    float h = std::max(4 * s, o.y - topY(t) + 6 * s);
+    float vy = -std::sqrt(2 * g * h), tUp = -vy / g, tLand = tUp + std::sqrt(2 * 6 * s / g);
+    toAir(o, (t.x - o.x) / tLand, vy);
+  }
+  void stackOnto(Obj& o, Obj& t) {
+    t.r[t.n] = o.r[0];
+    t.n++;
+    t.nTarget = t.n;
+    t.decorKey = -1;
+    t.waveT = 1.5f;
+    o.dead = true;
+    if (t.n == 2) sparkle(t.x, topY(t), t.scale);
+  }
+
+  // Snowmen and snowballs appear on deep snow by themselves.
+  void autoSpawn(Pile& p) {
+    if (!set().snowmen || !p.visible || p.width < 90 * p.scale) return;
+    if ((p.kind == Kind::Taskbar && !set().pileTaskbar) || (p.kind == Kind::Window && !set().pileWindows)) return;
+    if (p.kind == Kind::Taskbar && (p.mon >= (int)mons().size() || !mons()[p.mon].active)) return;
+    float avg = p.volume() / p.width;
+    p.deep = avg >= 0.6f * p.maxH ? p.deep + 1 : 0;
+    int men = 0, balls = 0, allMen = 0, allBalls = 0;
+    for (auto& o : objs) {
+      if (o.kind != kStack || o.dead) continue;
+      bool man = o.nTarget >= 2;
+      (man ? allMen : allBalls)++;
+      if (o.pile == p.id) (man ? men : balls)++;
+    }
+    const float s = p.scale;
+    auto freeSpot = [&](float lo, float hi, float* rel) {
+      for (int k = 0; k < 8; ++k) {
+        float r = rng.r(lo, hi) * p.width;
+        if (p.hidden(p.x0 + r, p.base - 4)) continue;
+        bool clear = true;
+        for (auto& o : objs) if (!o.dead && o.pile == p.id && std::fabs(o.rel - r) < 44 * s) clear = false;
+        if (clear) { *rel = r; return true; }
+      }
+      return false;
+    };
+    float rel;
+    if (p.deep >= 20 && men < (p.kind == Kind::Taskbar ? 2 : 1) && allMen < kMaxSnowmen && rng.f() < 0.12f) {
+      bool ends = p.kind == Kind::Taskbar;
+      bool ok = ends ? (rng.f() < 0.5f ? freeSpot(0.05f, 0.2f, &rel) : freeSpot(0.8f, 0.95f, &rel)) : freeSpot(0.14f, 0.86f, &rel);
+      if (!ok) return;
+      Obj o = newBall(p.x0 + rel, p.base, 0, s);
+      o.pile = p.id;
+      o.rel = rel;
+      o.nTarget = rng.f() < 0.25f ? 2 : 3;
+      o.n = 1;
+      o.target[0] = rng.r(9.5f, 12.f) * s;
+      o.target[1] = o.target[0] * (o.nTarget == 2 ? rng.r(0.64f, 0.72f) : rng.r(0.7f, 0.78f));
+      o.target[2] = o.target[1] * rng.r(0.68f, 0.76f);
+      o.build = 0;
+      o.nextWave = rng.r(6, 16);
+      spawnQ.push_back(o);
+    } else if (avg >= 0.45f * p.maxH && balls < 2 && allBalls < kMaxBalls && rng.f() < 0.035f && freeSpot(0.2f, 0.8f, &rel)) {
+      Obj o = newBall(p.x0 + rel, p.base, 2.2f * s, s);
+      o.pile = p.id;
+      o.rel = rel;
+      o.roll = (rng.f() < 0.5f ? -1 : 1) * rng.r(160, 260) * s;
+      spawnQ.push_back(o);
+    }
+  }
+
+  void updateObjects(float dt) {
+    for (size_t i = 0; i < objs.size(); ++i) {
+      Obj& o = objs[i];
+      if (o.dead) continue;
+      const float s = o.scale, g = kGravity * s;
+      o.age += dt;
+      // a snowman building himself
+      if (o.kind == kStack && o.build >= 0) {
+        float prev = o.build;
+        o.build += dt / 1.1f;
+        for (int k = 0; k < o.nTarget; ++k) o.r[k] = o.target[k] * easeOut(o.build - k);
+        o.n = std::clamp((int)std::floor(o.build) + 1, 1, o.nTarget);
+        if (prev < o.nTarget && o.build >= o.nTarget) { o.decorKey = -1; sparkle(o.x, topY(o), s); }
+        if (o.build >= o.nTarget + 0.4f) { o.build = -1; o.n = o.nTarget; for (int k = 0; k < o.n; ++k) o.r[k] = o.target[k]; }
+      }
+      if (o.pile) {
+        Pile* p = pileById(o.pile);
+        if (!p) { toAir(o, 0, 0); continue; }
+        if (!p->visible) continue;  // its window is hidden for now
+        if (o.kind == kStack && o.n == 1 && o.build < 0 && std::fabs(o.roll) > 0.5f) roll(o, *p, dt);
+        if (o.dead || !o.pile) continue;
+        if (o.rel < 0 || o.rel >= p->width) {  // off the end
+          o.x = p->x0 + o.rel;
+          toAir(o, o.roll, -20 * s);
+          continue;
+        }
+        int c = std::clamp((int)o.rel, 0, p->width - 1);
+        o.x = p->x0 + o.rel;
+        o.y = p->surfaceY(c) + (o.kind == kPresent ? 1.5f * s : 0.f);
+        // snowmen wave now and then, when Santa flies over, and when the mouse comes to say hello
+        if (decorated(o)) {
+          o.nextWave -= dt;
+          float hy = topY(o);
+          bool near = cValid && std::fabs(cx - o.x) < 36 * s && cy > hy - 30 * s && cy < o.y + 10 * s;
+          int mi = monitorAt(o.x, o.y - 1);
+          if (o.nextWave <= 0 || near || (santa.on && santa.mon == mi)) { o.waveT = std::max(o.waveT, 1.6f); if (o.nextWave <= 0) o.nextWave = rng.r(12, 30); }
+          o.waveT = std::max(0.f, o.waveT - dt);
+        }
+      } else {  // in the air
+        float py = o.y;
+        o.vy += g * dt;
+        o.x += o.vx * dt; o.y += o.vy * dt;
+        o.vx *= std::exp(-dt * 0.3f);
+        if (o.kind == kStack) o.spin += o.vx * dt / std::max(1.f, o.r[0]);
+        if (o.vy > 0) {
+          bool done = false;
+          if (o.kind == kStack && o.n == 1)  // onto a snowman or a bigger ball
+            for (auto& t : objs) {
+              if (&t == &o || t.dead || !t.pile || !built(t) || t.n >= 3) continue;
+              float ty = topY(t), tr = topR(t);
+              if (std::fabs(o.x - t.x) < tr * 0.85f && py <= ty + 1 && o.y >= ty && o.r[0] <= tr * 1.15f) { stackOnto(o, t); done = true; break; }
+            }
+          if (done) continue;
+          int c;
+          if (Pile* p = landing(o.x, py, o.y, &c, false)) {
+            o.pile = p->id;
+            o.rel = o.x - p->x0;
+            float fell = o.y - o.fallFrom;
+            if (o.kind == kStack && o.n >= 2 && fell > 170 * s) { o.y = p->surfaceY(c); breakStack(o, o.vx * 0.3f, 0); continue; }
+            if (o.kind == kStack && o.n == 1) o.roll = o.vx * 0.6f;
+            o.vx = o.vy = 0;
+            continue;
+          }
+        }
+        int m = monitorAt(o.x, o.y);
+        if (m < 0 && monitorAt(o.x, o.y - 3000) < 0) o.dead = true;
+        if (m >= 0 && o.y > mons()[m].groundY + 60 * s) o.dead = true;
+      }
+      if (o.kind == kPresent && o.age > o.life) {  // vanishes in a puff of glitter
+        sparkle(o.x, o.y - 5 * s, s, 24);
+        o.dead = true;
+      }
+    }
+    objs.erase(std::remove_if(objs.begin(), objs.end(), [](const Obj& o) { return o.dead; }), objs.end());
+    for (auto& o : spawnQ) objs.push_back(std::move(o));
+    spawnQ.clear();
+  }
+
+  // A lone snowball rolling along its pile: it picks up the snow it rolls over and grows.
+  void roll(Obj& o, Pile& p, float dt) {
+    const float s = o.scale;
+    float old = o.rel;
+    o.rel += o.roll * dt;
+    o.spin += o.roll * dt / std::max(1.f, o.r[0]);
+    int a, b;
+    if (o.rel > old) { a = (int)std::floor(old) + 1; b = (int)std::floor(o.rel); }
+    else { a = (int)std::floor(o.rel); b = (int)std::floor(old) - 1; }
+    float gained = 0;
+    for (int c = std::max(a, 0); c <= std::min(b, p.width - 1); ++c) {
+      float take = p.h[c] * 0.35f;
+      p.h[c] -= take;
+      gained += take;
+    }
+    if (gained > 0) {
+      float maxR = 16 * s;
+      if (o.r[0] < maxR) o.r[0] = std::min(maxR, std::sqrt(o.r[0] * o.r[0] + gained * 0.25f / PI));
+      p.active = 2;
+    }
+    float dec = (90 * s + 0.5f * std::fabs(o.roll)) * dt;
+    o.roll = std::fabs(o.roll) <= dec ? 0 : o.roll - std::copysign(dec, o.roll);
+    // bumping into others on the same pile
+    for (auto& t : objs) {
+      if (&t == &o || t.dead || t.pile != o.pile || t.kind != kStack) continue;
+      float d = t.rel - o.rel, minD = o.r[0] + t.r[0] * 0.95f;
+      if (std::fabs(d) >= minD || d * o.roll <= 0) continue;
+      if (built(t) && t.n < 3 && t.n >= 1 && o.r[0] <= topR(t) && std::fabs(o.roll) > 30 * s) { hop(o, t); break; }
+      if (t.n == 1 && built(t)) { t.roll += o.roll * 0.75f; o.roll *= 0.2f; o.rel = t.rel - std::copysign(minD, d); }
+      else if (t.n >= 2 && std::fabs(o.roll) > 260 * s && o.r[0] > t.r[0] * 0.7f) { breakStack(t, o.roll * 0.5f, -150 * s); o.roll *= 0.4f; }
+      else { o.roll = -o.roll * 0.3f; o.rel = t.rel - std::copysign(minD, d); }
+      break;
+    }
+  }
+
+  // ------------------------------------------------------------------------------------- snowplow
+  void sendPlow() {
+    if (plow.on || mons().empty()) return;
+    int best = -1;
+    float bestAvg = -1;
+    for (int mi = 0; mi < (int)mons().size(); ++mi) {
+      Pile* g = ground(mi);
+      if (!g || !mons()[mi].active || !g->width) continue;
+      float avg = g->volume() / g->width;
+      if (avg > bestAvg) { bestAvg = avg; best = mi; }
+    }
+    if (best < 0) return;
+    startPlow(best);
+  }
+  void startPlow(int mi) {
+    const Monitor& m = mons()[mi];
     Pile* g = ground(mi);
-    if (!g || !set().snowman || !set().pileTaskbar) { sm.present = false; return; }
-    if (!mons()[mi].active) return;
-    sm.cooldown -= dt;
-    if (!sm.present) {
-      sm.check -= dt;
-      if (sm.check > 0 || sm.cooldown > 0) return;
-      sm.check = 2;
-      // he is built at whichever end of the taskbar has more snow, once it is deep enough there
-      int n = std::max(1, g->width / 5);
-      float left = 0, right = 0;
-      for (int i = 0; i < n; ++i) { left += g->h[i]; right += g->h[g->width - 1 - i]; }
-      left /= n; right /= n;
-      if (std::max(left, right) < 0.5f * g->maxH) return;
-      sm.present = true;
-      sm.build = 0;
-      float f = left >= right ? rng.r(0.05f, 0.17f) : rng.r(0.83f, 0.95f);
-      sm.rel = f * g->width;
-      sm.nextWave = rng.r(8, 20);
-      return;
+    if (!g) return;
+    // start from the end with more snow
+    int n = std::max(1, g->width / 2);
+    float left = 0, right = 0;
+    for (int i = 0; i < n; ++i) { left += g->h[i]; right += g->h[g->width - 1 - i]; }
+    plow = Plow{};
+    plow.on = true;
+    plow.mon = mi;
+    plow.right = left >= right;
+    plow.S = m.scale * 1.1f;
+    plow.speed = 105 * m.scale;
+    plow.x = plow.right ? m.r.l - 30 * plow.S : m.r.r + 30 * plow.S;
+    plow.blade = plow.x + (plow.right ? 1 : -1) * 25 * plow.S;
+  }
+
+  void updatePlow(float dt) {
+    for (int mi = 0; mi < (int)ms.size() && mi < (int)mons().size(); ++mi) {
+      MonState& st = ms[mi];
+      st.plowCooldown -= dt;
+      st.plowCheck -= dt;
+      if (st.plowCheck > 0) continue;
+      st.plowCheck = 5;
+      Pile* g = ground(mi);
+      if (plow.on || st.plowCooldown > 0 || !set().snowplow || !set().pileTaskbar || !g || !g->width || !mons()[mi].active) continue;
+      if (g->volume() / g->width >= 0.5f * g->maxH && rng.f() < 0.35f) startPlow(mi);
     }
-    sm.build = std::min(1.f, sm.build + dt / 2.5f);
-    {
-      int c = std::clamp((int)sm.rel, 0, g->width - 1);
-      if (g->h[c] < 0.12f * g->maxH) { breakSnowman(mi); return; }  // the snow under him was swept away
+    if (!plow.on) return;
+    Pile* g = ground(plow.mon);
+    if (!g || plow.mon >= (int)mons().size() || !mons()[plow.mon].active) { plow.on = false; return; }
+    const Monitor& m = mons()[plow.mon];
+    const float S = plow.S, s = m.scale, dir = plow.right ? 1.f : -1.f;
+    plow.t += dt;
+    plow.x += dir * plow.speed * dt;
+    plow.blade = plow.x + dir * 25 * S;
+    // clear everything under the plow and push it ahead of the blade as a heap
+    float load = 0;
+    int c0 = (int)std::floor(std::min(plow.blade, plow.x - dir * 22 * S) - g->x0);
+    int c1 = (int)std::floor(std::max(plow.blade, plow.x - dir * 22 * S) - g->x0);
+    for (int c = std::max(0, c0); c <= std::min(g->width - 1, c1); ++c) {
+      float take = g->h[c] * 0.9f;
+      g->h[c] -= take;
+      load += take;
     }
-    // waves now and then, when Santa flies over, and when the mouse comes to say hello
-    sm.nextWave -= dt;
-    float x = g->x0 + sm.rel, y = g->base - 20 * g->scale;
-    bool near = cValid && std::fabs(cx - x) < 40 * g->scale && std::fabs(cy - y) < 40 * g->scale;
-    if (sm.nextWave <= 0 || near || (santa.on && santa.mon == mi)) { sm.waveT = std::max(sm.waveT, 1.6f); if (sm.nextWave <= 0) sm.nextWave = rng.r(12, 28); }
-    sm.waveT = std::max(0.f, sm.waveT - dt);
+    if (load > 0) {
+      int front = (int)std::floor(plow.blade - g->x0) + (int)dir;
+      int hw = std::max(3, (int)(9 * S));
+      float wsum = 0;
+      for (int k = 0; k < hw; ++k) wsum += hw - k;
+      int sprays = 0;
+      for (int k = 0; k < hw; ++k) {
+        int c = front + (int)dir * k;
+        float add = load * (hw - k) / wsum;
+        if (c < 0 || c >= g->width) continue;  // pushed off the screen
+        g->h[c] += add;
+        float cap = 2.4f * g->maxH;
+        if (g->h[c] > cap) {
+          float extra = g->h[c] - cap;
+          g->h[c] = cap;
+          if (sprays < 1) { addClump(g->x0 + c, g->base - cap, dir * rng.r(80, 220) * s, -rng.r(150, 330) * s, rng.r(1.2f, 2.f) * s, kSnow); ++sprays; }
+          (void)extra;
+        }
+      }
+      g->active = 2;
+    }
+    // whatever is in the way gets pushed along, or knocked over
+    for (auto& o : objs) {
+      if (o.dead || o.pile != g->id) continue;
+      float ahead = dir * (o.x - plow.blade);
+      float reach = o.kind == kPresent ? 5 * s : o.r[0];
+      if (ahead > reach || ahead < -40 * S) continue;
+      if (o.kind == kPresent) toAir(o, dir * 220 * s, -260 * s);
+      else if (o.n >= 2) breakStack(o, dir * 160 * s, -180 * s);
+      else { o.rel = plow.blade - g->x0 + dir * (o.r[0] + 1); o.roll = 0; }
+    }
+    // exhaust
+    plow.smoke += dt * 7;
+    while (plow.smoke >= 1) {
+      plow.smoke -= 1;
+      addClump(plow.x + dir * 9 * S, g->base - 24 * S, -dir * rng.r(5, 15) * s, -rng.r(18, 32) * s, rng.r(1.2f, 2.f) * s, kSmoke, pm(115, 115, 125, 1), rng.r(1.2f, 1.8f));
+    }
+    if ((plow.right && plow.x > m.r.r + 40 * S) || (!plow.right && plow.x < m.r.l - 40 * S)) {
+      plow.on = false;
+      if (plow.mon < (int)ms.size()) ms[plow.mon].plowCooldown = 180;
+    }
   }
 
   // ------------------------------------------------------------------------------------- spawning
@@ -517,16 +845,29 @@ struct World::Impl {
           p.active = 2;
         }
       }
-      // presents get knocked off; the snowman falls apart
-      for (auto& g : presents) {
-        if (!g.pile) continue;
-        float sc = scaleAt(g.x, g.y);
-        if (segNear(g.x, g.y - 5 * sc, 9 * sc)) { g.pile = 0; g.vx = ivx * 0.4f; g.vy = std::min(ivy * 0.4f, 0.f) - 250 * sc; }
+    }
+    // Snowballs roll when pushed; a fast flick knocks a snowman over or a present off.
+    for (auto& o : objs) {
+      if (o.dead || !o.pile) continue;
+      Pile* p = pileById(o.pile);
+      if (!p || !p->visible) continue;
+      const float os = o.scale;
+      if (o.kind == kPresent) {
+        if (speed > 1500 * s && segNear(o.x, o.y - 5 * os, 9 * os)) toAir(o, ivx * 0.4f, std::min(ivy * 0.4f, 0.f) - 250 * os);
+        continue;
       }
-      for (int mi = 0; mi < (int)ms.size(); ++mi) {
-        Pile* g = ground(mi);
-        if (!g || !ms[mi].sm.present) continue;
-        if (segNear(g->x0 + ms[mi].sm.rel, g->base - 20 * g->scale, 16 * g->scale)) breakSnowman(mi);
+      float c[3];
+      snowmanCentres(o.r, o.n, c);
+      if (o.n == 1 && o.build < 0) {
+        if (p->hidden(o.x, o.y - c[0])) continue;
+        if (std::fabs(ivx) > 25 * os && segNear(o.x, o.y - c[0], o.r[0] + 3 * os) && (o.x - cpx) * ivx > 0) {
+          float v = std::clamp(ivx * 0.85f, -750 * os, 750 * os);
+          if (ivy < -900 * os) { toAir(o, v * 0.6f, ivy * 0.35f); continue; }  // flicked upwards: it flies
+          if (std::fabs(v) > std::fabs(o.roll) || v * o.roll < 0) o.roll = v;
+        }
+      } else if (o.n >= 2 && speed > 1500 * s) {
+        for (int i = 0; i < o.n; ++i)
+          if (segNear(o.x, o.y - c[i], o.r[i] + 2 * os)) { breakStack(o, ivx * 0.4f, std::min(ivy * 0.3f, 0.f)); break; }
       }
     }
     cpx = cx; cpy = cy;
@@ -606,7 +947,7 @@ struct World::Impl {
       if (st.spawnAcc > 3) st.spawnAcc = 3;
     }
 
-    // clumps, glitter, drops and debris: thrown things with gravity
+    // clumps, glitter, drops, debris and smoke
     for (size_t i = 0; i < clumps.size();) {
       Clump& c = clumps[i];
       const Monitor& m = mons()[std::min<int>(c.mon, (int)mons().size() - 1)];
@@ -619,19 +960,20 @@ struct World::Impl {
         c.vy += (30 * s - c.vy) * std::min(1.f, dt * 2);
         c.x += c.vx * dt; c.y += c.vy * dt;
         if (c.life <= 0) dead = true;
+      } else if (c.kind == kSmoke) {
+        c.vy *= std::exp(-dt * 0.8f);
+        c.x += (c.vx + wv * s * 0.3f) * dt; c.y += c.vy * dt;
+        if (c.life <= 0) dead = true;
       } else {
         c.vy += 980 * s * dt;
         c.vx *= std::exp(-dt * 0.6f);
         c.x += c.vx * dt + wv * s * 0.2f * dt; c.y += c.vy * dt;
-        if (c.vy > 0 && c.kind != kDrop && c.kind != kDebris) {
+        if (c.vy > 0) {
           int col;
           if (Pile* p = landing(c.x, py, c.y, &col)) {
             if (c.kind == kSnow) deposit(*p, col, PI * c.r * c.r * 0.8f, c.r);
             dead = true;
           }
-        } else if (c.vy > 0) {
-          int col;
-          if (landing(c.x, py, c.y, &col)) dead = true;
         }
         if (c.life <= 0) dead = true;
       }
@@ -645,7 +987,7 @@ struct World::Impl {
       ++i;
     }
 
-    // piles: settle, icicles, melt very slowly
+    // piles: settle, icicles, melt very slowly, and now and then a snowball or a snowman
     meltAcc += dt;
     bool melt = meltAcc >= 1;
     for (auto& kv : piles) {
@@ -656,10 +998,11 @@ struct World::Impl {
         float m = 0.004f * p.scale * meltAcc;
         for (float& a : p.h) a = std::max(0.f, a - m);
       }
-      if (p.kind == Kind::Window && p.visible) {
+      p.check -= dt;
+      if (p.check <= 0) { p.check = 1; autoSpawn(p); }
+      if (p.kind == Kind::Window && p.visible && p.width > 0) {
         for (auto& ic : p.icicles) {
-          int c = std::clamp((int)(ic.rel * p.width), 0, std::max(0, p.width - 1));
-          if (p.width == 0) continue;
+          int c = std::clamp((int)(ic.rel * p.width), 0, p.width - 1);
           bool thick = p.h[c] > 0.5f * p.maxH;
           if (set().icicles && thick) ic.len = std::min(ic.maxLen, ic.len + dt * 0.1f * p.scale);
           if (!thick && p.h[c] < 0.15f * p.maxH) ic.len = std::max(0.f, ic.len - dt * 0.3f * p.scale);
@@ -676,49 +1019,11 @@ struct World::Impl {
     }
     if (melt) meltAcc = 0;
 
-    for (int mi = 0; mi < (int)ms.size(); ++mi) updateSnowman(mi, dt);
-    updatePresents(dt);
+    updateObjects(dt);
     updateSanta(dt);
+    updatePlow(dt);
   }
 
-  // ------------------------------------------------------------------------------------- presents
-  void updatePresents(float dt) {
-    for (size_t i = 0; i < presents.size();) {
-      Present& g = presents[i];
-      bool dead = false;
-      g.age += dt;
-      float s = scaleAt(g.x, g.y);
-      if (g.pile) {
-        auto it = piles.find(g.pile);
-        if (it == piles.end() || !it->second->visible) { g.pile = 0; g.vx = 0; g.vy = 0; }
-        else {
-          Pile& p = *it->second;
-          int c = std::clamp((int)g.rel, 0, std::max(0, p.width - 1));
-          if (g.rel > p.width) g.rel = (float)c;
-          g.x = p.x0 + g.rel;
-          g.y = p.width ? p.surfaceY(c) + 1.5f * s : p.base;
-        }
-      } else {
-        float py = g.y;
-        g.vy += 900 * s * dt;
-        g.x += g.vx * dt; g.y += g.vy * dt;
-        g.vx *= std::exp(-dt * 0.5f);
-        if (g.vy > 0) {
-          int col;
-          if (Pile* p = landing(g.x, py, g.y, &col)) { g.pile = p->id; g.rel = (float)col; g.vx = g.vy = 0; }
-        }
-        int m = monitorAt(g.x, g.y);
-        if (m < 0 && monitorAt(g.x, g.y - 2000) < 0) dead = true;
-        if (m >= 0 && g.y > mons()[m].groundY + 30) dead = true;
-      }
-      if (g.age > g.life) {  // vanishes in a puff of glitter
-        for (int k = 0; k < 24; ++k) addClump(g.x + rng.r(-5, 5) * s, g.y - rng.r(0, 9) * s, rng.r(-60, 60) * s, rng.r(-90, 0) * s, rng.r(0.6f, 1.3f) * s, kGlitter, glitterColor(), rng.r(0.8f, 1.6f));
-        dead = true;
-      }
-      if (dead) { g = presents.back(); presents.pop_back(); continue; }
-      ++i;
-    }
-  }
   uint32_t glitterColor() {
     switch (rng.i(4)) {
       case 0: return pm(255, 255, 255, 1);
@@ -735,6 +1040,8 @@ struct World::Impl {
     while (mi < (int)mons().size() && !mons()[mi].active) ++mi;
     if (mi >= (int)mons().size()) return;
     const Monitor& m = mons()[mi];
+    int presents = 0;
+    for (auto& o : objs) if (o.kind == kPresent) ++presents;
     santa = Santa{};
     santa.on = true;
     santa.mon = mi;
@@ -744,7 +1051,7 @@ struct World::Impl {
     float half = 75 * santa.S;
     santa.x = santa.right ? m.r.l - half : m.r.r + half;
     santa.vx = (santa.right ? 1 : -1) * rng.r(230, 290) * m.scale;
-    santa.dropped = !(set().presents && (int)presents.size() < kMaxPresents && rng.f() < 0.8f);
+    santa.dropped = !(set().presents && presents < kMaxPresents && rng.f() < 0.8f);
     santa.dropAt = m.r.l + m.r.w() * rng.r(0.25f, 0.75f);
   }
 
@@ -756,7 +1063,6 @@ struct World::Impl {
     santa.t += dt;
     santa.x += santa.vx * dt;
     float y = santaY();
-    // glitter trail from the back of the sleigh
     santa.glitter += dt * 45;
     while (santa.glitter >= 1) {
       santa.glitter -= 1;
@@ -764,13 +1070,15 @@ struct World::Impl {
     }
     if (!santa.dropped && ((santa.right && santa.x >= santa.dropAt) || (!santa.right && santa.x <= santa.dropAt))) {
       santa.dropped = true;
-      Present g{};
+      Obj g;
+      g.kind = kPresent;
       g.x = santa.x - dir * 44 * S; g.y = y + 6 * S;
       g.vx = santa.vx * 0.3f; g.vy = -40 * m.scale;
       g.life = rng.r(180, 300);
       g.color = rng.i(5);
-      g.mon = santa.mon;
-      presents.push_back(g);
+      g.scale = m.scale;
+      g.fallFrom = g.y;
+      objs.push_back(g);
     }
     float half = 80 * S;
     if ((santa.right && santa.x > m.r.r + half) || (!santa.right && santa.x < m.r.l - half)) santa.on = false;
@@ -787,7 +1095,7 @@ struct World::Impl {
       if (l < r && tp < b) drawn.push_back({l, tp, r, b});
     }
     // An anti-aliased round flake with a faint dark halo (so it still shows on white windows).
-    void dot(float vx, float vy, float r, float a, uint32_t color = 0, float halo = 0.16f) {
+    void dot(float vx, float vy, float r, float a, uint32_t color = 0, float halo = 0.16f, const std::vector<Rect>* occ = nullptr) {
       float x = vx - ox, y = vy - oy;
       int x0 = (int)std::floor(x - r - 1.5f), x1 = (int)std::ceil(x + r + 1.5f);
       int y0 = (int)std::floor(y - r - 1.5f), y1 = (int)std::ceil(y + r + 1.5f);
@@ -798,6 +1106,7 @@ struct World::Impl {
         uint32_t* row = t.px + (size_t)Y * t.stride;
         float dy = Y + 0.5f - y;
         for (int X = x0; X < x1; ++X) {
+          if (occ) { bool hid = false; for (auto& o : *occ) if (o.contains((float)(X + ox), (float)(Y + oy))) { hid = true; break; } if (hid) continue; }
           float dx = X + 0.5f - x, d = std::sqrt(dx * dx + dy * dy);
           float cov = std::clamp(r + 0.5f - d, 0.f, 1.f);
           float hcov = std::clamp(r + 1.3f - d, 0.f, 1.f) * hk;
@@ -840,7 +1149,7 @@ struct World::Impl {
   void drawPile(Painter& P, const Pile& p, const Rect& mon) {
     if (!p.visible || p.width <= 0) return;
     if (p.x0 >= mon.r || p.x0 + p.width <= mon.l) return;
-    if (p.base + p.maxH + 20 < mon.t || p.base - p.maxH - 4 > mon.b) return;
+    if (p.base + 2.5f * p.maxH + 20 < mon.t || p.base - 2.5f * p.maxH - 4 > mon.b) return;
     const float s = p.scale;
     int c0 = std::max(0, mon.l - (int)p.x0), c1 = std::min(p.width, mon.r - (int)p.x0);
     int minX = 1 << 30, maxX = -(1 << 30), minY = 1 << 30, maxY = -(1 << 30);
@@ -849,7 +1158,6 @@ struct World::Impl {
       float hh = p.h[c];
       if (hh < 0.08f) continue;
       float gx = p.x0 + c;
-      // windows in front, at this column
       int nh = 0;
       for (auto& o : p.occ) if (gx >= o.l && gx < o.r && nh < 16) { hid[nh++] = (float)o.t; hid[nh++] = (float)o.b; }
       float bot = std::round(p.base + p.off(c));
@@ -858,13 +1166,12 @@ struct World::Impl {
       int X = (int)gx - P.ox;
       if (X < 0 || X >= P.t.w) continue;
       auto hidden = [&](int gy) { for (int k = 0; k < nh; k += 2) if (gy >= hid[k] && gy < hid[k + 1]) return true; return false; };
-      // soft rim above the snow, so a white pile still has an edge on a white background
       for (int gy = yTop - 1; gy < (int)bot + 1; ++gy) {
         int Y = gy - P.oy;
         if (Y < 0 || Y >= P.t.h || hidden(gy)) continue;
         uint32_t* d = P.t.px + (size_t)Y * P.t.stride + X;
-        if (gy == yTop - 1) { over(d, pm(110, 135, 170, 0.16f * std::min(1.f, hh / 2))); continue; }
-        if (gy == (int)bot) { over(d, pm(10, 20, 40, 0.14f * std::min(1.f, hh / 3))); continue; }  // contact shadow
+        if (gy == yTop - 1) { over(d, pm(110, 135, 170, 0.16f * std::min(1.f, hh / 2))); continue; }  // soft rim
+        if (gy == (int)bot) { over(d, pm(10, 20, 40, 0.14f * std::min(1.f, hh / 3))); continue; }      // contact shadow
         float cov = gy == yTop ? (yTop + 1 - top) : 1.f;
         float depth = (gy + 0.5f - top) / std::max(1.f, hh);
         int r, g, b;
@@ -906,6 +1213,45 @@ struct World::Impl {
     }
   }
 
+  void drawObj(Painter& P, Obj& o, const Rect& mon, SpriteSet& sp) {
+    const std::vector<Rect>* occ = nullptr;
+    if (o.pile) {
+      Pile* p = pileById(o.pile);
+      if (!p || !p->visible) return;
+      occ = &p->occ;
+    }
+    const float s = o.scale;
+    if (o.kind == kPresent) {
+      if (!mon.contains(o.x, o.y) && !mon.contains(o.x, o.y - 12 * s)) return;
+      float fade = std::clamp((o.life - o.age) / 3.f, 0.f, 1.f);
+      P.blit(sp.present[o.color % 5], o.x, o.y, fade, occ);
+      return;
+    }
+    if (o.n <= 0) return;
+    float c[3];
+    snowmanCentres(o.r, o.n, c);
+    float h = c[o.n - 1] + topR(o) * 2.6f;
+    if (o.x + 40 * s < mon.l || o.x - 40 * s > mon.r || o.y < mon.t || o.y - h > mon.b) return;
+    for (int i = 0; i < o.n; ++i)
+      if (o.r[i] > 0.4f) P.blit(ballSprite(o.r[i]), o.x, o.y - c[i], 1, occ);
+    if (o.n == 1 && o.build < 0 && o.r[0] > 2.5f * s) {  // a few specks show it rolling
+      for (int k = 0; k < 3; ++k) {
+        float a = o.spin + k * 2.094f;
+        float px = o.x + std::cos(a) * o.r[0] * 0.55f, py = o.y - c[0] + std::sin(a) * o.r[0] * 0.55f;
+        P.dot(px, py, std::max(0.5f, o.r[0] * 0.09f), 0.5f, pm(150, 172, 205, 1), 0, occ);
+      }
+    }
+    if (decorated(o)) {
+      int frame = o.waveT > 0 && ((int)(time * 5) & 1) ? 1 : 0;
+      int key = o.n * 1000003 + (int)std::lround(o.r[0] * 2) * 9973 + (int)std::lround(o.r[1] * 2) * 131 + (int)std::lround(o.r[2] * 2) * 7 + o.hat * 3 + (o.right ? 1 : 0) + o.hatColor * 100;
+      if (key != o.decorKey) {
+        for (int f = 0; f < 2; ++f) o.decor[f] = makeSnowmanDecor(o.r, o.n, o.hat, o.hatColor, o.right, f);
+        o.decorKey = key;
+      }
+      P.blit(o.decor[frame], o.x, o.y, 1, occ);
+    }
+  }
+
   Rect render(int mi, Target& t, bool fresh) {
     if (ms.size() != mons().size()) ms.resize(mons().size());
     if (mi < 0 || mi >= (int)mons().size()) return {};
@@ -925,20 +1271,12 @@ struct World::Impl {
       if (p.kind == Kind::Taskbar && (!set().pileTaskbar || p.mon != mi)) continue;
       drawPile(P, p, mon);
     }
-    // the snowman and presents sit in the snow
-    if (Pile* g = ground(mi); g && st.sm.present && g->width) {
-      int c = std::clamp((int)st.sm.rel, 0, g->width - 1);
-      bool wave = st.sm.waveT > 0 && ((int)(time * 5) & 1);
-      const Sprite& s = sp.snowman[wave ? 1 : 0];
-      int fromRow = (int)((1 - st.sm.build) * s.h);
-      P.blit(s, g->x0 + st.sm.rel, g->surfaceY(c) + 2 * g->scale, 1, &g->occ, fromRow);
-    }
-    for (auto& g : presents) {
-      if (!mon.contains(g.x, g.y) && !mon.contains(g.x, g.y - 12)) continue;
-      const std::vector<Rect>* occ = nullptr;
-      if (g.pile) { auto it = piles.find(g.pile); if (it != piles.end()) occ = &it->second->occ; }
-      float fade = std::clamp((g.life - g.age) / 3.f, 0.f, 1.f);
-      P.blit(sp.present[g.color % 5], g.x, g.y, fade, occ);
+    for (auto& o : objs) drawObj(P, o, mon, sp);
+    if (plow.on && plow.mon == mi) {
+      if (Pile* g = ground(mi)) {
+        int frame = ((int)(plow.t * 10) & 1) | (((int)(plow.t * 3) & 1) << 1);
+        P.blit(sp.plow[plow.right ? 1 : 0][frame], plow.x, g->base + std::sin(plow.t * 25) * 0.35f * m.scale, 1, &g->occ);
+      }
     }
     // falling snow
     for (const Flake& f : flakes) {
@@ -960,6 +1298,11 @@ struct World::Impl {
         case kIce: P.dot(c.x, c.y, c.r, 0.9f, pm(205, 232, 255, 1), 0.1f); break;
         case kDrop: P.dot(c.x, c.y, c.r, 0.85f, c.color, 0.08f); break;
         case kDebris: P.dot(c.x, c.y, c.r, 1, c.color, 0.f); break;
+        case kSmoke: {
+          float k = std::clamp(c.life / 1.6f, 0.f, 1.f);
+          P.dot(c.x, c.y, c.r * (1 + (1 - k) * 1.8f), 0.32f * k, c.color, 0.f);
+          break;
+        }
         case kGlitter: {
           float tw = 0.55f + 0.45f * std::sin(time * 18 + c.x * 0.7f);
           P.dot(c.x, c.y, c.r, std::min(1.f, c.life) * tw, c.color, 0.f);
@@ -988,7 +1331,9 @@ void World::configure(const Settings& s) {
       Pile& p = *kv.second;
       if ((p.kind == Kind::Window && windowsOff) || (p.kind == Kind::Taskbar && taskbarOff)) std::fill(p.h.begin(), p.h.end(), 0.f);
     }
-  if (!s.presents) d_->presents.clear();
+  auto& objs = d_->objs;
+  objs.erase(std::remove_if(objs.begin(), objs.end(), [&](const Obj& o) { return (o.kind == kPresent && !s.presents) || (o.kind == kStack && !s.snowmen); }), objs.end());
+  if (!s.snowplow) d_->plow.on = false;
   d_->rebuildSurfaces();
 }
 
@@ -1012,19 +1357,21 @@ void World::setMonitors(const std::vector<Monitor>& mons) {
     D.clumps[i].mon = (int16_t)m;
     ++i;
   }
-  // ground piles move with their monitor; snowmen too
+  // ground piles move with their monitor, and so does whatever sits on them
   std::vector<std::unique_ptr<Pile>> oldGround(mons_.size());
-  std::vector<Snowman> oldSm(mons_.size());
+  std::vector<MonState> oldMs(mons_.size());
   for (size_t i = 0; i < mons_.size(); ++i) {
     auto it = D.piles.find(kGroundTag | i);
     if (it != D.piles.end()) { oldGround[i] = std::move(it->second); D.piles.erase(it); }
-    if (i < D.ms.size()) oldSm[i] = D.ms[i].sm;
+    if (i < D.ms.size()) oldMs[i] = D.ms[i];
   }
+  std::unordered_map<uint64_t, uint64_t> groundMap;
   std::vector<MonState> nms(mons.size());
   for (size_t j = 0; j < mons.size(); ++j) {
     int from = -1;
     for (size_t i = 0; i < mons_.size(); ++i) if (mons_[i].id == mons[j].id) from = (int)i;
     std::unique_ptr<Pile> g = from >= 0 && oldGround[from] ? std::move(oldGround[from]) : std::make_unique<Pile>();
+    if (from >= 0) groundMap[kGroundTag | (uint64_t)from] = kGroundTag | j;
     g->id = kGroundTag | j;
     g->kind = Kind::Taskbar;
     g->mon = (int)j;
@@ -1034,11 +1381,19 @@ void World::setMonitors(const std::vector<Monitor>& mons) {
     g->base = (float)mons[j].groundY;
     D.resample(*g, mons[j].r.w());
     D.piles[g->id] = std::move(g);
-    if (from >= 0) nms[j].sm = oldSm[from];
+    if (from >= 0) { nms[j].plowCheck = oldMs[from].plowCheck; nms[j].plowCooldown = oldMs[from].plowCooldown; }
   }
+  for (auto& o : D.objs) {
+    if (!(o.pile & kGroundTag) || (o.pile & ~0xFFFFull) != kGroundTag) continue;
+    auto it = groundMap.find(o.pile);
+    if (it != groundMap.end()) o.pile = it->second;
+    else o.dead = true;
+  }
+  D.objs.erase(std::remove_if(D.objs.begin(), D.objs.end(), [](const Obj& o) { return o.dead; }), D.objs.end());
   D.ms = std::move(nms);
   mons_ = mons;
-  if (D.santa.on) D.santa.on = false;
+  D.santa.on = false;
+  D.plow.on = false;
   D.rebuildSurfaces();
 }
 
@@ -1056,7 +1411,7 @@ void World::setWindows(const std::vector<Win>& z, const std::vector<uint64_t>& k
       p.id = w.id; p.kind = Kind::Window;
       p.x0 = (float)w.r.l; p.base = (float)w.r.t;
       p.scale = sc;
-      p.maxH = 15.f * sc;
+      p.maxH = 16.f * sc;
       D.resample(p, w.r.w());
       D.makeIcicles(p);
     }
@@ -1084,9 +1439,11 @@ void World::setWindows(const std::vector<Win>& z, const std::vector<uint64_t>& k
     }
     if (w.r.w() != p.width) {
       int old = p.width;
+      float k = old ? (float)w.r.w() / old : 1.f;
       D.resample(p, w.r.w());
       if (old) for (auto& ic : p.icicles) ic.len *= 0.5f;
-      p.scale = sc; p.maxH = 15.f * sc;
+      for (auto& o : D.objs) if (o.pile == p.id) o.rel *= k;  // things on top keep their place
+      p.scale = sc; p.maxH = 16.f * sc;
     }
   }
   // windows that went away: closed, minimised or maximised windows drop their snow
@@ -1095,7 +1452,7 @@ void World::setWindows(const std::vector<Win>& z, const std::vector<uint64_t>& k
     if (p.kind != Kind::Window || p.seen) { ++it; continue; }
     if (std::find(keep.begin(), keep.end(), p.id) != keep.end()) { p.visible = false; ++it; continue; }
     if (p.visible) D.shed(p, 1.f, 0, 60 * p.scale);
-    for (auto& g : D.presents) if (g.pile == p.id) { g.pile = 0; g.vx = 0; g.vy = 0; }
+    for (auto& o : D.objs) if (o.pile == p.id) D.toAir(o, 0, 0);
     it = D.piles.erase(it);
   }
   // what is in front of each pile
@@ -1111,7 +1468,8 @@ void World::setWindows(const std::vector<Win>& z, const std::vector<uint64_t>& k
       p.z = zi < 0 ? -1 : zi;
       if (zi < 0) continue;  // no taskbar: the snow on the floor of the screen is in front of everything
     }
-    Rect band{(int)p.x0, (int)(p.base - p.maxH - 4), (int)p.x0 + p.width, (int)(p.base + 18 * p.scale)};
+    // tall enough for snowmen standing on the pile
+    Rect band{(int)p.x0, (int)(p.base - p.maxH - 90 * p.scale), (int)p.x0 + p.width, (int)(p.base + 18 * p.scale)};
     for (int i = 0; i < zi && i < (int)z.size(); ++i) {
       if (z[i].id == p.id) continue;
       Rect o = intersect(z[i].r, band);
@@ -1125,8 +1483,14 @@ void World::setCursor(float x, float y, bool valid) { d_->cx = x; d_->cy = y; d_
 void World::update(float dt) { d_->update(dt); }
 Rect World::render(int mi, Target& t, bool fresh) { return d_->render(mi, t, fresh); }
 void World::sendSanta() { d_->sendSanta(); }
+void World::sendPlow() { d_->sendPlow(); }
 void World::snowstorm(float seconds) { d_->stormT = std::max(d_->stormT, seconds); }
 bool World::santaFlying() const { return d_->santa.on; }
+
+void World::dropSnowball(float x, float y, float radius) {
+  auto& D = *d_;
+  D.objs.push_back(D.newBall(x, y, radius, D.scaleAt(x, y)));
+}
 
 void World::shakeAll() {
   auto& D = *d_;
@@ -1134,7 +1498,8 @@ void World::shakeAll() {
     Pile& p = *kv.second;
     D.shed(p, 1.f, D.rng.r(-120, 120) * p.scale, -D.rng.r(50, 200) * p.scale);
   }
-  for (int mi = 0; mi < (int)D.ms.size(); ++mi) D.breakSnowman(mi);
+  for (auto& o : D.objs) if (o.pile) D.toAir(o, D.rng.r(-150, 150) * o.scale, -D.rng.r(150, 350) * o.scale);
+  for (auto& o : D.objs) o.fallFrom -= 400 * o.scale;  // snowmen thrown up like that fall apart when they land
 }
 
 void World::clearAll() {
@@ -1144,8 +1509,7 @@ void World::clearAll() {
     for (auto& ic : kv.second->icicles) ic.len = 0;
   }
   D.clumps.clear();
-  D.presents.clear();
-  for (auto& m : D.ms) { m.sm.present = false; m.sm.cooldown = 30; }
+  D.objs.clear();
 }
 
 Stats World::stats() const {
@@ -1153,7 +1517,7 @@ Stats World::stats() const {
   s.flakes = (int)d_->flakes.size();
   s.clumps = (int)d_->clumps.size();
   s.piles = (int)d_->piles.size();
-  s.objects = (int)d_->presents.size();
+  s.objects = (int)d_->objs.size();
   for (auto& kv : d_->piles) s.pileVolume += kv.second->volume();
   return s;
 }

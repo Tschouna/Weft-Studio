@@ -51,13 +51,13 @@ const UINT WM_APP_TRAY = WM_APP + 1, WM_APP_SECOND = WM_APP + 2;
 enum : UINT {
   ID_PAUSE = 100,
   ID_AMOUNT0 = 110, ID_WIND0 = 120, ID_FLAKES0 = 130,
-  ID_PILE_WIN = 140, ID_PILE_TASKBAR, ID_ICICLES, ID_MOUSE, ID_SNOWMAN, ID_PRESENTS,
+  ID_PILE_WIN = 140, ID_PILE_TASKBAR, ID_ICICLES, ID_MOUSE, ID_SNOWMEN, ID_PRESENTS, ID_PLOW, ID_PLOW_NOW,
   ID_SANTA0 = 150, ID_SANTA_NOW = 155,
   ID_STORM = 160, ID_SHAKE,
   ID_ALLSCREENS = 170, ID_FULLSCREEN, ID_STARTUP, ID_FPS0 = 175,
   ID_ABOUT = 180, ID_QUIT,
 };
-enum { HK_PAUSE = 1, HK_STORM, HK_SANTA };
+enum { HK_PAUSE = 1, HK_STORM, HK_SANTA, HK_PLOW };
 
 // ---------------------------------------------------------------------------------------- settings
 struct AppSettings {
@@ -89,7 +89,8 @@ void loadSettings() {
   S.eng.pileTaskbar = iniInt(L"PileOnTaskbar", 1) != 0;
   S.eng.icicles = iniInt(L"Icicles", 1) != 0;
   S.eng.mouse = iniInt(L"Mouse", 1) != 0;
-  S.eng.snowman = iniInt(L"Snowman", 1) != 0;
+  S.eng.snowmen = iniInt(L"Snowmen", 1) != 0;
+  S.eng.snowplow = iniInt(L"Snowplow", 1) != 0;
   S.eng.presents = iniInt(L"Presents", 1) != 0;
   S.santa = std::clamp(iniInt(L"Santa", 1), 0, 2);
   S.fps = std::clamp(iniInt(L"Animation", 1), 0, 2);
@@ -101,7 +102,7 @@ void loadSettings() {
 void saveSettings() {
   iniPut(L"Amount", S.eng.amount); iniPut(L"Wind", S.eng.wind); iniPut(L"Flakes", S.eng.flakes);
   iniPut(L"PileOnWindows", S.eng.pileWindows); iniPut(L"PileOnTaskbar", S.eng.pileTaskbar);
-  iniPut(L"Icicles", S.eng.icicles); iniPut(L"Mouse", S.eng.mouse); iniPut(L"Snowman", S.eng.snowman);
+  iniPut(L"Icicles", S.eng.icicles); iniPut(L"Mouse", S.eng.mouse); iniPut(L"Snowmen", S.eng.snowmen); iniPut(L"Snowplow", S.eng.snowplow);
   iniPut(L"Presents", S.eng.presents); iniPut(L"Santa", S.santa); iniPut(L"Animation", S.fps);
   iniPut(L"AllScreens", S.allScreens); iniPut(L"PauseForFullScreen", S.fullscreenPause);
   iniPut(L"Paused", S.paused); iniPut(L"Welcomed", S.welcomed);
@@ -150,7 +151,7 @@ std::vector<snow::Win> gZ;     // last window list, topmost first
 std::vector<HWND> gZh;
 std::vector<uint64_t> gKeep;
 UINT gTaskbarCreated = 0;
-bool gHotkeys[4] = {};
+bool gHotkeys[5] = {};
 NOTIFYICONDATAW gNid = {};
 double gNextSanta = 0;
 LARGE_INTEGER gFreq;
@@ -496,13 +497,15 @@ void showMenu(POINT pt) {
   add(m, ID_PILE_WIN, L"Snow piles up on windows", S.eng.pileWindows);
   add(m, ID_PILE_TASKBAR, L"Snow piles up on the taskbar", S.eng.pileTaskbar);
   add(m, ID_ICICLES, L"Icicles", S.eng.icicles, S.eng.pileWindows);
-  add(m, ID_SNOWMAN, L"A snowman on the taskbar", S.eng.snowman, S.eng.pileTaskbar);
+  add(m, ID_SNOWMEN, L"Snowmen and snowballs", S.eng.snowmen);
+  add(m, ID_PLOW, L"A snowplow clears the taskbar", S.eng.snowplow, S.eng.pileTaskbar);
   add(m, ID_MOUSE, L"The mouse plays with the snow", S.eng.mouse);
   AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
   HMENU santa = radio(L"Santa", ID_SANTA0, {L"Never", L"Now and then", L"Often"}, S.santa);
   AppendMenuW(santa, MF_SEPARATOR, 0, nullptr);
   add(santa, ID_PRESENTS, L"He drops presents", S.eng.presents);
   add(santa, ID_SANTA_NOW, std::wstring(L"Call Santa now") + hk(HK_SANTA, L"Ctrl+Alt+H"), false, !S.paused);
+  add(m, ID_PLOW_NOW, std::wstring(L"Send the snowplow") + hk(HK_PLOW, L"Ctrl+Alt+P"), false, !S.paused && S.eng.pileTaskbar);
   add(m, ID_STORM, std::wstring(L"Snowstorm for 30 seconds") + hk(HK_STORM, L"Ctrl+Alt+B"), false, !S.paused);
   add(m, ID_SHAKE, L"Shake all the snow off", false, !S.paused);
   AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
@@ -596,7 +599,9 @@ void command(UINT id) {
     case ID_PILE_TASKBAR: S.eng.pileTaskbar = !S.eng.pileTaskbar; apply(); break;
     case ID_ICICLES: S.eng.icicles = !S.eng.icicles; apply(); break;
     case ID_MOUSE: S.eng.mouse = !S.eng.mouse; apply(); break;
-    case ID_SNOWMAN: S.eng.snowman = !S.eng.snowman; apply(); break;
+    case ID_SNOWMEN: S.eng.snowmen = !S.eng.snowmen; apply(); break;
+    case ID_PLOW: S.eng.snowplow = !S.eng.snowplow; apply(); break;
+    case ID_PLOW_NOW: gWorld.sendPlow(); break;
     case ID_PRESENTS: S.eng.presents = !S.eng.presents; apply(); break;
     case ID_SANTA_NOW: gWorld.sendSanta(); break;
     case ID_STORM: gWorld.snowstorm(30); break;
@@ -613,11 +618,11 @@ void command(UINT id) {
       swprintf(text, 1024,
                L"Snowfall %ls\n\nSnow for your Windows desktop.\n\nRight now: %d snowflakes in the air, using %.1f MB of memory.\n\n"
                L"Things to try:\n"
-               L"\x2022  Shake a window: the snow falls off.\n"
-               L"\x2022  Minimise or close a window with snow on it.\n"
-               L"\x2022  Wave the mouse through the falling snow, or flick it fast through a pile.\n"
-               L"\x2022  Let snow build up on the taskbar and wait for the snowman.\n"
-               L"\x2022  Ctrl+Alt+S pauses, Ctrl+Alt+B starts a snowstorm, Ctrl+Alt+H calls Santa.",
+               L"\x2022  Push a snowball with the mouse: it rolls and grows as it picks up snow.\n"
+               L"\x2022  Roll a smaller snowball into a bigger one to build a snowman.\n"
+               L"\x2022  Flick the mouse fast through a snowman, or through a pile of snow.\n"
+               L"\x2022  Shake, minimise or close a window with snow on it.\n"
+               L"\x2022  Ctrl+Alt+S pauses, Ctrl+Alt+B snowstorm, Ctrl+Alt+H Santa, Ctrl+Alt+P snowplow.",
                SNOWFALL_VERSION, st.flakes, pm.PrivateUsage / 1048576.0);
       ModalFrames keep;
       MessageBoxW(nullptr, text, L"About Snowfall", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
@@ -647,6 +652,7 @@ LRESULT CALLBACK msgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
       if (w == HK_PAUSE) setPaused(!S.paused);
       else if (w == HK_STORM && !S.paused) gWorld.snowstorm(30);
       else if (w == HK_SANTA && !S.paused) gWorld.sendSanta();
+      else if (w == HK_PLOW && !S.paused) gWorld.sendPlow();
       return 0;
     case WM_APP_SECOND:  // started again while running
       if (S.paused) setPaused(false); else gWorld.sendSanta();
@@ -792,6 +798,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
   gHotkeys[HK_PAUSE] = RegisterHotKey(gMsgWnd, HK_PAUSE, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'S');
   gHotkeys[HK_STORM] = RegisterHotKey(gMsgWnd, HK_STORM, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'B');
   gHotkeys[HK_SANTA] = RegisterHotKey(gMsgWnd, HK_SANTA, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'H');
+  gHotkeys[HK_PLOW] = RegisterHotKey(gMsgWnd, HK_PLOW, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'P');
   const DWORD hookFlags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
   HWINEVENTHOOK hooks[] = {
       SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, winEvent, 0, 0, hookFlags),
@@ -820,6 +827,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
   double next = now();
   bool timerSet = false;
   bool running = true;
+  bool testBalls = false, testPlow = false;
   while (running) {
     // When awake, wake up for the next frame; when not, only for messages (and a slow check while a
     // full-screen app has every screen).
@@ -838,7 +846,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         bool animating = frame();
         next += animating ? frameInterval() : 1.0;
       }
-      if (selftest && now() - start > selftest) running = false;
+      if (selftest) {  // exercise the snowballs and the snowplow on the real desktop
+        double e = now() - start;
+        if (!testBalls && e > 8) {
+          testBalls = true;
+          for (auto& w : gZ)
+            if (w.kind == snow::Kind::Window) gWorld.dropSnowball((w.r.l + w.r.r) * 0.5f, (float)w.r.t - 80, 8);
+        }
+        if (!testPlow && e > selftest - 16) { testPlow = true; gWorld.sendPlow(); }
+        if (e > selftest) running = false;
+      }
     }
     MSG msg;
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -858,8 +875,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     for (auto& w : gZ) (w.kind == snow::Kind::Window ? windows : occluders)++;
     FILE* f = _wfopen(selftestOut.c_str(), L"w");
     if (f) {
-      std::fprintf(f, "screens=%d\nwindows_with_snow=%d\nother_windows=%d\nflakes=%d\nclumps=%d\npiles=%d\npile_volume=%.0f\n",
-                   (int)gWorld.monitors().size(), windows, occluders, st.flakes, st.clumps, st.piles, st.pileVolume);
+      std::fprintf(f, "screens=%d\nwindows_with_snow=%d\nother_windows=%d\nflakes=%d\nclumps=%d\npiles=%d\nsnowballs_snowmen_presents=%d\npile_volume=%.0f\n",
+                   (int)gWorld.monitors().size(), windows, occluders, st.flakes, st.clumps, st.piles, st.objects, st.pileVolume);
       std::fprintf(f, "frames=%ld\navg_frame_ms=%.3f\nworst_frame_ms=%.3f\n", gStats.n, gStats.n ? gStats.ms / gStats.n : 0, gStats.worst);
       std::fprintf(f, "private_mb=%.1f\nworking_set_mb=%.1f\npeak_working_set_mb=%.1f\n", pm.PrivateUsage / 1048576.0, pm.WorkingSetSize / 1048576.0, pm.PeakWorkingSetSize / 1048576.0);
       for (size_t i = 0; i < gWorld.monitors().size(); ++i) {

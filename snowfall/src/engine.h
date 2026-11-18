@@ -51,7 +51,8 @@ struct Settings {
   bool pileTaskbar = true;
   bool icicles = true;
   bool mouse = true;
-  bool snowman = true;
+  bool snowmen = true;   // snowballs and snowmen on windows and the taskbar
+  bool snowplow = true;  // a snowplow clears the taskbar now and then
   bool presents = true;
 };
 
@@ -94,7 +95,9 @@ class World {
 
   // Fun things, from the tray menu and hotkeys.
   void sendSanta();
+  void sendPlow();
   void snowstorm(float seconds);
+  void dropSnowball(float x, float y, float radius);  // a snowball falls from (x, y)
   void shakeAll();
   void clearAll();
 
@@ -111,8 +114,15 @@ class World {
 // Sprites (sprites.cpp), rendered once per DPI scale.
 Sprite makeCrystal(float radius, float angle, int variant);
 Sprite makeSanta(float scale, int frame, bool facingRight);
-Sprite makeSnowman(float scale, int frame);
 Sprite makePresent(float scale, int color);
+Sprite makeBall(float radius);
+Sprite makeSnowmanDecor(const float radii[3], int balls, int hat, int hatColor, bool facingRight, int frame);
+Sprite makeSnowplow(float scale, int frame, bool facingRight);
+// Heights of the ball centres above the snow a snowman stands on (y up), shared by drawing and physics.
+inline void snowmanCentres(const float r[3], int n, float c[3]) {
+  c[0] = r[0] * 0.92f;
+  for (int i = 1; i < 3; ++i) c[i] = i < n ? c[i - 1] + (r[i - 1] + r[i]) * 0.82f : c[i - 1];
+}
 // A square app icon (snowflake on a blue disc), premultiplied BGRA, for the tray and the .ico file.
 std::vector<uint32_t> makeIcon(int size);
 

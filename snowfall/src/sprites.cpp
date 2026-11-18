@@ -146,34 +146,123 @@ Sprite makeCrystal(float R, float ang, int variant) {
   return c.finish(0, 0);
 }
 
-// ------------------------------------------------------------------------------------------- snowman
-Sprite makeSnowman(float scale, int frame) {
-  Canvas c(-1, -4, 32, 47, scale, 4);
-  const Col outline{0.42f, 0.5f, 0.64f, 0.9f}, shade{0.84f, 0.89f, 0.97f, 1}, coal{0.12f, 0.12f, 0.15f, 1};
-  const Col stick{0.42f, 0.27f, 0.14f, 1}, red{0.8f, 0.14f, 0.15f, 1}, carrot{0.97f, 0.5f, 0.12f, 1};
-  // stick arms behind the body
-  c.line(9.5f, 20, 2.5f, 14, 1.1f, stick); c.line(4.6f, 15.8f, 3.4f, 12.6f, 0.9f, stick);
-  if (frame == 0) { c.line(20.5f, 20, 27.5f, 15.5f, 1.1f, stick); c.line(25.6f, 16.7f, 27.4f, 13.6f, 0.9f, stick); }
-  else            { c.line(20.5f, 19, 25.5f, 9.5f, 1.1f, stick);  c.line(24.4f, 11.6f, 27.8f, 10.6f, 0.9f, stick); }
-  struct Ball { float y, r; } balls[] = {{33.f, 9.f}, {20.5f, 6.8f}, {10.5f, 5.f}};
-  for (auto& b : balls) c.circle(15, b.y, b.r + 0.7f, outline);
-  for (auto& b : balls) { c.circle(15, b.y, b.r, shade); c.circle(15 - b.r * 0.16f, b.y - b.r * 0.18f, b.r * 0.8f, kWhite); }
-  // scarf
-  c.ellipse(15, 15.7f, 5.8f, 1.7f, red);
-  c.poly({{16.8f, 15.6f}, {19.6f, 15.4f}, {20.4f, 21.4f}, {18.2f, 21.6f}}, red);
-  c.line(18.4f, 19.6f, 20.2f, 19.4f, 0.5f, Col{1, 1, 1, 0.8f});
-  // face
-  c.circle(13.2f, 9.3f, 0.8f, coal); c.circle(16.8f, 9.3f, 0.8f, coal);
-  c.poly({{15.f, 10.9f}, {15.f, 12.3f}, {21.f, 11.9f}}, carrot);
-  for (int i = 0; i < 5; ++i) { float a = PI * (0.25f + 0.125f * i); c.circle(15 + std::cos(a) * 2.6f, 11.4f + std::sin(a) * 2.2f, 0.42f, coal); }
+// ------------------------------------------------------------------------------------------- snowballs and snowmen
+// A shaded snowball of radius r pixels, anchored at its centre.
+Sprite makeBall(float r) {
+  float pad = 2.f;
+  Canvas c(-r - pad, -r - pad, 2 * (r + pad), 2 * (r + pad), 1.f, 4);
+  c.circle(0, 0, r + 0.75f, Col{0.4f, 0.48f, 0.62f, 0.85f});            // edge, so it shows on white
+  c.circle(0, 0, r, Col{0.8f, 0.86f, 0.96f, 1});                          // shadow side
+  c.circle(-r * 0.16f, -r * 0.18f, r * 0.8f, Col{0.95f, 0.97f, 1.f, 1});
+  c.circle(-r * 0.3f, -r * 0.34f, r * 0.42f, kWhite);                    // highlight
+  return c.finish(0, 0);
+}
+
+// Everything on a snowman except the balls: face, hat, scarf, buttons, stick arms. r[0] is the bottom ball;
+// the sprite's anchor is where the bottom ball sits on the snow, so it lines up with snowmanCentres().
+// hat: 0 Santa hat, 1 top hat, 2 bobble hat. frame 1 waves.
+Sprite makeSnowmanDecor(const float r[3], int n, int hat, int hatColor, bool facingRight, int frame) {
+  float c[3];
+  snowmanCentres(r, n, c);
+  const int t = n - 1;
+  const float rt = r[t], ct = -c[t];                 // top ball: radius and centre (y down)
+  const int bi = n >= 3 ? 1 : 0;                     // ball the arms and buttons go on
+  const float rb = r[bi], cb = -c[bi];
+  const float f = facingRight ? 1.f : -1.f;
+  float W = std::max(r[0], rb * 2.3f) + 4, top = ct - rt * 2.2f - 3;
+  Canvas cv(-W, top, 2 * W, -top + 3, 1.f, 4);
+  const Col coal{0.1f, 0.1f, 0.12f, 1}, stick{0.42f, 0.27f, 0.13f, 1}, carrot{0.98f, 0.5f, 0.1f, 1};
+  const Col red{0.82f, 0.13f, 0.14f, 1}, redD{0.62f, 0.07f, 0.08f, 1}, white{0.98f, 0.98f, 0.98f, 1};
+  static const Col hatCols[] = {{0.82f, 0.13f, 0.14f, 1}, {0.15f, 0.55f, 0.3f, 1}, {0.2f, 0.42f, 0.85f, 1}, {0.55f, 0.3f, 0.75f, 1}};
+  // stick arms
+  float aw = std::max(0.9f, rb * 0.13f);
+  for (float sd : {-1.f, 1.f}) {
+    float sx = sd * rb * 0.8f, sy = cb - rb * 0.15f;
+    bool wave = frame == 1 && sd == f;
+    float ex = sd * rb * (wave ? 1.65f : 2.05f), ey = cb - rb * (wave ? 1.75f : 0.85f);
+    cv.line(sx, sy, ex, ey, aw, stick);
+    float mx = sx + (ex - sx) * 0.7f, my = sy + (ey - sy) * 0.7f;
+    cv.line(mx, my, mx + sd * rb * 0.25f, my - rb * 0.42f, aw * 0.8f, stick);
+  }
   // buttons
-  c.circle(15, 18.6f, 0.75f, coal); c.circle(15, 21.8f, 0.75f, coal); c.circle(15, 25.2f, 0.8f, coal);
-  // top hat
-  c.rect(9.3f, 5.0f, 20.7f, 6.6f, coal);
-  c.rect(11.4f, -3.0f, 18.6f, 5.4f, coal);
-  c.rect(11.4f, 2.8f, 18.6f, 4.4f, red);
-  c.line(12.4f, -2.2f, 12.4f, 2.0f, 0.5f, Col{1, 1, 1, 0.18f});
-  return c.finish(15, 42);
+  if (n >= 3)
+    for (float k : {-0.38f, 0.02f, 0.42f}) cv.circle(f * rb * 0.08f, cb + rb * k, std::max(0.6f, rb * 0.1f), coal);
+  // scarf at the neck
+  {
+    float ny = ct + rt * 0.9f;
+    cv.ellipse(0, ny, rt * 1.08f, std::max(1.f, rt * 0.3f), red);
+    float tx = -f * rt * 0.45f;
+    cv.poly({{tx - rt * 0.22f, ny}, {tx + rt * 0.26f, ny}, {tx + rt * 0.34f - f * rt * 0.12f, ny + rt * 1.1f}, {tx - rt * 0.16f - f * rt * 0.12f, ny + rt * 1.12f}}, red);
+    cv.line(tx - rt * 0.18f - f * rt * 0.1f, ny + rt * 0.9f, tx + rt * 0.3f - f * rt * 0.1f, ny + rt * 0.88f, std::max(0.5f, rt * 0.1f), Col{1, 1, 1, 0.8f});
+  }
+  // face, turned a little towards where he looks
+  float ex0 = f * rt * 0.14f;
+  cv.circle(ex0 - rt * 0.3f, ct - rt * 0.16f, std::max(0.55f, rt * 0.12f), coal);
+  cv.circle(ex0 + rt * 0.3f, ct - rt * 0.16f, std::max(0.55f, rt * 0.12f), coal);
+  cv.poly({{f * rt * 0.12f, ct + rt * 0.02f}, {f * rt * 0.12f, ct + rt * 0.26f}, {f * rt * 1.05f, ct + rt * 0.16f}}, carrot);
+  for (int i = 0; i < 5; ++i) {
+    float a = PI * (0.22f + 0.14f * i);
+    cv.circle(ex0 + std::cos(a) * rt * 0.42f, ct + rt * 0.2f + std::sin(a) * rt * 0.3f, std::max(0.4f, rt * 0.07f), coal);
+  }
+  // hat
+  if (hat == 0) {  // Santa hat: a tall cone leaning back, its tip flopping down behind
+    float by = ct - rt * 0.6f, ax = -f * rt * 0.15f, ay = by - rt * 1.3f;
+    cv.poly({{-rt * 0.9f, by}, {rt * 0.9f, by}, {ax, ay}}, red);
+    cv.poly({{rt * 0.2f, by}, {rt * 0.9f, by}, {ax, ay}}, redD);
+    cv.line(ax, ay + rt * 0.05f, -f * rt * 0.95f, by - rt * 0.72f, rt * 0.4f, red);
+    cv.circle(-f * rt * 1.0f, by - rt * 0.66f, rt * 0.3f, white);
+    cv.line(-rt * 0.95f, by, rt * 0.95f, by, rt * 0.46f, white);
+  } else if (hat == 1) {  // top hat
+    cv.rect(-rt * 1.0f, ct - rt * 0.8f, rt * 1.0f, ct - rt * 0.6f, coal);
+    cv.rect(-rt * 0.64f, ct - rt * 1.85f, rt * 0.64f, ct - rt * 0.7f, coal);
+    cv.rect(-rt * 0.64f, ct - rt * 1.0f, rt * 0.64f, ct - rt * 0.8f, red);
+  } else {  // bobble hat
+    Col hc = hatCols[hatColor % 4];
+    std::vector<std::pair<float, float>> dome;
+    for (int i = 0; i <= 12; ++i) { float a = PI + PI * i / 12; dome.push_back({std::cos(a) * rt * 0.9f, ct - rt * 0.55f + std::sin(a) * rt * 0.85f}); }
+    cv.poly(dome, hc);
+    cv.rect(-rt * 0.95f, ct - rt * 0.72f, rt * 0.95f, ct - rt * 0.45f, white);
+    cv.circle(0, ct - rt * 1.45f, rt * 0.3f, white);
+  }
+  return cv.finish(0, 0);
+}
+
+// The little snowplow: yellow, with tracks, a flashing light and a blade. Anchor: bottom centre of the tracks.
+Sprite makeSnowplow(float scale, int frame, bool facingRight) {
+  Canvas c(-24, -36, 52, 38, scale, 4);
+  const Col track{0.16f, 0.16f, 0.18f, 1}, trackIn{0.3f, 0.3f, 0.34f, 1}, wheel{0.64f, 0.65f, 0.69f, 1};
+  const Col yellow{0.98f, 0.77f, 0.13f, 1}, yellowD{0.85f, 0.6f, 0.06f, 1}, glass{0.62f, 0.83f, 0.96f, 1}, dark{0.2f, 0.2f, 0.22f, 1};
+  const Col steel{0.74f, 0.77f, 0.82f, 1}, steelD{0.5f, 0.53f, 0.58f, 1};
+  // exhaust pipe and the cab
+  c.rect(8.f, -23.f, 10.f, -16.f, dark);
+  c.rect(-15.f, -27.f, 1.5f, -9.f, yellow);
+  c.rect(-12.5f, -25.f, -1.f, -17.f, glass);
+  c.poly({{-12.5f, -25.f}, {-8.5f, -25.f}, {-12.5f, -20.f}}, Col{1, 1, 1, 0.45f});
+  c.rect(-16.f, -28.2f, 2.5f, -26.6f, yellowD);
+  // engine
+  c.rect(1.f, -17.f, 14.5f, -9.f, yellow);
+  c.rect(1.f, -13.6f, 14.5f, -12.6f, yellowD);
+  c.rect(-19.f, -10.f, 15.f, -8.f, dark);
+  // flashing light
+  c.rect(-8.6f, -30.f, -5.4f, -28.f, dark);
+  bool on = frame & 2;
+  if (on) c.circle(-7.f, -31.f, 5.f, Col{1, 0.55f, 0.1f, 0.3f});
+  c.circle(-7.f, -31.f, 1.9f, on ? Col{1, 0.62f, 0.12f, 1} : Col{0.7f, 0.36f, 0.08f, 1});
+  // tracks and wheels
+  c.line(-19.f, -4.5f, 13.f, -4.5f, 9.f, track);
+  c.line(-19.f, -4.5f, 13.f, -4.5f, 6.4f, trackIn);
+  for (float x : {-17.f, -9.f, -1.f, 7.f}) {
+    c.circle(x, -4.5f, 2.6f, wheel);
+    float a = (frame & 1) * 0.785f + x;
+    c.line(x - std::cos(a) * 2.f, -4.5f - std::sin(a) * 2.f, x + std::cos(a) * 2.f, -4.5f + std::sin(a) * 2.f, 0.6f, dark);
+    c.circle(x, -4.5f, 0.9f, dark);
+  }
+  // blade
+  c.line(13.f, -9.f, 19.f, -6.5f, 1.6f, dark);
+  c.line(13.f, -5.f, 19.f, -3.5f, 1.4f, dark);
+  c.poly({{18.f, -15.f}, {21.5f, -16.f}, {25.f, -0.5f}, {19.5f, 0.f}}, steel);
+  c.line(21.5f, -16.f, 25.f, -0.5f, 0.9f, steelD);
+  return c.finish(0, 0, !facingRight);
 }
 
 // ------------------------------------------------------------------------------------------- present
