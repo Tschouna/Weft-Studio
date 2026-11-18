@@ -58,7 +58,7 @@ enum : UINT {
   ID_STORM = 160, ID_SHAKE,
   ID_ALLSCREENS = 170, ID_FULLSCREEN, ID_STARTUP, ID_FPS0 = 175,
   ID_ABOUT = 180, ID_QUIT,
-  ID_WINDPAD = 190, ID_DECORATE, ID_SHOW_DECOS, ID_SHOW_LIGHTS,
+  ID_WINDPAD = 190, ID_DECORATE, ID_SHOW_DECOS, ID_SHOW_LIGHTS, ID_OVER_WINDOWS,
   ID_PRESET0 = 200,
 };
 enum { HK_PAUSE = 1, HK_STORM, HK_SANTA, HK_PLOW };
@@ -90,6 +90,7 @@ void loadSettings() {
   S.eng.windX = std::clamp(iniInt(L"WindX", 25), -100, 100) / 100.f;
   S.eng.windY = std::clamp(iniInt(L"WindY", 0), -100, 100) / 100.f;
   S.eng.decorations = iniInt(L"Decorations", 1) != 0;
+  S.eng.overWindows = iniInt(L"SnowOverWindows", 0) != 0;
   S.eng.lights = iniInt(L"Lights", 1) != 0;
   S.eng.flakes = std::clamp(iniInt(L"Flakes", 1), 0, 2);
   S.eng.pileWindows = iniInt(L"PileOnWindows", 1) != 0;
@@ -110,6 +111,7 @@ void saveSettings() {
   iniPut(L"Amount", S.eng.amount); iniPut(L"Flakes", S.eng.flakes);
   iniPut(L"WindX", (int)std::lround(S.eng.windX * 100)); iniPut(L"WindY", (int)std::lround(S.eng.windY * 100));
   iniPut(L"Decorations", S.eng.decorations); iniPut(L"Lights", S.eng.lights);
+  iniPut(L"SnowOverWindows", S.eng.overWindows);
   iniPut(L"PileOnWindows", S.eng.pileWindows); iniPut(L"PileOnTaskbar", S.eng.pileTaskbar);
   iniPut(L"Icicles", S.eng.icicles); iniPut(L"Mouse", S.eng.mouse); iniPut(L"Snowmen", S.eng.snowmen); iniPut(L"Snowplow", S.eng.snowplow);
   iniPut(L"Presents", S.eng.presents); iniPut(L"Santa", S.santa); iniPut(L"Animation", S.fps);
@@ -485,8 +487,8 @@ Seen describe(HWND h, snow::Win& out) {
   if (!wcscmp(cls, L"Shell_TrayWnd") || !wcscmp(cls, L"Shell_SecondaryTrayWnd")) { out.kind = snow::Kind::Taskbar; return Seen::Use; }
   const MonRec* m = monitorAt((r.left + r.right) / 2, std::max(r.top, (r.top + r.bottom) / 2 - 1));
   bool coversScreen = m && r.left <= m->rc.left && r.top <= m->rc.top && r.right >= m->rc.right && r.bottom >= m->rc.bottom;
-  // Invisible full-screen topmost windows (some overlays) would hide every pile.
-  if (coversScreen && (ex & WS_EX_TOPMOST)) return Seen::Skip;
+  // Invisible full-screen topmost overlays would hide all the snow; real full-screen apps do hide it.
+  if (coversScreen && (ex & WS_EX_TOPMOST) && (ex & (WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW))) return Seen::Skip;
   bool app = !(st & WS_CHILD) && !(ex & WS_EX_TOOLWINDOW) && !IsZoomed(h) && !coversScreen;
   for (auto* c : kNotApps) if (app && !wcscmp(cls, c)) app = false;
   if (app && (st & WS_CAPTION) != WS_CAPTION) {
@@ -611,6 +613,7 @@ void showMenu(POINT pt) {
   add(m, ID_SHAKE, L"Shake all the snow off", false, !S.paused);
   AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
   HMENU more = CreatePopupMenu();
+  add(more, ID_OVER_WINDOWS, L"Snow falls in front of windows too", S.eng.overWindows);
   add(more, ID_ALLSCREENS, L"Snow on every screen", S.allScreens);
   add(more, ID_FULLSCREEN, L"Pause for full-screen games and videos", S.fullscreenPause);
   add(more, ID_STARTUP, L"Start with Windows", startupEnabled());
@@ -700,6 +703,7 @@ void command(UINT id) {
     case ID_DECORATE: startEditing(); break;
     case ID_SHOW_DECOS: S.eng.decorations = !S.eng.decorations; apply(); break;
     case ID_SHOW_LIGHTS: S.eng.lights = !S.eng.lights; apply(); break;
+    case ID_OVER_WINDOWS: S.eng.overWindows = !S.eng.overWindows; apply(); break;
     case ID_PILE_WIN: S.eng.pileWindows = !S.eng.pileWindows; apply(); break;
     case ID_PILE_TASKBAR: S.eng.pileTaskbar = !S.eng.pileTaskbar; apply(); break;
     case ID_ICICLES: S.eng.icicles = !S.eng.icicles; apply(); break;

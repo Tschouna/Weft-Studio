@@ -1,6 +1,6 @@
 # Snowfall
 
-Snow for your Windows 11 desktop. It falls in front of everything and piles up on top of your open app windows and on the taskbar. Hang strings of lights between your windows and put a little village on the taskbar. It never gets in the way: every click goes straight through to whatever is underneath.
+Snow for your Windows 11 desktop. It falls on the desktop, behind your app windows, so it never covers what you're working on, and it piles up on top of the windows and on the taskbar. (**Settings → Snow falls in front of windows too** puts it in front of everything instead.) Hang strings of lights between your windows and put a little village on the taskbar. It never gets in the way: every click goes straight through to whatever is underneath.
 
 ## Using it
 
@@ -19,7 +19,7 @@ Snow for your Windows 11 desktop. It falls in front of everything and piles up o
 
 Click the snowflake by the clock and choose **Decorate your desktop…**. The screen dims a little and a toolbar opens at the top:
 
-- **String lights:** pick them in the toolbar, then click where they should start and click again for each joint. Double-click, right-click or press Enter to finish. A joint you put on a window hangs from that window and follows it when you move it. Lights hung only from points on the screen hang in front of everything, like a garland on the glass.
+- **String lights:** pick them in the toolbar, then click where they should start and click again for each joint. Double-click, right-click or press Enter to finish. A joint you put on a window hangs from that window and follows it when you move it. Lights hung only from points on the screen hang on the desktop, behind your windows, like the snow.
 - **Decorations:** a holiday house, hydrant, street lamp, lantern, frosted pine, decorated fir, presents, a bench, a market stall, a snowman and a candy cane. Pick one, then click along the bottom of the screen to place it. Snow settles on their roofs; the lamp and the lantern glow.
 - **Move** decorations and joints by dragging them. **Remove** one with a right-click, or select lights and press Delete.
 - **Colours** (warm white, multicolour, cool white, red and green, gold, blue) and **Slack** (how much the lights sag) apply to the selected lights and to new ones.

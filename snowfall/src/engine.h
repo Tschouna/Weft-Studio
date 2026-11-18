@@ -55,6 +55,8 @@ struct Settings {
   bool snowmen = true;   // snowballs and snowmen on windows and the taskbar
   bool snowplow = true;  // a snowplow clears the taskbar now and then
   bool presents = true;
+  bool overWindows = false; // false: falling snow (and the taskbar village) is on the desktop, behind every
+                            // window; only the snow piled on top of windows shows. true: in front of everything
   bool decorations = true;  // the little houses, lamps and trees on the taskbar
   bool lights = true;       // strings of lights
 };

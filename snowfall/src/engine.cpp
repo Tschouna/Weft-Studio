@@ -230,6 +230,7 @@ struct World::Impl {
   struct LightSim { std::vector<Span> spans; std::vector<Rect> occ; bool onTop = true; };
   std::vector<LightSim> lightSim;
   std::vector<Win> zlist_;
+  std::vector<Rect> deskOcc;  // every window: falling snow is on the desktop, behind all of them
   std::unordered_map<uint64_t, Rect> winRect;
   std::unordered_map<uint64_t, int> winZ;
   std::vector<uint64_t> keep_;
@@ -989,7 +990,11 @@ struct World::Impl {
     }
     sim.occ.clear();
     sim.onTop = front == (1 << 30);
-    if (sim.onTop) return;
+    if (sim.onTop) {  // only on the screen: on the desktop, behind every window (unless snow goes over windows)
+      sim.occ = deskOcc;
+      sim.onTop = deskOcc.empty();
+      return;
+    }
     for (int k = 0; k < front && k < (int)zlist_.size(); ++k) sim.occ.push_back(zlist_[k].r);
   }
 
@@ -1187,13 +1192,8 @@ struct World::Impl {
           float gap = (float)(b->r.l - a->r.r);
           if (gap > -40 * m.scale && gap < 900 * m.scale) { addString({corner(a, 1), corner(b, 0)}, 0.6f, ed.colors); ++made; }
         }
-        // overlapping windows: drape lights along the top edges of the two in front instead
-        if (!made) {
-          int k = 0;
-          for (auto& w : zlist_)
-            if (w.kind == Kind::Window && k < 2) { addString({corner(&w, 0), corner(&w, 1)}, 0.12f, ed.colors); ++k; }
-          if (!k) preset(kPresetGarland);
-        }
+        // overlapping windows: a garland on the desktop instead, so nothing hangs over them
+        if (!made) preset(kPresetGarland);
         return;
       }
     }
@@ -1595,8 +1595,23 @@ struct World::Impl {
       l = std::max(l, 0); tp = std::max(tp, 0); r = std::min(r, t.w); b = std::min(b, t.h);
       if (l < r && tp < b) drawn.push_back({l, tp, r, b});
     }
+    // Is the box l,t-r,b behind the windows in occ? 0 all of it, 1 none of it, 2 partly.
+    static int coverage(const std::vector<Rect>* occ, float l, float tp, float r, float b) {
+      if (!occ || occ->empty()) return 1;
+      bool part = false;
+      for (auto& o : *occ) {
+        if (o.l <= l && o.t <= tp && o.r >= r && o.b >= b) return 0;
+        if (o.l < r && l < o.r && o.t < b && tp < o.b) part = true;
+      }
+      return part ? 2 : 1;
+    }
     // An anti-aliased round flake with a faint dark halo (so it still shows on white windows).
     void dot(float vx, float vy, float r, float a, uint32_t color = 0, float halo = 0.16f, const std::vector<Rect>* occ = nullptr) {
+      if (occ) {
+        int c = coverage(occ, vx - r - 1.5f, vy - r - 1.5f, vx + r + 1.5f, vy + r + 1.5f);
+        if (c == 0) return;
+        if (c == 1) occ = nullptr;
+      }
       float x = vx - ox, y = vy - oy;
       int x0 = (int)std::floor(x - r - 1.5f), x1 = (int)std::ceil(x + r + 1.5f);
       int y0 = (int)std::floor(y - r - 1.5f), y1 = (int)std::ceil(y + r + 1.5f);
@@ -1626,6 +1641,11 @@ struct World::Impl {
     // An anti-aliased line of width w (premultiplied colour c).
     void line(float ax, float ay, float bx, float by, float w, uint32_t c, const std::vector<Rect>* occ = nullptr) {
       float hw = w * 0.5f;
+      if (occ) {
+        int cv = coverage(occ, std::min(ax, bx) - hw - 1, std::min(ay, by) - hw - 1, std::max(ax, bx) + hw + 1, std::max(ay, by) + hw + 1);
+        if (cv == 0) return;
+        if (cv == 1) occ = nullptr;
+      }
       int x0 = (int)std::floor(std::min(ax, bx) - hw - 1) - ox, x1 = (int)std::ceil(std::max(ax, bx) + hw + 1) - ox;
       int y0 = (int)std::floor(std::min(ay, by) - hw - 1) - oy, y1 = (int)std::ceil(std::max(ay, by) + hw + 1) - oy;
       x0 = std::max(x0, 0); y0 = std::max(y0, 0); x1 = std::min(x1, t.w); y1 = std::min(y1, t.h);
@@ -1644,6 +1664,11 @@ struct World::Impl {
     }
     // A thin anti-aliased line (about 1-1.6 px): points every half pixel, each spread over 4 pixels.
     void thinLine(float ax, float ay, float bx, float by, uint32_t c, const std::vector<Rect>* occ = nullptr) {
+      if (occ) {
+        int cv = coverage(occ, std::min(ax, bx) - 2, std::min(ay, by) - 2, std::max(ax, bx) + 2, std::max(ay, by) + 2);
+        if (cv == 0) return;
+        if (cv == 1) occ = nullptr;
+      }
       float dx = bx - ax, dy = by - ay, len = std::sqrt(dx * dx + dy * dy);
       int n = std::max(1, (int)(len * 2));
       int minX = 1 << 30, minY = 1 << 30, maxX = -(1 << 30), maxY = -(1 << 30);
@@ -1694,6 +1719,12 @@ struct World::Impl {
       int X0 = (int)std::lround(vx) - s.ox - ox, Y0 = (int)std::lround(vy) - s.oy - oy;
       int x0 = std::max(0, -X0), y0 = std::max(fromRow, -Y0), x1 = std::min(s.w, t.w - X0), y1 = std::min(s.h, t.h - Y0);
       if (x0 >= x1 || y0 >= y1) return;
+      if (occ) {
+        float gl = (float)(X0 + ox), gt = (float)(Y0 + oy);
+        int c = coverage(occ, gl + x0, gt + y0, gl + x1, gt + y1);
+        if (c == 0) return;
+        if (c == 1) occ = nullptr;
+      }
       uint32_t k = (uint32_t)(std::clamp(alpha, 0.f, 1.f) * 256);
       for (int y = y0; y < y1; ++y) {
         uint32_t* row = t.px + (size_t)(Y0 + y) * t.stride + X0;
@@ -1786,7 +1817,7 @@ struct World::Impl {
   }
 
   void drawObj(Painter& P, Obj& o, const Rect& mon, SpriteSet& sp) {
-    const std::vector<Rect>* occ = nullptr;
+    const std::vector<Rect>* occ = &deskOcc;  // in the air: behind the windows like the falling snow
     if (o.pile) {
       Pile* p = pileById(o.pile);
       if (!p || !p->visible) return;
@@ -1968,7 +1999,8 @@ struct World::Impl {
         P.blit(sp.plow[plow.right ? 1 : 0][frame], plow.x, g->base + std::sin(plow.t * 25) * 0.35f * m.scale, 1, &g->occ);
       }
     }
-    // falling snow
+    // falling snow, on the desktop: behind every window
+    const std::vector<Rect>* desk = deskOcc.empty() ? nullptr : &deskOcc;
     for (const Flake& f : flakes) {
       if (f.mon != mi) continue;
       if (f.crystal) {
@@ -1976,33 +2008,33 @@ struct World::Impl {
         if (a < 0) a += PI / 3;
         int ai = (int)(a / (PI / 3) * kAngles) % kAngles;
         const Sprite& s = sp.crystals[((size_t)f.variant * kBuckets + f.rbucket) * kAngles + ai];
-        P.blit(s, f.x, f.y, f.alpha);
+        P.blit(s, f.x, f.y, f.alpha, desk);
       } else {
-        P.dot(f.x, f.y, f.r, f.alpha);
+        P.dot(f.x, f.y, f.r, f.alpha, 0, 0.16f, desk);
       }
     }
     for (const Clump& c : clumps) {
       if (c.mon != mi) continue;
       switch (c.kind) {
-        case kSnow: P.dot(c.x, c.y, c.r, 0.97f); break;
-        case kIce: P.dot(c.x, c.y, c.r, 0.9f, pm(205, 232, 255, 1), 0.1f); break;
-        case kDrop: P.dot(c.x, c.y, c.r, 0.85f, c.color, 0.08f); break;
-        case kDebris: P.dot(c.x, c.y, c.r, 1, c.color, 0.f); break;
+        case kSnow: P.dot(c.x, c.y, c.r, 0.97f, 0, 0.16f, desk); break;
+        case kIce: P.dot(c.x, c.y, c.r, 0.9f, pm(205, 232, 255, 1), 0.1f, desk); break;
+        case kDrop: P.dot(c.x, c.y, c.r, 0.85f, c.color, 0.08f, desk); break;
+        case kDebris: P.dot(c.x, c.y, c.r, 1, c.color, 0.f, desk); break;
         case kSmoke: {
           float k = std::clamp(c.life / 1.6f, 0.f, 1.f);
-          P.dot(c.x, c.y, c.r * (1 + (1 - k) * 1.8f), 0.32f * k, c.color, 0.f);
+          P.dot(c.x, c.y, c.r * (1 + (1 - k) * 1.8f), 0.32f * k, c.color, 0.f, desk);
           break;
         }
         case kGlitter: {
           float tw = 0.55f + 0.45f * std::sin(time * 18 + c.x * 0.7f);
-          P.dot(c.x, c.y, c.r, std::min(1.f, c.life) * tw, c.color, 0.f);
+          P.dot(c.x, c.y, c.r, std::min(1.f, c.life) * tw, c.color, 0.f, desk);
           break;
         }
       }
     }
     if (santa.on && santa.mon == mi) {
       int frame = (int)(santa.t * 9) & 3;
-      P.blit(sp.santa[santa.right ? 1 : 0][frame], santa.x, santaY());
+      P.blit(sp.santa[santa.right ? 1 : 0][frame], santa.x, santaY(), 1, desk);
     }
     if (ed.on) drawEditor(P, mi, sp);
     for (auto& r : st.drawn) dirty = unite(dirty, r);
@@ -2017,7 +2049,9 @@ World::~World() = default;
 void World::configure(const Settings& s) {
   bool windowsOff = set_.pileWindows && !s.pileWindows, taskbarOff = set_.pileTaskbar && !s.pileTaskbar;
   bool decorationsChanged = set_.decorations != s.decorations;
+  bool layerChanged = set_.overWindows != s.overWindows;
   set_ = s;
+  if (layerChanged) { auto z = d_->zlist_; auto k = d_->keep_; setWindows(z, k); }
   if (windowsOff || taskbarOff)
     for (auto& kv : d_->piles) {
       Pile& p = *kv.second;
@@ -2095,6 +2129,9 @@ void World::setWindows(const std::vector<Win>& z, const std::vector<uint64_t>& k
   auto& D = *d_;
   D.zlist_ = z;
   D.keep_ = keep;
+  D.deskOcc.clear();
+  if (!set_.overWindows)
+    for (auto& w : z) D.deskOcc.push_back(w.r);
   D.winRect.clear();
   D.winZ.clear();
   for (size_t i = 0; i < z.size(); ++i) { D.winRect[z[i].id] = z[i].r; D.winZ[z[i].id] = (int)i; }
@@ -2166,12 +2203,15 @@ void World::setWindows(const std::vector<Win>& z, const std::vector<uint64_t>& k
       uint64_t tb = p.mon < (int)mons_.size() ? mons_[p.mon].taskbar : 0;
       for (size_t i = 0; i < z.size(); ++i) if (tb && z[i].id == tb) zi = (int)i;
       p.z = zi < 0 ? -1 : zi;
-      if (zi < 0) continue;  // no taskbar: the snow on the floor of the screen is in front of everything
+      if (zi < 0 && set_.overWindows) continue;  // no taskbar, and snow over windows: in front of everything
     }
     // tall enough for snowmen standing on the pile
     Rect band{(int)p.x0, (int)(p.base - p.maxH - 90 * p.scale), (int)p.x0 + p.width, (int)(p.base + 18 * p.scale)};
-    for (int i = 0; i < zi && i < (int)z.size(); ++i) {
-      if (z[i].id == p.id) continue;
+    // the snow along the taskbar lies on the desktop: every window hides it (unless snow goes over windows)
+    int upTo = p.kind == Kind::Taskbar && !set_.overWindows ? (int)z.size() : zi;
+    uint64_t tb = p.kind == Kind::Taskbar && p.mon < (int)mons_.size() ? mons_[p.mon].taskbar : 0;
+    for (int i = 0; i < upTo && i < (int)z.size(); ++i) {
+      if (z[i].id == p.id || z[i].id == tb) continue;
       Rect o = intersect(z[i].r, band);
       if (!o.empty()) p.occ.push_back(o);
     }
