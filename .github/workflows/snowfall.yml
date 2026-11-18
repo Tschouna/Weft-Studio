@@ -47,17 +47,34 @@ jobs:
           name: Snowfall
           path: snowfall/dist/Snowfall.exe
           retention-days: 30
-      - name: Open some windows, run Snowfall, take a screenshot
+      - name: Open some windows, run Snowfall, shake a window, take screenshots
         working-directory: snowfall/dist
         shell: powershell
         run: |
           "exe size: $((Get-Item .\Snowfall.exe).Length) bytes"
           Add-Type -AssemblyName System.Drawing, System.Windows.Forms
-          Add-Type @"
-          using System; using System.Runtime.InteropServices;
+          Add-Type -ReferencedAssemblies System.Drawing @"
+          using System; using System.Drawing; using System.Runtime.InteropServices;
           public static class W {
             [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool r);
             [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
+            [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
+            [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+            [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
+            [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
+            [DllImport("gdi32.dll")] static extern bool BitBlt(IntPtr d, int x, int y, int w, int h, IntPtr s, int sx, int sy, int rop);
+            [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
+            [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+            // a screenshot that includes layered (see-through) windows: SRCCOPY | CAPTUREBLT
+            public static void Shot(int w, int h, string path) {
+              IntPtr screen = GetDC(IntPtr.Zero), dc = CreateCompatibleDC(screen), bmp = CreateCompatibleBitmap(screen, w, h);
+              IntPtr old = SelectObject(dc, bmp);
+              BitBlt(dc, 0, 0, w, h, screen, 0, 0, 0x00CC0020 | 0x40000000);
+              SelectObject(dc, old);
+              using (Bitmap b = Image.FromHbitmap(bmp)) b.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+              DeleteObject(bmp); DeleteDC(dc); ReleaseDC(IntPtr.Zero, screen);
+            }
           }
           "@
           $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -71,34 +88,27 @@ jobs:
             [W]::MoveWindow($n.MainWindowHandle, $p[0], $p[1], $p[2], $p[3], $true) | Out-Null
           }
           [W]::SetForegroundWindow($procs[1].MainWindowHandle) | Out-Null
-          $snow = Start-Process .\Snowfall.exe -ArgumentList '--selftest', '45', "$PWD\selftest.txt" -PassThru
+          $snow = Start-Process .\Snowfall.exe -ArgumentList '--selftest', '50', "$PWD\selftest.txt" -PassThru
           Start-Sleep -Seconds 40
           $mem = Get-Process -Id $snow.Id | Select-Object WorkingSet64, PrivateMemorySize64, CPU
-          "Task Manager view after 40 s: working set $([math]::Round($mem.WorkingSet64/1MB,1)) MB, private $([math]::Round($mem.PrivateMemorySize64/1MB,1)) MB, CPU time $([math]::Round($mem.CPU,2)) s"
-          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-          $g = [System.Drawing.Graphics]::FromImage($bmp)
-          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size, [System.Drawing.CopyPixelOperation]::SourceCopy -bor [System.Drawing.CopyPixelOperation]::CaptureBlt)
-          $bmp.Save("$PWD\screenshot.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          "after 40 s: working set $([math]::Round($mem.WorkingSet64/1MB,1)) MB, private $([math]::Round($mem.PrivateMemorySize64/1MB,1)) MB, CPU time $([math]::Round($mem.CPU,2)) s"
+          [W]::Shot($b.Width, $b.Height, "$PWD\screenshot.png")
+          # shake the right-hand window back and forth
+          $h = $procs[2].MainWindowHandle
+          for ($k = 0; $k -lt 24; $k++) { $x = 620 + [int](70 * [math]::Sin($k * 1.3)); [W]::MoveWindow($h, $x, 90, 360, 300, $true) | Out-Null; Start-Sleep -Milliseconds 30 }
+          [W]::MoveWindow($h, 620, 90, 360, 300, $true) | Out-Null
+          Start-Sleep -Milliseconds 250
+          [W]::Shot($b.Width, $b.Height, "$PWD\screenshot-shake.png")
           $snow.WaitForExit(30000) | Out-Null
           "exit code: $($snow.ExitCode)"
           Get-Content selftest.txt
           foreach ($n in $procs) { Stop-Process -Id $n.Id -ErrorAction SilentlyContinue }
-          # a small JPEG of the screenshot in the log, for quick checks without downloading the artifact
-          $small = New-Object System.Drawing.Bitmap $bmp, ([int]($b.Width / 2)), ([int]($b.Height / 2))
-          $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
-          $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
-          $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 80L
-          $ms = New-Object System.IO.MemoryStream
-          $small.Save($ms, $codec, $ep)
-          "SCREENSHOT-BEGIN"
-          [Convert]::ToBase64String($ms.ToArray()) -split '(.{1,4000})' | Where-Object { $_ }
-          "SCREENSHOT-END"
           if (-not (Test-Path selftest.txt)) { throw "Snowfall did not finish its self-test" }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Snowfall-on-Windows
           path: |
-            snowfall/dist/screenshot.png
+            snowfall/dist/screenshot*.png
             snowfall/dist/selftest.txt
           retention-days: 7
