@@ -42,7 +42,10 @@ Settings are kept in `%APPDATA%\Snowfall\settings.ini`.
 
 ## Building
 
-On Linux with MinGW-w64 (`apt install g++-mingw-w64-x86-64-posix`), run `./build.sh`. It writes `dist/Snowfall.exe`.
+- **On Windows:** open the "x64 Native Tools Command Prompt for VS" and run `build-msvc.cmd`.
+- **On Linux:** install MinGW-w64 (`apt install g++-mingw-w64-x86-64-posix`) and run `./build.sh`.
+
+Both write `dist/Snowfall.exe`.
 
 The engine (`src/engine.cpp`, `src/sprites.cpp`) has no Windows code. `tools/preview.cpp` runs it on a pretend desktop and saves screenshots, so you can work on the look without Windows:
 
@@ -52,4 +55,4 @@ g++ -O2 -std=c++17 -Isrc src/engine.cpp src/sprites.cpp tools/preview.cpp -o pre
 
 `tools/make_icon.cpp` regenerates `src/icon.ico` from the same drawing code.
 
-The **Snowfall** GitHub workflow builds the exe on every push that touches this folder. It also runs the exe on a real Windows machine next to a few open windows and reports memory use, frame times and a screenshot. Each run has the exe attached as the **Snowfall** artifact.
+The **Snowfall** GitHub workflow builds the exe on Windows on every push that touches this folder. It also runs the exe on a real Windows machine next to a few open windows and reports memory use, frame times and a screenshot. Each run has the exe attached as the **Snowfall** artifact.

@@ -1,7 +1,7 @@
 # Snowfall, the desktop snow app in snowfall/:
-# - builds Snowfall.exe (one file, no installer) with MinGW on Linux, after rendering the engine preview
-# - runs it on a real Windows machine next to a few app windows, and reports memory, frame times and what it
-#   saw, plus a screenshot
+# - renders the engine preview on Linux (a pretend desktop; also times the engine)
+# - builds Snowfall.exe (one file, no installer) on Windows with Visual Studio's compiler, then runs it next
+#   to a few app windows and reports memory, frame times and what it saw, plus a screenshot
 # The exe is attached to each run as the "Snowfall" artifact.
 name: Snowfall
 
@@ -15,50 +15,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  preview:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Install MinGW
-        timeout-minutes: 10
-        run: |
-          # skip the man-page index rebuild, which can take minutes on hosted runners
-          echo 'man-db man-db/auto-update boolean false' | sudo debconf-set-selections
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends g++-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64
-          command -v convert || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends imagemagick
-      - name: Engine preview (pretend desktop, also times the engine)
+      - name: Engine preview
         working-directory: snowfall
         run: |
           mkdir -p preview
           g++ -O2 -std=c++17 -Isrc src/engine.cpp src/sprites.cpp tools/preview.cpp -o preview-bin
           ./preview-bin preview/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snowfall-preview
+          path: snowfall/preview/*
+          retention-days: 7
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
       - name: Build Snowfall.exe
         working-directory: snowfall
-        run: ./build.sh
+        shell: cmd
+        run: call build-msvc.cmd
       - uses: actions/upload-artifact@v4
         with:
           name: Snowfall
           path: snowfall/dist/Snowfall.exe
           retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Snowfall-preview
-          path: snowfall/preview/*.png
-          retention-days: 7
-
-  try-on-windows:
-    needs: build
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: Snowfall }
       - name: Open some windows, run Snowfall, take a screenshot
+        working-directory: snowfall/dist
         shell: powershell
         run: |
+          "exe size: $((Get-Item .\Snowfall.exe).Length) bytes"
           Add-Type -AssemblyName System.Drawing, System.Windows.Forms
           Add-Type @"
           using System; using System.Runtime.InteropServices;
@@ -106,6 +99,6 @@ jobs:
         with:
           name: Snowfall-on-Windows
           path: |
-            screenshot.png
-            selftest.txt
+            snowfall/dist/screenshot.png
+            snowfall/dist/selftest.txt
           retention-days: 7
