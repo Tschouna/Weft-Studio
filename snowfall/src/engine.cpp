@@ -365,7 +365,7 @@ struct World::Impl {
       int c = (int)std::floor(x - p->x0);
       if (c < 0 || c >= p->width) continue;
       float sy = p->surfaceY(c);
-      if (y0 > sy + 0.5f || y1 < sy || sy >= bestY) continue;
+      if (y0 >= sy || y1 < sy || sy >= bestY) continue;  // only a real crossing, so each edge gets one chance
       if (p->hidden(x, sy - 0.5f)) continue;
       best = p; bestY = sy; *col = c;
     }
@@ -587,7 +587,7 @@ struct World::Impl {
         int c;
         if (Pile* p = landing(f.x, py, f.y, &c)) {
           float r = f.crystal ? kBucketR[f.rbucket] * s * 0.55f : f.r;
-          deposit(*p, c, PI * r * r * (p->kind == Kind::Taskbar ? 1.6f : 0.9f), r);
+          deposit(*p, c, PI * r * r * (p->kind == Kind::Taskbar ? 2.2f : 1.5f), r);
           dead = true;
         }
       }
