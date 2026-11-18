@@ -6,6 +6,7 @@ name: Build
 on:
   push:
     branches: ['**']
+    paths-ignore: ['snowfall/**', '.github/workflows/snowfall.yml']  # Snowfall builds on its own
   workflow_dispatch:
 
 jobs:

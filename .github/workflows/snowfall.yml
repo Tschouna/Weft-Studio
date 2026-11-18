@@ -1,0 +1,98 @@
+# Snowfall, the desktop snow app in snowfall/:
+# - builds Snowfall.exe (one file, no installer) with MinGW on Linux, after rendering the engine preview
+# - runs it on a real Windows machine next to a few app windows, and reports memory, frame times and what it
+#   saw, plus a screenshot
+# The exe is attached to each run as the "Snowfall" artifact.
+name: Snowfall
+
+on:
+  push:
+    paths: ['snowfall/**', '.github/workflows/snowfall.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix imagemagick
+      - name: Engine preview (pretend desktop, also times the engine)
+        working-directory: snowfall
+        run: |
+          mkdir -p preview
+          g++ -O2 -std=c++17 -Isrc src/engine.cpp src/sprites.cpp tools/preview.cpp -o preview-bin
+          ./preview-bin preview/
+      - name: Build Snowfall.exe
+        working-directory: snowfall
+        run: ./build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snowfall
+          path: snowfall/dist/Snowfall.exe
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snowfall-preview
+          path: snowfall/preview/*.png
+          retention-days: 7
+
+  try-on-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: Snowfall }
+      - name: Open some windows, run Snowfall, take a screenshot
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+          Add-Type @"
+          using System; using System.Runtime.InteropServices;
+          public static class W {
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool r);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+          }
+          "@
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          "screen: $($b.Width)x$($b.Height)"
+          $pos = @(@(60, 140, 520, 380), @(380, 260, 560, 360), @(620, 90, 360, 300))
+          $procs = @()
+          foreach ($p in $pos) {
+            $n = Start-Process notepad -PassThru
+            $procs += $n
+            for ($i = 0; $i -lt 40 -and $n.MainWindowHandle -eq 0; $i++) { Start-Sleep -Milliseconds 250; $n.Refresh() }
+            [W]::MoveWindow($n.MainWindowHandle, $p[0], $p[1], $p[2], $p[3], $true) | Out-Null
+          }
+          [W]::SetForegroundWindow($procs[1].MainWindowHandle) | Out-Null
+          $snow = Start-Process .\Snowfall.exe -ArgumentList '--selftest', '45', "$PWD\selftest.txt" -PassThru
+          Start-Sleep -Seconds 40
+          $mem = Get-Process -Id $snow.Id | Select-Object WorkingSet64, PrivateMemorySize64, CPU
+          "Task Manager view after 40 s: working set $([math]::Round($mem.WorkingSet64/1MB,1)) MB, private $([math]::Round($mem.PrivateMemorySize64/1MB,1)) MB, CPU time $([math]::Round($mem.CPU,2)) s"
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size, [System.Drawing.CopyPixelOperation]::SourceCopy -bor [System.Drawing.CopyPixelOperation]::CaptureBlt)
+          $bmp.Save("$PWD\screenshot.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $snow.WaitForExit(30000) | Out-Null
+          "exit code: $($snow.ExitCode)"
+          Get-Content selftest.txt
+          foreach ($n in $procs) { Stop-Process -Id $n.Id -ErrorAction SilentlyContinue }
+          # a small JPEG of the screenshot in the log, for quick checks without downloading the artifact
+          $small = New-Object System.Drawing.Bitmap $bmp, ([int]($b.Width / 2)), ([int]($b.Height / 2))
+          $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+          $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
+          $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 80L
+          $ms = New-Object System.IO.MemoryStream
+          $small.Save($ms, $codec, $ep)
+          "SCREENSHOT-BEGIN"
+          [Convert]::ToBase64String($ms.ToArray()) -split '(.{1,4000})' | Where-Object { $_ }
+          "SCREENSHOT-END"
+          if (-not (Test-Path selftest.txt)) { throw "Snowfall did not finish its self-test" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Snowfall-on-Windows
+          path: |
+            screenshot.png
+            selftest.txt
+          retention-days: 7
