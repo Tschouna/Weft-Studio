@@ -64,7 +64,7 @@ constexpr float kDecoScale = 1.6f;                      // decorations are drawn
 constexpr float kRopeSeg = 7.f;
 constexpr int kMaxClumps = 3000;
 constexpr int kMaxPresents = 6, kMaxSnowmen = 8, kMaxBalls = 14;
-constexpr float kGravity = 900.f;  // px/s² at 100% scale
+constexpr float kGravity = 900.f;  // px/s/s at 100% scale
 
 struct Rng {
   uint64_t s = 0x9E3779B97F4A7C15ull;
@@ -1180,11 +1180,20 @@ struct World::Impl {
         for (auto& w : zlist_) if (w.kind == Kind::Window && ws.size() < 6) ws.push_back(&w);
         std::sort(ws.begin(), ws.end(), [](const Win* a, const Win* b) { return a->r.l < b->r.l; });
         auto corner = [](const Win* w, float fx) { LightJoint j; j.window = w->id; j.fx = fx; j.fy = 0; j.x = w->r.l + fx * w->r.w(); j.y = (float)w->r.t; return j; };
+        // windows side by side get lights from one's top-right corner to the next one's top-left corner
         int made = 0;
-        for (size_t i = 0; i + 1 < ws.size(); ++i)
-          if (ws[i + 1]->r.l > ws[i]->r.l + 40) { addString({corner(ws[i], 1), corner(ws[i + 1], 0)}, 0.6f, ed.colors); ++made; }
-        if (!made && !ws.empty()) addString({corner(ws[0], 0), corner(ws[0], 1)}, 0.18f, ed.colors);
-        else if (!made) preset(kPresetGarland);
+        for (size_t i = 0; i + 1 < ws.size(); ++i) {
+          const Win *a = ws[i], *b = ws[i + 1];
+          float gap = (float)(b->r.l - a->r.r);
+          if (gap > -40 * m.scale && gap < 900 * m.scale) { addString({corner(a, 1), corner(b, 0)}, 0.6f, ed.colors); ++made; }
+        }
+        // overlapping windows: drape lights along the top edges of the two in front instead
+        if (!made) {
+          int k = 0;
+          for (auto& w : zlist_)
+            if (w.kind == Kind::Window && k < 2) { addString({corner(&w, 0), corner(&w, 1)}, 0.12f, ed.colors); ++k; }
+          if (!k) preset(kPresetGarland);
+        }
         return;
       }
     }

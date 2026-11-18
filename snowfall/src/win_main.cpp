@@ -805,7 +805,7 @@ const wchar_t* compass(float x, float y) {  // where the wind blows to (y points
 void windBuild(ui::Panel& p) {
   using namespace ui;
   p.clear(kBg);
-  if (p.button(1, p.S(10), p.S(10), p.S(36), p.S(36), L"✕", 2)) { PostMessageW(p.hwnd, WM_CLOSE, 0, 0); return; }
+  if (p.button(1, p.S(10), p.S(10), p.S(36), p.S(36), L"\u2715", 2)) { PostMessageW(p.hwnd, WM_CLOSE, 0, 0); return; }
   p.text(L"Wind", p.S(42), p.S(10), p.S(150), p.S(36), kText, p.bold, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
   if (p.button(2, p.W - p.S(78), p.S(12), p.W - p.S(14), p.S(34), L"Reset")) { S.eng.windX = 0.25f; S.eng.windY = 0; gWorld.configure(S.eng); saveSettings(); }
   float x0 = (float)p.S(20), y0 = (float)p.S(46), x1 = (float)(p.W - p.S(20)), y1 = y0 + (x1 - x0);
@@ -835,7 +835,7 @@ void windBuild(ui::Panel& p) {
   p.circle(cx, cy, (float)p.S(4), 0xFFDDE3EA);
   wchar_t label[64];
   if (len <= 0.04f) wcscpy_s(label, L"Calm");
-  else swprintf(label, 64, L"%d%%  ·  %ls", (int)std::lround(len * 100), compass(wx, wy));
+  else swprintf(label, 64, L"%d%%  \u00B7  %ls", (int)std::lround(len * 100), compass(wx, wy));
   p.text(label, 0, (int)y1 + p.S(8), p.W, (int)y1 + p.S(30), kText, p.bold, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
   p.text(L"Drag from the centre to set the wind", 0, (int)y1 + p.S(30), p.W, (int)y1 + p.S(50), kSub, p.smallFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
@@ -916,7 +916,7 @@ void editBuild(ui::Panel& p) {
     if (MessageBoxW(p.hwnd, L"Remove all the decorations and lights?", L"Snowfall", MB_YESNO | MB_ICONQUESTION) == IDYES) gWorld.editClear();
   }
   int presetsAt = bx - S(108);
-  if (rightButton(4, 108, L"Presets  ▾", 0)) showPresetMenu(p, presetsAt);
+  if (rightButton(4, 108, L"Presets  \u25BE", 0)) showPresetMenu(p, presetsAt);
   std::wstring hint;
   if (e.tool == snow::kEditDecoration)
     hint = L"Click along the bottom of the screen to place the " + lowerFirst(widen(snow::decoName(e.decoKind))) + L". Right-click when you're done.";
@@ -947,8 +947,10 @@ void editBuild(ui::Panel& p) {
       if (i == 0) p.sprite(gTileIcons[0], cx, y0 + S(30));
       else p.sprite(gTileIcons[i], cx, y0 + S(53));
     }
-    std::wstring label = i == 0 ? std::wstring(L"String lights") : widen(snow::decoName(i - 1));
-    p.text(label.c_str(), x0 + S(2), y0 + S(55), x1 - S(2), y1 - S(1), sel || h ? kText : kSub, p.smallFont, DT_CENTER | DT_WORDBREAK);
+    static const wchar_t* shortNames[snow::kDecoCount] = {L"House", L"Hydrant", L"Lamp", L"Lantern", L"Pine", L"Fir tree",
+                                                         L"Red gift", L"Blue gift", L"Bench", L"Stall", L"Snowman", L"Candy cane"};
+    std::wstring label = i == 0 ? std::wstring(L"Lights") : std::wstring(shortNames[i - 1]);
+    p.text(label.c_str(), x0 + S(2), y0 + S(55), x1 - S(2), y1 - S(1), sel || h ? kText : kSub, p.smallFont, DT_CENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     if (p.clickable(100 + i, x0, y0, x1, y1)) {
       if (sel) gWorld.editTool(snow::kEditSelect);
       else if (i == 0) gWorld.editTool(snow::kEditLights);
@@ -1194,7 +1196,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
   double next = now();
   bool timerSet = false;
   bool running = true;
-  bool testBalls = false, testPlow = false, testLights = false, testEdit = false, testEditDone = false;
+  bool testBalls = false, testPlow = false, testLights = false, testEdit = false, testEditDone = false, testWind = false;
   while (running) {
     // When awake, wake up for the next frame; when not, only for messages (and a slow check while a
     // full-screen app has every screen).
@@ -1228,6 +1230,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             if (w.kind == snow::Kind::Window) gWorld.dropSnowball((w.r.l + w.r.r) * 0.5f, (float)w.r.t - 80, 8);
         }
         if (!testPlow && e > selftest - 28) { testPlow = true; gWorld.sendPlow(); }
+        if (!testWind && e > selftest - 22) {  // the wind pad, for a screenshot
+          testWind = true;
+          RECT wa = workAreaAt(POINT{0, 0});
+          gMenuPt = POINT{wa.right - 160, wa.bottom};
+          openWindPanel();
+        }
         if (!testEdit && e > selftest - 13) { testEdit = true; startEditing(); }  // for a screenshot of the toolbar
         if (testEdit && !testEditDone && e > selftest - 3) { testEditDone = true; endEditing(false); }
         if (e > selftest) running = false;
