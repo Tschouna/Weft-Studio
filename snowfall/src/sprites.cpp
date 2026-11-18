@@ -376,6 +376,231 @@ Sprite makeSanta(float scale, int frame, bool facingRight) {
   return c.finish(64, 22, !facingRight);
 }
 
+// ------------------------------------------------------------------------------------------- decorations
+DecoGeom decoGeom(int kind) {
+  switch (kind) {
+    case kDecoHouse:       return {38, 44, 38, 40.5f, 0, 0};
+    case kDecoHydrant:     return {13, 17, 6, 15.7f, 0, 0};
+    case kDecoLamp:        return {14, 50, 6, 47.5f, 42.3f, 42};
+    case kDecoLantern:     return {10, 18, 5, 15.5f, 7.5f, 20};
+    case kDecoPine:        return {28, 42, 0, 0, 0, 0};
+    case kDecoFir:         return {28, 47, 0, 0, 0, 0};
+    case kDecoPresentRed:
+    case kDecoPresentBlue: return {16, 17, 15, 11.8f, 0, 0};
+    case kDecoBench:       return {32, 17, 29, 8.6f, 0, 0};
+    case kDecoStall:       return {46, 42, 44, 40.5f, 0, 0};
+    case kDecoSnowman:     return {30, 46, 0, 0, 0, 0};
+    case kDecoCandyCane:   return {12, 27, 0, 0, 0, 0};
+  }
+  return {10, 10, 0, 0, 0, 0};
+}
+
+namespace {
+const Col kSnow{0.95f, 0.97f, 1.f, 1};
+const Col kWarm{1.f, 0.84f, 0.45f, 1};
+
+void drawTree(Canvas& c, bool decorated, int frame) {
+  const Col trunk{0.4f, 0.26f, 0.15f, 1};
+  Col green = decorated ? Col{0.1f, 0.38f, 0.22f, 1} : Col{0.16f, 0.43f, 0.31f, 1};
+  Col greenD = decorated ? Col{0.06f, 0.27f, 0.15f, 1} : Col{0.1f, 0.31f, 0.23f, 1};
+  c.rect(-1.8f, -5.5f, 1.8f, 0, trunk);
+  struct Tier { float b, t, w; } tiers[] = {{-4, -21, 13.5f}, {-15, -32, 10.5f}, {-26, -43, 7.5f}};
+  for (auto& T : tiers) {
+    c.poly({{-T.w, T.b}, {T.w, T.b}, {0, T.t}}, green);
+    c.poly({{0.6f, T.t + 1}, {T.w, T.b}, {0.6f, T.b}}, greenD);
+    float k = decorated ? 0.25f : 0.45f;  // how far down the snow reaches
+    float yk = T.t + (T.b - T.t) * k;
+    c.poly({{0, T.t}, {T.w * k * 1.05f, yk}, {T.w * 0.3f, yk + 1.2f}, {0, yk - 0.4f}, {-T.w * 0.35f, yk + 1.f}, {-T.w * k * 1.05f, yk}}, kSnow);
+    c.line(-T.w + 1.2f, T.b - 0.4f, T.w - 1.2f, T.b - 0.4f, decorated ? 0.8f : 1.5f, kSnow);
+  }
+  if (decorated) {
+    static const Col orn[] = {{0.92f, 0.15f, 0.15f, 1}, {1, 0.8f, 0.25f, 1}, {0.3f, 0.55f, 1, 1}, {0.85f, 0.3f, 0.75f, 1}};
+    const float pos[][2] = {{-7, -8}, {5, -10}, {-2, -14}, {8.5f, -6}, {-4.5f, -20}, {4, -22}, {-1, -27}, {2.5f, -33}, {-3, -36}};
+    for (int i = 0; i < 9; ++i) {
+      c.circle(pos[i][0], pos[i][1], 1.5f, orn[i % 4]);
+      c.circle(pos[i][0] - 0.45f, pos[i][1] - 0.45f, 0.5f, Col{1, 1, 1, 0.7f});
+    }
+    // little lights along two garlands
+    for (int g = 0; g < 2; ++g)
+      for (int i = 0; i < 6; ++i) {
+        float t = i / 5.f;
+        float x = -10.f + 20.f * t + (g ? -2 : 1), y = (g ? -18 : -7) - 8.f * t + (g ? 2 : 0) * std::sin(t * 3);
+        bool on = ((i + g + frame) % 2) == 0;
+        if (on) c.circle(x, y, 2.2f, Col{1, 0.85f, 0.45f, 0.35f});
+        c.circle(x, y, 0.8f, on ? Col{1, 0.93f, 0.65f, 1} : Col{0.75f, 0.6f, 0.35f, 1});
+      }
+    // star
+    std::vector<std::pair<float, float>> star;
+    for (int i = 0; i < 10; ++i) { float a = -PI / 2 + i * PI / 5, r = i % 2 ? 1.5f : 3.4f; star.push_back({std::cos(a) * r, -44.f + std::sin(a) * r}); }
+    c.circle(0, -44, 5, Col{1, 0.85f, 0.35f, frame ? 0.35f : 0.22f});
+    c.poly(star, Col{1, 0.82f, 0.25f, 1});
+  }
+}
+}  // namespace
+
+Sprite makeDecoration(int kind, float scale, int frame) {
+  DecoGeom g = decoGeom(kind);
+  if (kind == kDecoPresentRed || kind == kDecoPresentBlue) return makePresent(scale * 1.6f, kind == kDecoPresentRed ? 0 : 2);
+  if (kind == kDecoSnowman) {
+    float r[3] = {10.f * scale, 7.6f * scale, 5.6f * scale}, c[3];
+    snowmanCentres(r, 3, c);
+    Sprite d = makeSnowmanDecor(r, 3, 0, 0, true, frame);
+    Sprite out = d;
+    std::fill(out.px.begin(), out.px.end(), 0u);
+    auto put = [&](const Sprite& s, int ax, int ay) {
+      for (int y = 0; y < s.h; ++y)
+        for (int x = 0; x < s.w; ++x) {
+          int X = ax - s.ox + x, Y = ay - s.oy + y;
+          if (X < 0 || Y < 0 || X >= out.w || Y >= out.h) continue;
+          uint32_t p = s.px[(size_t)y * s.w + x], &q = out.px[(size_t)Y * out.w + X];
+          uint32_t a = p >> 24, res = 0;
+          for (int k = 0; k < 32; k += 8) res |= std::min(255u, ((p >> k) & 255) + ((q >> k) & 255) * (255 - a) / 255) << k;
+          q = res;
+        }
+    };
+    for (int i = 0; i < 3; ++i) put(makeBall(r[i]), d.ox, d.oy - (int)std::lround(c[i]));
+    put(d, d.ox, d.oy);
+    return out;
+  }
+  Canvas c(-g.w / 2 - 4, -g.h - 6, g.w + 8, g.h + 8, scale, 4);
+  switch (kind) {
+    case kDecoHouse: {
+      const Col brick{0.6f, 0.27f, 0.2f, 1}, mortar{0.72f, 0.4f, 0.32f, 0.35f}, trim{0.92f, 0.86f, 0.76f, 1}, dark{0.36f, 0.16f, 0.12f, 1};
+      c.rect(-18, -38, 18, 0, brick);
+      for (float y = -36; y < 0; y += 3.2f) c.rect(-18, y, 18, y + 0.35f, mortar);
+      c.rect(-19.5f, -40.5f, 19.5f, -37.5f, dark);
+      c.rect(-19, -37.6f, 19, -36.8f, Col{0.28f, 0.12f, 0.09f, 1});
+      auto window = [&](float cx, float ty) {
+        c.circle(cx, ty + 3.7f, 6.5f, Col{1, 0.8f, 0.4f, 0.16f});
+        c.rect(cx - 3.7f, ty - 0.7f, cx + 3.7f, ty + 8.1f, trim);
+        c.rect(cx - 3, ty, cx + 3, ty + 7.4f, kWarm);
+        c.rect(cx - 3, ty + 4, cx + 3, ty + 7.4f, Col{1, 0.74f, 0.32f, 1});
+        c.rect(cx - 0.3f, ty, cx + 0.3f, ty + 7.4f, Col{0.5f, 0.3f, 0.18f, 1});
+        c.rect(cx - 3, ty + 3.5f, cx + 3, ty + 3.9f, Col{0.5f, 0.3f, 0.18f, 1});
+        c.rect(cx - 4, ty + 8, cx + 4, ty + 9, kSnow);  // snow on the sill
+      };
+      for (float cx : {-11.5f, 0.f, 11.5f}) { window(cx, -34.5f); window(cx, -23.5f); }
+      window(-11.5f, -12.5f);
+      window(11.5f, -12.5f);
+      // door with a wreath, and steps
+      c.circle(0, -11.5f, 3.9f, Col{0.13f, 0.42f, 0.24f, 1});
+      c.rect(-3.9f, -11.5f, 3.9f, 0, Col{0.13f, 0.42f, 0.24f, 1});
+      c.circle(0, -8.4f, 2.3f, Col{0.1f, 0.55f, 0.22f, 1});
+      c.circle(0, -8.4f, 1.25f, Col{0.13f, 0.42f, 0.24f, 1});
+      c.circle(-0.6f, -6.6f, 0.7f, Col{0.9f, 0.15f, 0.15f, 1}); c.circle(0.6f, -6.6f, 0.7f, Col{0.9f, 0.15f, 0.15f, 1});
+      c.circle(2.4f, -4.6f, 0.45f, Col{1, 0.82f, 0.3f, 1});
+      c.rect(-6, -1.3f, 6, 0, Col{0.72f, 0.72f, 0.75f, 1});
+      c.rect(-6, -1.6f, 6, -1.2f, kSnow);
+      break;
+    }
+    case kDecoHydrant: {
+      const Col red{0.86f, 0.14f, 0.13f, 1}, redD{0.6f, 0.07f, 0.07f, 1};
+      c.rect(-5, -2.4f, 5, 0, redD);
+      c.rect(-3.5f, -11.8f, 3.5f, -2.2f, red);
+      c.circle(0, -12.2f, 3.4f, red);
+      c.rect(-4.3f, -12.4f, 4.3f, -11, redD);
+      c.rect(-1.6f, -15.7f, 1.6f, -14.6f, redD);
+      c.rect(-6.2f, -8.8f, -3.3f, -6.3f, redD);
+      c.rect(3.3f, -8.8f, 6.2f, -6.3f, redD);
+      c.circle(0, -6.8f, 1.5f, redD);
+      c.rect(-2.5f, -11, -1.6f, -3, Col{1, 0.55f, 0.5f, 0.55f});
+      break;
+    }
+    case kDecoLamp: {
+      const Col pole{0.16f, 0.18f, 0.22f, 1};
+      c.rect(-3.5f, -3.5f, 3.5f, 0, pole);
+      c.rect(-2.3f, -6, 2.3f, -3.5f, pole);
+      c.line(0, -6, 0, -38.5f, 1.9f, pole);
+      c.rect(-2.5f, -39.8f, 2.5f, -38.2f, pole);
+      c.poly({{-4.3f, -39.6f}, {4.3f, -39.6f}, {5.7f, -45.2f}, {-5.7f, -45.2f}}, pole);
+      c.poly({{-3.3f, -40.4f}, {3.3f, -40.4f}, {4.4f, -44.4f}, {-4.4f, -44.4f}}, Col{1, 0.88f, 0.55f, 1});
+      c.rect(-0.3f, -44.4f, 0.3f, -40.4f, pole);
+      c.poly({{-6.6f, -45.2f}, {6.6f, -45.2f}, {3, -47.5f}, {-3, -47.5f}}, pole);
+      break;
+    }
+    case kDecoLantern: {
+      const Col frm{0.15f, 0.15f, 0.17f, 1};
+      c.rect(-4.5f, -2, 4.5f, 0, frm);
+      c.rect(-3.9f, -13, 3.9f, -2, frm);
+      c.rect(-2.9f, -12, 2.9f, -3, Col{1, 0.78f, 0.4f, 1});
+      if (frame == 0) { c.ellipse(0, -6.4f, 1.3f, 2.5f, Col{1, 0.96f, 0.72f, 1}); c.ellipse(0, -6, 0.75f, 1.5f, Col{1, 1, 0.95f, 1}); }
+      else { c.ellipse(0.25f, -6.7f, 1.1f, 2.8f, Col{1, 0.96f, 0.72f, 1}); c.ellipse(0.2f, -6.2f, 0.65f, 1.6f, Col{1, 1, 0.95f, 1}); }
+      c.rect(-1.9f, -12, -1.4f, -3, frm); c.rect(1.4f, -12, 1.9f, -3, frm);
+      c.poly({{-4.7f, -13}, {4.7f, -13}, {2.5f, -15.5f}, {-2.5f, -15.5f}}, frm);
+      c.line(-1.5f, -15.5f, -1.3f, -17.6f, 0.7f, frm); c.line(1.5f, -15.5f, 1.3f, -17.6f, 0.7f, frm);
+      c.line(-1.3f, -17.6f, 1.3f, -17.6f, 0.7f, frm);
+      break;
+    }
+    case kDecoPine: drawTree(c, false, frame); break;
+    case kDecoFir: drawTree(c, true, frame); break;
+    case kDecoBench: {
+      const Col wood{0.56f, 0.36f, 0.2f, 1}, woodD{0.42f, 0.26f, 0.14f, 1}, iron{0.15f, 0.15f, 0.17f, 1};
+      c.line(-12.4f, -7, -13, -15.6f, 1.3f, iron); c.line(12.4f, -7, 13, -15.6f, 1.3f, iron);
+      c.rect(-14.5f, -15.8f, 14.5f, -14.2f, wood);
+      c.rect(-14.5f, -16.5f, 14.5f, -15.8f, kSnow);
+      c.rect(-14.5f, -12.9f, 14.5f, -11.4f, wood);
+      c.rect(-13.2f, -7.2f, -11.8f, 0, iron); c.rect(11.8f, -7.2f, 13.2f, 0, iron);
+      c.rect(-15.5f, -8.6f, 15.5f, -7, wood);
+      c.rect(-15.5f, -7.2f, 15.5f, -6.5f, woodD);
+      c.line(-14.5f, -11, -14.5f, -7.6f, 1.2f, iron); c.line(14.5f, -11, 14.5f, -7.6f, 1.2f, iron);
+      break;
+    }
+    case kDecoStall: {
+      const Col wood{0.58f, 0.37f, 0.2f, 1}, woodD{0.43f, 0.26f, 0.13f, 1}, red{0.8f, 0.13f, 0.15f, 1}, white{0.97f, 0.95f, 0.92f, 1};
+      c.rect(-20, -34, -17.8f, 0, woodD); c.rect(17.8f, -34, 20, 0, woodD);
+      c.rect(-17.8f, -30, 17.8f, -15.5f, Col{0.24f, 0.14f, 0.09f, 1});
+      for (float x = -16; x <= 16; x += 4) {  // little lights inside
+        c.circle(x, -28.6f, 1.9f, Col{1, 0.85f, 0.45f, 0.3f});
+        c.circle(x, -28.6f, 0.8f, Col{1, 0.92f, 0.6f, 1});
+      }
+      c.circle(-12, -17.2f, 2, Col{0.9f, 0.2f, 0.2f, 1});
+      c.circle(-7, -17.6f, 2.4f, Col{1, 0.8f, 0.25f, 1});
+      c.rect(-3, -19.6f, 2, -15.5f, Col{0.2f, 0.5f, 0.85f, 1});
+      c.rect(-0.8f, -19.6f, -0.2f, -15.5f, Col{1, 0.9f, 0.5f, 1});
+      c.circle(6.5f, -17.2f, 2, Col{0.15f, 0.55f, 0.3f, 1});
+      c.rect(10, -18.6f, 15.5f, -15.5f, Col{0.85f, 0.55f, 0.25f, 1});
+      c.rect(-21, -14, 21, 0, wood);
+      for (float x = -17; x < 21; x += 4.2f) c.rect(x, -14, x + 0.45f, 0, Col{0.43f, 0.26f, 0.13f, 0.6f});
+      c.rect(-22, -15.6f, 22, -13.6f, woodD);
+      for (int i = 0; i < 8; ++i) {  // striped, scalloped awning
+        float x = -22 + i * 5.5f;
+        Col col = i % 2 ? white : red;
+        c.rect(x, -37.4f, x + 5.5f, -30, col);
+        c.circle(x + 2.75f, -30, 2.75f, col);
+      }
+      c.rect(-23, -40.5f, 23, -37.2f, Col{0.6f, 0.08f, 0.1f, 1});
+      break;
+    }
+    case kDecoCandyCane: {
+      std::vector<std::pair<float, float>> pts;
+      for (float y = 0; y >= -19.f; y -= 1.f) pts.push_back({2.5f, y});
+      for (int i = 1; i <= 12; ++i) { float a = PI * i / 12; pts.push_back({-1.f + std::cos(a) * 3.5f, -19.f - std::sin(a) * 3.5f}); }
+      for (float y = -19.f; y <= -15.f; y += 1.f) pts.push_back({-4.5f, y});
+      for (size_t i = 0; i + 1 < pts.size(); ++i) c.line(pts[i].first, pts[i].second, pts[i + 1].first, pts[i + 1].second, 3.3f, Col{0.45f, 0.08f, 0.08f, 0.5f});
+      for (size_t i = 0; i + 1 < pts.size(); ++i)
+        c.line(pts[i].first, pts[i].second, pts[i + 1].first, pts[i + 1].second, 2.6f, (i / 2) % 2 ? Col{0.97f, 0.97f, 0.97f, 1} : Col{0.86f, 0.12f, 0.14f, 1});
+      break;
+    }
+  }
+  return c.finish(0, 0);
+}
+
+// A little string of lights, for the decorating toolbar.
+Sprite makeLightsIcon(float size) {
+  float k = size / 40.f;
+  Canvas c(-20, -20, 40, 40, k, 4);
+  std::vector<std::pair<float, float>> pts;
+  for (int i = 0; i <= 20; ++i) { float t = i / 20.f; pts.push_back({-18 + 36 * t, -10 + 18 * 4 * t * (1 - t) * 0.6f}); }
+  for (size_t i = 0; i + 1 < pts.size(); ++i) c.line(pts[i].first, pts[i].second, pts[i + 1].first, pts[i + 1].second, 1.2f, Col{0.55f, 0.6f, 0.55f, 1});
+  static const Col bulbs[] = {{1, 0.3f, 0.3f, 1}, {0.35f, 0.85f, 0.45f, 1}, {0.4f, 0.6f, 1, 1}, {1, 0.8f, 0.3f, 1}};
+  for (int i = 1; i < 20; i += 3) {
+    Col b = bulbs[(i / 3) % 4];
+    c.circle(pts[i].first, pts[i].second + 2.6f, 4.5f, Col{b.r, b.g, b.b, 0.3f});
+    c.circle(pts[i].first, pts[i].second + 2.6f, 2.3f, b);
+  }
+  return c.finish(0, 0);
+}
+
 // ------------------------------------------------------------------------------------------- icon
 std::vector<uint32_t> makeIcon(int size) {
   float s = size / 32.f;

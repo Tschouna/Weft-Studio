@@ -89,9 +89,9 @@ jobs:
           }
           [W]::SetForegroundWindow($procs[1].MainWindowHandle) | Out-Null
           $snow = Start-Process .\Snowfall.exe -ArgumentList '--selftest', '50', "$PWD\selftest.txt" -PassThru
-          Start-Sleep -Seconds 40
+          Start-Sleep -Seconds 30
           $mem = Get-Process -Id $snow.Id | Select-Object WorkingSet64, PrivateMemorySize64, CPU
-          "after 40 s: working set $([math]::Round($mem.WorkingSet64/1MB,1)) MB, private $([math]::Round($mem.PrivateMemorySize64/1MB,1)) MB, CPU time $([math]::Round($mem.CPU,2)) s"
+          "after 30 s: working set $([math]::Round($mem.WorkingSet64/1MB,1)) MB, private $([math]::Round($mem.PrivateMemorySize64/1MB,1)) MB, CPU time $([math]::Round($mem.CPU,2)) s"
           [W]::Shot($b.Width, $b.Height, "$PWD\screenshot.png")
           # shake the right-hand window back and forth
           $h = $procs[2].MainWindowHandle
@@ -99,6 +99,8 @@ jobs:
           [W]::MoveWindow($h, 620, 90, 360, 300, $true) | Out-Null
           Start-Sleep -Milliseconds 250
           [W]::Shot($b.Width, $b.Height, "$PWD\screenshot-shake.png")
+          Start-Sleep -Seconds 11  # Snowfall opens its decorating toolbar for a while
+          [W]::Shot($b.Width, $b.Height, "$PWD\screenshot-decorate.png")
           $snow.WaitForExit(30000) | Out-Null
           "exit code: $($snow.ExitCode)"
           Get-Content selftest.txt

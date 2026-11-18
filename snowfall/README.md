@@ -1,6 +1,6 @@
 # Snowfall
 
-Snow for your Windows 11 desktop. It falls in front of everything and piles up on top of your open app windows and on the taskbar. It never gets in the way: every click goes straight through to whatever is underneath.
+Snow for your Windows 11 desktop. It falls in front of everything and piles up on top of your open app windows and on the taskbar. Hang strings of lights between your windows and put a little village on the taskbar. It never gets in the way: every click goes straight through to whatever is underneath.
 
 ## Using it
 
@@ -14,6 +14,23 @@ Snow for your Windows 11 desktop. It falls in front of everything and piles up o
 | Ctrl+Alt+B | Snowstorm for 30 seconds |
 | Ctrl+Alt+H | Call Santa |
 | Ctrl+Alt+P | Send the snowplow |
+
+## Decorating
+
+Click the snowflake by the clock and choose **Decorate your desktop…**. The screen dims a little and a toolbar opens at the top:
+
+- **String lights:** pick them in the toolbar, then click where they should start and click again for each joint. Double-click, right-click or press Enter to finish. A joint you put on a window hangs from that window and follows it when you move it. Lights hung only from points on the screen hang in front of everything, like a garland on the glass.
+- **Decorations:** a holiday house, hydrant, street lamp, lantern, frosted pine, decorated fir, presents, a bench, a market stall, a snowman and a candy cane. Pick one, then click along the bottom of the screen to place it. Snow settles on their roofs; the lamp and the lantern glow.
+- **Move** decorations and joints by dragging them. **Remove** one with a right-click, or select lights and press Delete.
+- **Colours** (warm white, multicolour, cool white, red and green, gold, blue) and **Slack** (how much the lights sag) apply to the selected lights and to new ones.
+- **Presets:** a little village on the taskbar, a garland across the top of the screen, swags in the top corners, or lights strung between your windows.
+- **Done** keeps it all (saved for next time), **Cancel** puts it back as it was.
+
+The lights sway in the wind, swing when you drag the window they hang from, and the mouse can brush them.
+
+## Wind
+
+**Wind…** in the menu opens a little pad: drag from the centre to set which way the wind blows and how hard. Upwards wind slows the snow down, downwards wind brings it faster.
 
 ## Things to try
 
@@ -31,7 +48,7 @@ The menu also sets how much snow falls (light flurry to blizzard), the wind, and
 
 ## Light on your PC
 
-- It's one 420 KB program written in C++ against plain Win32. It doesn't use a browser engine or .NET.
+- It's one small program (about 0.5 MB) written in C++ against plain Win32. It doesn't use a browser engine or .NET.
 - Memory is mostly the picture of one screen: about 10–20 MB on a 1080p screen, more on 4K.
 - It only redraws the parts of the screen that changed.
 - Windows are tracked through Windows' own event notifications instead of being checked every frame.
@@ -42,7 +59,7 @@ The menu also sets how much snow falls (light flurry to blizzard), the wind, and
   - on any screen showing a full-screen game, video or presentation
 - On battery it drops from 60 to 30 frames a second. **Settings** has a 30 fps mode for always.
 
-Settings are kept in `%APPDATA%\Snowfall\settings.ini`.
+Settings are kept in `%APPDATA%\Snowfall\settings.ini`, and your decorations and lights in `layout.txt` next to it.
 
 ## Building
 

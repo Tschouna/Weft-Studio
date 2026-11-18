@@ -25,9 +25,11 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <cwctype>
 #include <string>
 #include <vector>
 #include "engine.h"
+#include "panel.h"
 #include "resource.h"
 
 #define SNOWFALL_VERSION L"1.0.0"
@@ -56,6 +58,8 @@ enum : UINT {
   ID_STORM = 160, ID_SHAKE,
   ID_ALLSCREENS = 170, ID_FULLSCREEN, ID_STARTUP, ID_FPS0 = 175,
   ID_ABOUT = 180, ID_QUIT,
+  ID_WINDPAD = 190, ID_DECORATE, ID_SHOW_DECOS, ID_SHOW_LIGHTS,
+  ID_PRESET0 = 200,
 };
 enum { HK_PAUSE = 1, HK_STORM, HK_SANTA, HK_PLOW };
 
@@ -83,7 +87,10 @@ void iniPut(const wchar_t* key, int v) { WritePrivateProfileStringW(L"Snowfall",
 void loadSettings() {
   gIni = appDataDir() + L"\\settings.ini";
   S.eng.amount = std::clamp(iniInt(L"Amount", 1), 0, 3);
-  S.eng.wind = std::clamp(iniInt(L"Wind", 1), 0, 2);
+  S.eng.windX = std::clamp(iniInt(L"WindX", 25), -100, 100) / 100.f;
+  S.eng.windY = std::clamp(iniInt(L"WindY", 0), -100, 100) / 100.f;
+  S.eng.decorations = iniInt(L"Decorations", 1) != 0;
+  S.eng.lights = iniInt(L"Lights", 1) != 0;
   S.eng.flakes = std::clamp(iniInt(L"Flakes", 1), 0, 2);
   S.eng.pileWindows = iniInt(L"PileOnWindows", 1) != 0;
   S.eng.pileTaskbar = iniInt(L"PileOnTaskbar", 1) != 0;
@@ -100,12 +107,55 @@ void loadSettings() {
   S.welcomed = iniInt(L"Welcomed", 0) != 0;
 }
 void saveSettings() {
-  iniPut(L"Amount", S.eng.amount); iniPut(L"Wind", S.eng.wind); iniPut(L"Flakes", S.eng.flakes);
+  iniPut(L"Amount", S.eng.amount); iniPut(L"Flakes", S.eng.flakes);
+  iniPut(L"WindX", (int)std::lround(S.eng.windX * 100)); iniPut(L"WindY", (int)std::lround(S.eng.windY * 100));
+  iniPut(L"Decorations", S.eng.decorations); iniPut(L"Lights", S.eng.lights);
   iniPut(L"PileOnWindows", S.eng.pileWindows); iniPut(L"PileOnTaskbar", S.eng.pileTaskbar);
   iniPut(L"Icicles", S.eng.icicles); iniPut(L"Mouse", S.eng.mouse); iniPut(L"Snowmen", S.eng.snowmen); iniPut(L"Snowplow", S.eng.snowplow);
   iniPut(L"Presents", S.eng.presents); iniPut(L"Santa", S.santa); iniPut(L"Animation", S.fps);
   iniPut(L"AllScreens", S.allScreens); iniPut(L"PauseForFullScreen", S.fullscreenPause);
   iniPut(L"Paused", S.paused); iniPut(L"Welcomed", S.welcomed);
+}
+
+// The decorations and lights, in a small text file next to the settings. Joints on windows are saved where
+// they were: windows don't keep their identity from one session to the next.
+std::wstring layoutPath() { return appDataDir() + L"\\layout.txt"; }
+bool loadLayout(snow::Layout& L) {
+  FILE* f = _wfopen(layoutPath().c_str(), L"r");
+  if (!f) return false;
+  char word[40];
+  while (std::fscanf(f, "%39s", word) == 1) {
+    if (!std::strcmp(word, "deco")) {
+      snow::Decoration d;
+      if (std::fscanf(f, "%d %d %f", &d.kind, &d.monitor, &d.pos) == 3 && d.kind >= 0 && d.kind < snow::kDecoCount) L.decos.push_back(d);
+    } else if (!std::strcmp(word, "lights")) {
+      snow::LightString ls;
+      int n = 0;
+      if (std::fscanf(f, "%f %d %d", &ls.slack, &ls.colors, &n) != 3) break;
+      for (int i = 0; i < n && i < 200; ++i) {
+        snow::LightJoint j;
+        if (std::fscanf(f, "%f %f", &j.x, &j.y) == 2) ls.joints.push_back(j);
+      }
+      if (ls.joints.size() >= 2) L.lights.push_back(ls);
+    } else {
+      int c;
+      while ((c = std::fgetc(f)) != '\n' && c != EOF) {}
+    }
+  }
+  std::fclose(f);
+  return true;
+}
+void saveLayout(const snow::Layout& L) {
+  FILE* f = _wfopen(layoutPath().c_str(), L"w");
+  if (!f) return;
+  std::fprintf(f, "snowfall-layout 1\n");
+  for (auto& d : L.decos) std::fprintf(f, "deco %d %d %.5f\n", d.kind, d.monitor, d.pos);
+  for (auto& ls : L.lights) {
+    std::fprintf(f, "lights %.3f %d %d", ls.slack, ls.colors, (int)ls.joints.size());
+    for (auto& j : ls.joints) std::fprintf(f, " %.1f %.1f", j.x, j.y);
+    std::fprintf(f, "\n");
+  }
+  std::fclose(f);
 }
 
 // Start with Windows: a value under HKCU\...\Run.
@@ -153,6 +203,9 @@ std::vector<uint64_t> gKeep;
 UINT gTaskbarCreated = 0;
 bool gHotkeys[5] = {};
 NOTIFYICONDATAW gNid = {};
+bool gEditing = false;      // decorating: the overlays catch the mouse
+ui::Panel gWindPanel, gEditBar;
+POINT gMenuPt{0, 0};        // where the tray menu was opened
 double gNextSanta = 0;
 LARGE_INTEGER gFreq;
 
@@ -178,9 +231,49 @@ std::vector<Overlay> gOv;  // parallel to gWorld.monitors()
 struct MonRec { HMONITOR h; RECT rc, work; float scale; bool primary; };
 
 // ---------------------------------------------------------------------------------------- overlays
+void editBarRefresh();
+
+// While decorating, the overlays catch the mouse and pass it to the editor in screen pixels.
+bool overlayMouse(HWND h, UINT m, LPARAM l) {
+  if (!gEditing) return false;
+  POINT origin{0, 0};
+  for (auto& o : gOv) if (o.hwnd == h) origin = {o.rc.left, o.rc.top};
+  float x = (float)(GET_X_LPARAM(l) + origin.x), y = (float)(GET_Y_LPARAM(l) + origin.y);
+  switch (m) {
+    case WM_MOUSEMOVE: {
+      TRACKMOUSEEVENT t{sizeof t, TME_LEAVE, h, 0};
+      TrackMouseEvent(&t);
+      gWorld.editPointer(snow::kEditMove, x, y);
+      break;
+    }
+    case WM_LBUTTONDOWN: SetCapture(h); gWorld.editPointer(snow::kEditDown, x, y); break;
+    case WM_LBUTTONUP: ReleaseCapture(); gWorld.editPointer(snow::kEditUp, x, y); break;
+    case WM_LBUTTONDBLCLK: gWorld.editPointer(snow::kEditDouble, x, y); break;
+    case WM_RBUTTONUP: gWorld.editPointer(snow::kEditRight, x, y); break;
+    case WM_MOUSELEAVE: gWorld.editPointer(snow::kEditLeave, 0, 0); break;
+    default: return false;
+  }
+  editBarRefresh();
+  return true;
+}
+
 LRESULT CALLBACK overlayProc(HWND h, UINT m, WPARAM w, LPARAM l) {
   switch (m) {
-    case WM_NCHITTEST: return HTTRANSPARENT;
+    case WM_NCHITTEST: return gEditing ? HTCLIENT : HTTRANSPARENT;
+    case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK: case WM_RBUTTONUP: case WM_MOUSELEAVE:
+      if (overlayMouse(h, m, l)) return 0;
+      break;
+    case WM_SETCURSOR:
+      if (gEditing) {
+        snow::EditInfo e = gWorld.editInfo();
+        LPCWSTR c = IDC_ARROW;
+        if (e.tool != snow::kEditSelect) c = IDC_CROSS;
+        else if (e.dragging || e.hover == snow::kHoverJoint || e.hover == snow::kHoverDeco) c = IDC_SIZEALL;
+        else if (e.hover == snow::kHoverString) c = IDC_HAND;
+        SetCursor(LoadCursorW(nullptr, c));
+        return TRUE;
+      }
+      break;
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
     case WM_DPICHANGED: gMonDirty = true; return 0;  // keep our size: we are sized in physical pixels
     case WM_ERASEBKGND: return 1;
@@ -211,7 +304,7 @@ void destroyOverlay(Overlay& o) {
 bool ensureBuffer(Overlay& o) {
   if (o.bits) return true;
   if (!o.hwnd) {
-    o.hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+    o.hwnd = CreateWindowExW(WS_EX_LAYERED | (gEditing ? 0 : WS_EX_TRANSPARENT) | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                              kOverlayClass, L"Snowfall", WS_POPUP, o.rc.left, o.rc.top, o.w(), o.h(), nullptr, nullptr, gInst, nullptr);
     if (!o.hwnd) return false;
     BOOL on = TRUE;
@@ -319,7 +412,7 @@ bool refreshMonitors() {
     for (auto& b : bars)
       if (MonitorFromWindow(b.first, MONITOR_DEFAULTTONULL) == m.h && std::abs(b.second.top - x.groundY) <= 2 && b.second.bottom >= m.rc.bottom - 2)
         x.taskbar = (uint64_t)(uintptr_t)b.first;
-    x.active = m.h != fs;
+    x.active = gEditing || m.h != fs;
     mons.push_back(x);
   }
   const auto& cur = gWorld.monitors();
@@ -466,6 +559,9 @@ void CALLBACK winEvent(HWINEVENTHOOK, DWORD ev, HWND h, LONG obj, LONG child, DW
 // ---------------------------------------------------------------------------------------- tray
 bool frame();
 double frameInterval();
+void openWindPanel();
+void startEditing();
+void endEditing(bool keep);
 // Menus and message boxes run their own message loop; a plain timer keeps the snow going meanwhile.
 const UINT_PTR kModalTimer = 7;
 struct ModalFrames {
@@ -476,6 +572,7 @@ struct ModalFrames {
 std::wstring hk(int id, const wchar_t* keys) { return gHotkeys[id] ? std::wstring(L"\t") + keys : std::wstring(); }
 
 void showMenu(POINT pt) {
+  gMenuPt = pt;
   HMENU m = CreatePopupMenu();
   auto add = [](HMENU mm, UINT id, const std::wstring& text, bool checked = false, bool enabled = true) {
     AppendMenuW(mm, MF_STRING | (checked ? MF_CHECKED : 0) | (enabled ? 0 : MF_GRAYED), id, text.c_str());
@@ -491,8 +588,12 @@ void showMenu(POINT pt) {
   add(m, ID_PAUSE, (S.paused ? std::wstring(L"Let it snow") : std::wstring(L"Pause the snow")) + hk(HK_PAUSE, L"Ctrl+Alt+S"));
   AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
   radio(L"How much snow", ID_AMOUNT0, {L"Light flurry", L"Steady snow", L"Heavy snow", L"Blizzard"}, S.eng.amount);
-  radio(L"Wind", ID_WIND0, {L"Calm", L"Breeze", L"Stormy"}, S.eng.wind);
+  add(m, ID_WINDPAD, L"Wind\u2026");
   radio(L"Flakes", ID_FLAKES0, {L"Small", L"Mixed", L"Big and fluffy"}, S.eng.flakes);
+  AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+  add(m, ID_DECORATE, L"Decorate your desktop\u2026");
+  add(m, ID_SHOW_DECOS, L"Show the decorations", S.eng.decorations);
+  add(m, ID_SHOW_LIGHTS, L"Show the string lights", S.eng.lights);
   AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
   add(m, ID_PILE_WIN, L"Snow piles up on windows", S.eng.pileWindows);
   add(m, ID_PILE_TASKBAR, L"Snow piles up on the taskbar", S.eng.pileTaskbar);
@@ -580,6 +681,7 @@ void apply() {
 }
 
 void setPaused(bool p) {
+  if (p && gEditing) endEditing(true);
   if (S.paused == p) return;
   S.paused = p;
   apply();
@@ -589,12 +691,15 @@ void setPaused(bool p) {
 
 void command(UINT id) {
   if (id >= ID_AMOUNT0 && id < ID_AMOUNT0 + 4) { S.eng.amount = id - ID_AMOUNT0; apply(); return; }
-  if (id >= ID_WIND0 && id < ID_WIND0 + 3) { S.eng.wind = id - ID_WIND0; apply(); return; }
   if (id >= ID_FLAKES0 && id < ID_FLAKES0 + 3) { S.eng.flakes = id - ID_FLAKES0; apply(); return; }
   if (id >= ID_SANTA0 && id < ID_SANTA0 + 3) { S.santa = id - ID_SANTA0; scheduleSanta(now()); apply(); return; }
   if (id >= ID_FPS0 && id < ID_FPS0 + 3) { S.fps = id - ID_FPS0; apply(); return; }
   switch (id) {
     case ID_PAUSE: setPaused(!S.paused); break;
+    case ID_WINDPAD: openWindPanel(); break;
+    case ID_DECORATE: startEditing(); break;
+    case ID_SHOW_DECOS: S.eng.decorations = !S.eng.decorations; apply(); break;
+    case ID_SHOW_LIGHTS: S.eng.lights = !S.eng.lights; apply(); break;
     case ID_PILE_WIN: S.eng.pileWindows = !S.eng.pileWindows; apply(); break;
     case ID_PILE_TASKBAR: S.eng.pileTaskbar = !S.eng.pileTaskbar; apply(); break;
     case ID_ICICLES: S.eng.icicles = !S.eng.icicles; apply(); break;
@@ -622,6 +727,7 @@ void command(UINT id) {
                L"\x2022  Roll a smaller snowball into a bigger one to build a snowman.\n"
                L"\x2022  Flick the mouse fast through a snowman, or through a pile of snow.\n"
                L"\x2022  Shake, minimise or close a window with snow on it.\n"
+               L"\x2022  Decorate your desktop: hang string lights between windows, put out a little village.\n"
                L"\x2022  Ctrl+Alt+S pauses, Ctrl+Alt+B snowstorm, Ctrl+Alt+H Santa, Ctrl+Alt+P snowplow.",
                SNOWFALL_VERSION, st.flakes, pm.PrivateUsage / 1048576.0);
       ModalFrames keep;
@@ -679,6 +785,257 @@ LRESULT CALLBACK msgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
   return DefWindowProcW(h, m, w, l);
 }
 
+// ---------------------------------------------------------------------------------------- the wind pad
+float scaleAtPoint(POINT pt) {
+  UINT dx = 96, dy = 96;
+  if (FAILED(GetDpiForMonitor(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, &dx, &dy))) dx = 96;
+  return dx / 96.f;
+}
+RECT workAreaAt(POINT pt) {
+  MONITORINFO mi = {sizeof mi};
+  GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
+  return mi.rcWork;
+}
+const wchar_t* compass(float x, float y) {  // where the wind blows to (y points down the screen)
+  static const wchar_t* d[8] = {L"E", L"SE", L"S", L"SW", L"W", L"NW", L"N", L"NE"};
+  int i = ((int)std::lround(std::atan2(y, x) / (3.14159265f / 4)) % 8 + 8) % 8;
+  return d[i];
+}
+
+void windBuild(ui::Panel& p) {
+  using namespace ui;
+  p.clear(kBg);
+  if (p.button(1, p.S(10), p.S(10), p.S(36), p.S(36), L"✕", 2)) { PostMessageW(p.hwnd, WM_CLOSE, 0, 0); return; }
+  p.text(L"Wind", p.S(42), p.S(10), p.S(150), p.S(36), kText, p.bold, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+  if (p.button(2, p.W - p.S(78), p.S(12), p.W - p.S(14), p.S(34), L"Reset")) { S.eng.windX = 0.25f; S.eng.windY = 0; gWorld.configure(S.eng); saveSettings(); }
+  float x0 = (float)p.S(20), y0 = (float)p.S(46), x1 = (float)(p.W - p.S(20)), y1 = y0 + (x1 - x0);
+  p.rrect(x0, y0, x1, y1, (float)p.S(16), kBorder);
+  p.rrect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, (float)p.S(15), 0xFF17181B);
+  float cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = (x1 - x0) / 2 - p.S(16);
+  for (float k : {1.f / 3, 2.f / 3, 1.f}) p.ring(cx, cy, R * k, 1.f, 0xFF30333A);
+  p.line(cx - R, cy, cx + R, cy, 1, 0xFF30333A);
+  p.line(cx, cy - R, cx, cy + R, 1, 0xFF30333A);
+  // drag from the centre: direction and strength
+  if (p.pressed && p.over_((int)x0, (int)y0, (int)x1, (int)y1)) p.active = 10;
+  if (p.active == 10 && p.down) {
+    float dx = (p.mx - cx) / R, dy = (p.my - cy) / R, l = std::sqrt(dx * dx + dy * dy);
+    if (l > 1) { dx /= l; dy /= l; }
+    if (l < 0.06f) dx = dy = 0;
+    S.eng.windX = dx;
+    S.eng.windY = dy;
+    gWorld.configure(S.eng);
+  }
+  if (p.released && p.active == 10) saveSettings();
+  float wx = S.eng.windX, wy = S.eng.windY, len = std::min(1.f, std::sqrt(wx * wx + wy * wy));
+  if (len > 0.04f) {
+    float ex = cx + wx * R, ey = cy + wy * R, ang = std::atan2(wy, wx), hl = (float)p.S(13), lw = (float)p.S(3.5f);
+    p.line(cx, cy, ex, ey, lw, kAccent);
+    for (float sg : {-1.f, 1.f}) p.line(ex, ey, ex - std::cos(ang + sg * 0.5f) * hl, ey - std::sin(ang + sg * 0.5f) * hl, lw, kAccent);
+  }
+  p.circle(cx, cy, (float)p.S(4), 0xFFDDE3EA);
+  wchar_t label[64];
+  if (len <= 0.04f) wcscpy_s(label, L"Calm");
+  else swprintf(label, 64, L"%d%%  ·  %ls", (int)std::lround(len * 100), compass(wx, wy));
+  p.text(label, 0, (int)y1 + p.S(8), p.W, (int)y1 + p.S(30), kText, p.bold, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+  p.text(L"Drag from the centre to set the wind", 0, (int)y1 + p.S(30), p.W, (int)y1 + p.S(50), kSub, p.small, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+void windKey(ui::Panel& p, WPARAM k) {
+  if (k == VK_ESCAPE || k == VK_RETURN) PostMessageW(p.hwnd, WM_CLOSE, 0, 0);
+}
+void openWindPanel() {
+  if (gWindPanel.open()) { SetForegroundWindow(gWindPanel.hwnd); return; }
+  POINT pt = gMenuPt;
+  float s = scaleAtPoint(pt);
+  RECT wa = workAreaAt(pt);
+  int W = (int)std::lround(240 * s), H = (int)std::lround(306 * s);
+  int x = std::clamp((int)pt.x - W / 2, (int)wa.left + 8, std::max((int)wa.left + 8, (int)wa.right - W - 8));
+  int y = std::clamp((int)pt.y - H - (int)(12 * s), (int)wa.top + 8, std::max((int)wa.top + 8, (int)wa.bottom - H - 8));
+  gWindPanel.build = windBuild;
+  gWindPanel.key = windKey;
+  gWindPanel.closeOnDeactivate = true;
+  ui::create(gWindPanel, gInst, x, y, 240, 306, s);
+}
+
+// ---------------------------------------------------------------------------------------- decorating
+// A toolbar at the top of the screen, while the overlays catch the mouse: click to place decorations and
+// lights, drag to move them, right-click to remove them.
+std::vector<snow::Sprite> gTileIcons;  // [0] string lights, then each decoration
+
+std::wstring widen(const char* a) {
+  std::wstring w;
+  while (*a) w += (wchar_t)(unsigned char)*a++;
+  return w;
+}
+std::wstring lowerFirst(std::wstring w) {
+  if (!w.empty()) w[0] = (wchar_t)towlower(w[0]);
+  return w;
+}
+
+void setOverlaysInteractive(bool on) {
+  for (auto& o : gOv) {
+    if (!o.hwnd) continue;
+    LONG ex = GetWindowLongW(o.hwnd, GWL_EXSTYLE);
+    ex = on ? (ex & ~WS_EX_TRANSPARENT) : (ex | WS_EX_TRANSPARENT);
+    SetWindowLongW(o.hwnd, GWL_EXSTYLE, ex);
+    SetWindowPos(o.hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+  }
+}
+
+void showPresetMenu(ui::Panel& p, int x) {
+  HMENU m = CreatePopupMenu();
+  AppendMenuW(m, MF_STRING, ID_PRESET0 + snow::kPresetVillage, L"A little village on the taskbar");
+  AppendMenuW(m, MF_STRING, ID_PRESET0 + snow::kPresetGarland, L"A garland across the top of the screen");
+  AppendMenuW(m, MF_STRING, ID_PRESET0 + snow::kPresetCorners, L"Swags in the top corners");
+  AppendMenuW(m, MF_STRING, ID_PRESET0 + snow::kPresetBetweenWindows, L"Lights between your windows");
+  POINT pt{x, p.S(38)};
+  ClientToScreen(p.hwnd, &pt);
+  ModalFrames keep;
+  int cmd = TrackPopupMenuEx(m, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, p.hwnd, nullptr);
+  DestroyMenu(m);
+  if (cmd >= (int)ID_PRESET0) gWorld.editPreset(cmd - ID_PRESET0);
+}
+
+void editBuild(ui::Panel& p) {
+  using namespace ui;
+  snow::EditInfo e = gWorld.editInfo();
+  p.clear(kBg);
+  auto S = [&](float v) { return p.S(v); };
+  // row 1: title, what to do now, and the actions
+  p.text(L"Decorate your desktop", S(16), S(8), S(230), S(40), kText, p.bold, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+  int bx = p.W - S(16);
+  auto rightButton = [&](int id, float w, const wchar_t* label, int style) {
+    int x0 = bx - S(w);
+    bool r = p.button(id, x0, S(9), bx, S(37), label, style);
+    bx = x0 - S(8);
+    return r;
+  };
+  if (rightButton(1, 78, L"Done", 1)) { endEditing(true); return; }
+  if (rightButton(2, 78, L"Cancel", 0)) { endEditing(false); return; }
+  if (rightButton(3, 100, L"Remove all", 0)) {
+    ModalFrames keep;
+    if (MessageBoxW(p.hwnd, L"Remove all the decorations and lights?", L"Snowfall", MB_YESNO | MB_ICONQUESTION) == IDYES) gWorld.editClear();
+  }
+  int presetsAt = bx - S(108);
+  if (rightButton(4, 108, L"Presets  ▾", 0)) showPresetMenu(p, presetsAt);
+  std::wstring hint;
+  if (e.tool == snow::kEditDecoration)
+    hint = L"Click along the bottom of the screen to place the " + lowerFirst(widen(snow::decoName(e.decoKind))) + L". Right-click when you're done.";
+  else if (e.tool == snow::kEditLights && e.building)
+    hint = L"Click to add more joints. Double-click, right-click or press Enter to finish.";
+  else if (e.tool == snow::kEditLights)
+    hint = L"Click where the lights should start. Click on a window to hang them from it: they'll follow it around.";
+  else if (e.selString >= 0)
+    hint = L"Drag a joint to move it, right-click a joint to remove it, or press Delete to remove these lights.";
+  else
+    hint = L"Drag decorations and joints to move them, right-click to remove. Pick lights or a decoration below to add one.";
+  p.text(hint.c_str(), S(236), S(8), bx - S(6), S(42), kSub, p.small, DT_LEFT | DT_WORDBREAK);
+  // row 2: the library
+  int n = 1 + snow::kDecoCount;
+  float tw = (p.W - S(32) - S(6) * (n - 1)) / (float)n;
+  for (int i = 0; i < n; ++i) {
+    int x0 = S(16) + (int)(i * (tw + S(6))), x1 = x0 + (int)tw, y0 = S(46), y1 = S(122);
+    bool sel = i == 0 ? e.tool == snow::kEditLights : (e.tool == snow::kEditDecoration && e.decoKind == i - 1);
+    bool h = p.over_(x0, y0, x1, y1);
+    if (sel) {
+      p.rrect((float)x0, (float)y0, (float)x1, (float)y1, (float)S(8), kAccent);
+      p.rrect(x0 + S(1.5f), y0 + S(1.5f), x1 - S(1.5f), y1 - S(1.5f), (float)S(7), kAccentDim);
+    } else {
+      p.rrect((float)x0, (float)y0, (float)x1, (float)y1, (float)S(8), h ? kBg3 : kBg2);
+    }
+    int cx = (x0 + x1) / 2;
+    if (i < (int)gTileIcons.size()) {
+      if (i == 0) p.sprite(gTileIcons[0], cx, y0 + S(30));
+      else p.sprite(gTileIcons[i], cx, y0 + S(53));
+    }
+    std::wstring label = i == 0 ? std::wstring(L"String lights") : widen(snow::decoName(i - 1));
+    p.text(label.c_str(), x0 + S(2), y0 + S(55), x1 - S(2), y1 - S(1), sel || h ? kText : kSub, p.small, DT_CENTER | DT_WORDBREAK);
+    if (p.clickable(100 + i, x0, y0, x1, y1)) {
+      if (sel) gWorld.editTool(snow::kEditSelect);
+      else if (i == 0) gWorld.editTool(snow::kEditLights);
+      else gWorld.editTool(snow::kEditDecoration, i - 1);
+    }
+  }
+  // row 3: the lights
+  int y0 = S(130), y1 = S(158);
+  float cy = (y0 + y1) / 2.f;
+  p.text(L"Colours", S(16), y0, S(80), y1, kText, p.font, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+  for (int c = 0; c < snow::kLightColorCount; ++c) {
+    float cx = (float)(S(92) + c * S(28));
+    bool h = p.over_((int)cx - S(12), y0, (int)cx + S(12), y1);
+    if (e.colors == c) p.ring(cx, cy, (float)S(11), (float)S(2), kAccent);
+    else if (h) p.ring(cx, cy, (float)S(11), (float)S(1.5f), kBorder);
+    if (c == snow::kLightsMulti) {
+      for (int k = 0; k < 3; ++k) {
+        uint32_t rgb = snow::lightColor(c, k);
+        p.circle(cx + (k - 1) * S(4.5f), cy + (k == 1 ? -S(2) : S(2)), (float)S(3.2f), argb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255));
+      }
+    } else if (c == snow::kLightsRedGreen) {
+      for (int k = 0; k < 2; ++k) {
+        uint32_t rgb = snow::lightColor(c, k);
+        p.circle(cx + (k ? S(3.5f) : -S(3.5f)), cy, (float)S(4.2f), argb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255));
+      }
+    } else {
+      uint32_t rgb = snow::lightColor(c, 0);
+      p.circle(cx, cy, (float)S(6.5f), argb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255, 0.35f));
+      p.circle(cx, cy, (float)S(4.5f), argb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255));
+    }
+    if (p.clickable(200 + c, (int)cx - S(12), y0, (int)cx + S(12), y1)) gWorld.editColors(c);
+  }
+  std::wstring cname = widen(snow::lightColorsName(e.colors));
+  p.text(cname.c_str(), S(92) + snow::kLightColorCount * S(28) - S(4), y0, S(370), y1, kSub, p.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+  p.text(L"Slack", S(372), y0, S(414), y1, kText, p.font, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+  float v = e.slack;
+  if (p.slider(300, S(420), y0, S(590), y1, &v)) gWorld.editSlack(v);
+  if (e.building) { if (p.button(301, S(612), y0, S(726), y1, L"Finish lights")) gWorld.editKey(snow::kEditEnter); }
+  else if (e.selString >= 0) { if (p.button(302, S(612), y0, S(736), y1, L"Remove lights")) gWorld.editKey(snow::kEditDelete); }
+  p.text(L"Tip: lights hung on a window follow it when it moves.", S(750), y0, p.W - S(16), y1, kSub, p.small, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+void editKeyHandler(ui::Panel& p, WPARAM k) {
+  if (k == VK_ESCAPE) gWorld.editKey(snow::kEditEscape);
+  else if (k == VK_RETURN) gWorld.editKey(snow::kEditEnter);
+  else if (k == VK_DELETE || k == VK_BACK) gWorld.editKey(snow::kEditDelete);
+  ui::redraw(p);
+}
+void editBarRefresh() {
+  if (gEditBar.open()) ui::redraw(gEditBar);
+}
+void startEditing() {
+  if (gEditing) { if (gEditBar.open()) SetForegroundWindow(gEditBar.hwnd); return; }
+  if (S.paused) { S.paused = false; apply(); }
+  if (gWindPanel.open()) ui::close(gWindPanel);
+  gEditing = true;
+  gWorld.editBegin();
+  setOverlaysInteractive(true);
+  gMonDirty = gWinDirty = true;
+  POINT origin{0, 0};
+  RECT wa = workAreaAt(origin);
+  float s = scaleAtPoint(origin);
+  int wDip = std::min(960, (int)((wa.right - wa.left - 40) / s));
+  int x = wa.left + ((wa.right - wa.left) - (int)(wDip * s)) / 2, y = wa.top + (int)(14 * s);
+  gTileIcons.clear();
+  gTileIcons.push_back(snow::makeLightsIcon(44 * s));
+  for (int k = 0; k < snow::kDecoCount; ++k) {
+    snow::DecoGeom g = snow::decoGeom(k);
+    gTileIcons.push_back(snow::makeDecoration(k, std::min(42.f / g.h, 50.f / g.w) * s, 0));
+  }
+  gEditBar.build = editBuild;
+  gEditBar.key = editKeyHandler;
+  gEditBar.closed = [](ui::Panel&) { if (gEditing) endEditing(true); };
+  gEditBar.dragTop = (int)(44 * s);
+  gEditBar.dragExclude = (int)(230 * s);
+  ui::create(gEditBar, gInst, x, y, wDip, 166, s);
+}
+void endEditing(bool keep) {
+  if (!gEditing) return;
+  gEditing = false;
+  gWorld.editEnd(keep);
+  if (keep) saveLayout(gWorld.layout());
+  setOverlaysInteractive(false);
+  if (gEditBar.open()) ui::close(gEditBar);
+  gTileIcons.clear();
+  gTileIcons.shrink_to_fit();
+}
+
 // ---------------------------------------------------------------------------------------- frames
 struct FrameStats { double ms = 0, worst = 0; long n = 0; };
 FrameStats gStats;
@@ -702,7 +1059,7 @@ bool frame() {
   refreshWindows();
   POINT p;
   bool ok = GetCursorPos(&p);
-  gWorld.setCursor((float)p.x, (float)p.y, ok);
+  gWorld.setCursor((float)p.x, (float)p.y, ok && !gEditing);  // no snowball games while decorating
   if (t >= gNextSanta) { gWorld.sendSanta(); scheduleSanta(t); }
   gWorld.update((float)dt);
   const auto& mons = gWorld.monitors();
@@ -718,6 +1075,8 @@ bool frame() {
   if (t - gLastTop > 2.0) {  // stay above other always-on-top windows (the taskbar likes to come forward)
     gLastTop = t;
     for (auto& o : gOv) if (o.shown) SetWindowPos(o.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    for (ui::Panel* pn : {&gEditBar, &gWindPanel})  // ...and our own panels above the snow
+      if (pn->open()) SetWindowPos(pn->hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
   }
   double ms = (now() - t) * 1000;
   gStats.ms += ms; gStats.worst = std::max(gStats.worst, ms); gStats.n++;
@@ -786,7 +1145,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
   wc.lpszClassName = kMsgClass;
   wc.hIcon = loadIcon(32);
   RegisterClassExW(&wc);
+  ui::registerClass(inst);
   WNDCLASSEXW oc = {sizeof oc};
+  oc.style = CS_DBLCLKS;
+  oc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
   oc.lpfnWndProc = overlayProc;
   oc.hInstance = inst;
   oc.lpszClassName = kOverlayClass;
@@ -813,11 +1175,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
   HPOWERNOTIFY power = RegisterPowerSettingNotification(gMsgWnd, &kDisplayState, DEVICE_NOTIFY_WINDOW_HANDLE);
 
   gWorld.configure(S.eng);
+  {
+    snow::Layout layout;
+    if (!loadLayout(layout)) layout = snow::villageLayout();  // a little village to start with
+    gWorld.setLayout(layout);
+  }
   double start = now();
   if (!autostart && !selftest) gNextSanta = start + 7;  // a first visit, so you know he's there
   else scheduleSanta(start);
   if (!S.welcomed && !selftest) {
-    trayBalloon(L"Let it snow!", L"Snowfall is running. Click the snowflake by the clock for settings. Ctrl+Alt+S pauses the snow.");
+    trayBalloon(L"Let it snow!", L"Snowfall is running. Click the snowflake by the clock to set the wind or decorate your desktop. Ctrl+Alt+S pauses the snow.");
     S.welcomed = true;
     saveSettings();
   }
@@ -827,7 +1194,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
   double next = now();
   bool timerSet = false;
   bool running = true;
-  bool testBalls = false, testPlow = false;
+  bool testBalls = false, testPlow = false, testLights = false, testEdit = false, testEditDone = false;
   while (running) {
     // When awake, wake up for the next frame; when not, only for messages (and a slow check while a
     // full-screen app has every screen).
@@ -848,12 +1215,21 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
       }
       if (selftest) {  // exercise the snowballs and the snowplow on the real desktop
         double e = now() - start;
+        if (!testLights && e > 3) {
+          testLights = true;
+          gWorld.editBegin();
+          gWorld.editPreset(snow::kPresetGarland);
+          gWorld.editPreset(snow::kPresetBetweenWindows);
+          gWorld.editEnd(true);
+        }
         if (!testBalls && e > 8) {
           testBalls = true;
           for (auto& w : gZ)
             if (w.kind == snow::Kind::Window) gWorld.dropSnowball((w.r.l + w.r.r) * 0.5f, (float)w.r.t - 80, 8);
         }
-        if (!testPlow && e > selftest - 16) { testPlow = true; gWorld.sendPlow(); }
+        if (!testPlow && e > selftest - 28) { testPlow = true; gWorld.sendPlow(); }
+        if (!testEdit && e > selftest - 13) { testEdit = true; startEditing(); }  // for a screenshot of the toolbar
+        if (testEdit && !testEditDone && e > selftest - 3) { testEditDone = true; endEditing(false); }
         if (e > selftest) running = false;
       }
     }
@@ -877,6 +1253,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     if (f) {
       std::fprintf(f, "screens=%d\nwindows_with_snow=%d\nother_windows=%d\nflakes=%d\nclumps=%d\npiles=%d\nsnowballs_snowmen_presents=%d\npile_volume=%.0f\n",
                    (int)gWorld.monitors().size(), windows, occluders, st.flakes, st.clumps, st.piles, st.objects, st.pileVolume);
+      std::fprintf(f, "decorations=%d\nstrings_of_lights=%d\n", (int)gWorld.layout().decos.size(), (int)gWorld.layout().lights.size());
       std::fprintf(f, "frames=%ld\navg_frame_ms=%.3f\nworst_frame_ms=%.3f\n", gStats.n, gStats.n ? gStats.ms / gStats.n : 0, gStats.worst);
       std::fprintf(f, "private_mb=%.1f\nworking_set_mb=%.1f\npeak_working_set_mb=%.1f\n", pm.PrivateUsage / 1048576.0, pm.WorkingSetSize / 1048576.0, pm.PeakWorkingSetSize / 1048576.0);
       for (size_t i = 0; i < gWorld.monitors().size(); ++i) {

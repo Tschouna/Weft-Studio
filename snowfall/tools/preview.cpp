@@ -65,6 +65,7 @@ int main(int argc, char** argv) {
     return z;
   };
   w.setWindows(zlist(0), {});
+  w.setLayout(villageLayout());
 
   std::vector<uint32_t> desk((size_t)W * H), ov((size_t)W * H, 0);
   auto paintDesk = [&](int dragX) {
@@ -115,6 +116,29 @@ int main(int argc, char** argv) {
 
   run(20);
   shot("01-start", {0, 0, W, H});
+  // decorate: lights from the light window's top-right corner to the dark window's top-left, then over its top,
+  // and a garland across the top of the screen
+  w.editBegin();
+  w.editTool(kEditLights);
+  w.editPointer(kEditDown, 1160, 182); w.editPointer(kEditUp, 1160, 182);
+  w.editPointer(kEditDown, 1300, 300); w.editPointer(kEditUp, 1300, 300);
+  w.editPointer(kEditDown, 1690, 300); w.editPointer(kEditUp, 1690, 300);
+  w.editPointer(kEditDouble, 1690, 300);
+  w.editColors(kLightsMulti);
+  w.editTool(kEditLights);
+  w.editPointer(kEditDown, 120, 522); w.editPointer(kEditUp, 120, 522);
+  w.editPointer(kEditMove, 255, 600);
+  run(0.5f);
+  shot("01b-editing", {0, 0, W, H});
+  w.editPointer(kEditDown, 255, 600); w.editPointer(kEditUp, 255, 600);
+  w.editKey(kEditEnter);
+  w.editColors(kLightsWarm);
+  w.editPreset(kPresetGarland);
+  w.editTool(kEditDecoration, kDecoSnowman);
+  w.editPointer(kEditDown, 760, 1000);
+  w.editTool(kEditSelect);
+  w.editEnd(true);
+  std::printf("layout: %zu decorations, %zu strings of lights\n", w.layout().decos.size(), w.layout().lights.size());
   run(100);
   // build a snowman by hand: a big ball, then roll smaller ones into it
   w.dropSnowball(560, 120, 9);
