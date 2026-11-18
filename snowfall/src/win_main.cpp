@@ -945,7 +945,14 @@ void editBuild(ui::Panel& p) {
     int cx = (x0 + x1) / 2;
     if (i < (int)gTileIcons.size()) {
       if (i == 0) p.sprite(gTileIcons[0], cx, y0 + S(30));
-      else p.sprite(gTileIcons[i], cx, y0 + S(53));
+      else {
+        snow::DecoGeom g = snow::decoGeom(i - 1);
+        if (g.glowR > 0) {  // the lamps glow here too (and show up on the dark tile)
+          float k = std::min(42.f / g.h, 50.f / g.w) * p.s;
+          p.circle((float)cx, y0 + S(53) - g.glowY * k, std::min(g.glowR * k * 0.6f, (float)S(24)), argb(255, 200, 120, 0.22f));
+        }
+        p.sprite(gTileIcons[i], cx, y0 + S(53));
+      }
     }
     static const wchar_t* shortNames[snow::kDecoCount] = {L"House", L"Hydrant", L"Lamp", L"Lantern", L"Pine", L"Fir tree",
                                                          L"Red gift", L"Blue gift", L"Bench", L"Stall", L"Snowman", L"Candy cane"};
