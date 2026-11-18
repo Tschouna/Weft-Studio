@@ -837,7 +837,7 @@ void windBuild(ui::Panel& p) {
   if (len <= 0.04f) wcscpy_s(label, L"Calm");
   else swprintf(label, 64, L"%d%%  ·  %ls", (int)std::lround(len * 100), compass(wx, wy));
   p.text(label, 0, (int)y1 + p.S(8), p.W, (int)y1 + p.S(30), kText, p.bold, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-  p.text(L"Drag from the centre to set the wind", 0, (int)y1 + p.S(30), p.W, (int)y1 + p.S(50), kSub, p.small, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+  p.text(L"Drag from the centre to set the wind", 0, (int)y1 + p.S(30), p.W, (int)y1 + p.S(50), kSub, p.smallFont, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 void windKey(ui::Panel& p, WPARAM k) {
   if (k == VK_ESCAPE || k == VK_RETURN) PostMessageW(p.hwnd, WM_CLOSE, 0, 0);
@@ -928,7 +928,7 @@ void editBuild(ui::Panel& p) {
     hint = L"Drag a joint to move it, right-click a joint to remove it, or press Delete to remove these lights.";
   else
     hint = L"Drag decorations and joints to move them, right-click to remove. Pick lights or a decoration below to add one.";
-  p.text(hint.c_str(), S(236), S(8), bx - S(6), S(42), kSub, p.small, DT_LEFT | DT_WORDBREAK);
+  p.text(hint.c_str(), S(236), S(8), bx - S(6), S(42), kSub, p.smallFont, DT_LEFT | DT_WORDBREAK);
   // row 2: the library
   int n = 1 + snow::kDecoCount;
   float tw = (p.W - S(32) - S(6) * (n - 1)) / (float)n;
@@ -948,7 +948,7 @@ void editBuild(ui::Panel& p) {
       else p.sprite(gTileIcons[i], cx, y0 + S(53));
     }
     std::wstring label = i == 0 ? std::wstring(L"String lights") : widen(snow::decoName(i - 1));
-    p.text(label.c_str(), x0 + S(2), y0 + S(55), x1 - S(2), y1 - S(1), sel || h ? kText : kSub, p.small, DT_CENTER | DT_WORDBREAK);
+    p.text(label.c_str(), x0 + S(2), y0 + S(55), x1 - S(2), y1 - S(1), sel || h ? kText : kSub, p.smallFont, DT_CENTER | DT_WORDBREAK);
     if (p.clickable(100 + i, x0, y0, x1, y1)) {
       if (sel) gWorld.editTool(snow::kEditSelect);
       else if (i == 0) gWorld.editTool(snow::kEditLights);
@@ -982,13 +982,13 @@ void editBuild(ui::Panel& p) {
     if (p.clickable(200 + c, (int)cx - S(12), y0, (int)cx + S(12), y1)) gWorld.editColors(c);
   }
   std::wstring cname = widen(snow::lightColorsName(e.colors));
-  p.text(cname.c_str(), S(92) + snow::kLightColorCount * S(28) - S(4), y0, S(370), y1, kSub, p.small, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+  p.text(cname.c_str(), S(92) + snow::kLightColorCount * S(28) - S(4), y0, S(370), y1, kSub, p.smallFont, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
   p.text(L"Slack", S(372), y0, S(414), y1, kText, p.font, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
   float v = e.slack;
   if (p.slider(300, S(420), y0, S(590), y1, &v)) gWorld.editSlack(v);
   if (e.building) { if (p.button(301, S(612), y0, S(726), y1, L"Finish lights")) gWorld.editKey(snow::kEditEnter); }
   else if (e.selString >= 0) { if (p.button(302, S(612), y0, S(736), y1, L"Remove lights")) gWorld.editKey(snow::kEditDelete); }
-  p.text(L"Tip: lights hung on a window follow it when it moves.", S(750), y0, p.W - S(16), y1, kSub, p.small, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+  p.text(L"Tip: lights hung on a window follow it when it moves.", S(750), y0, p.W - S(16), y1, kSub, p.smallFont, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 void editKeyHandler(ui::Panel& p, WPARAM k) {
   if (k == VK_ESCAPE) gWorld.editKey(snow::kEditEscape);

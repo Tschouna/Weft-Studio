@@ -43,7 +43,7 @@ struct Panel {
   HDC dc = nullptr;
   HBITMAP bmp = nullptr, old = nullptr;
   uint32_t* px = nullptr;
-  HFONT font = nullptr, bold = nullptr, small = nullptr;
+  HFONT font = nullptr, bold = nullptr, smallFont = nullptr;
   int mx = -10000, my = -10000;
   bool down = false, pressed = false, released = false, tracking = false;
   int active = 0;     // the widget being pressed
@@ -175,9 +175,9 @@ inline void close(Panel& p) {
   p.hwnd = nullptr;
   DestroyWindow(h);
   if (p.dc) { SelectObject(p.dc, p.old); DeleteObject(p.bmp); DeleteDC(p.dc); }
-  for (HFONT f : {p.font, p.bold, p.small}) if (f) DeleteObject(f);
+  for (HFONT f : {p.font, p.bold, p.smallFont}) if (f) DeleteObject(f);
   p.dc = nullptr; p.bmp = p.old = nullptr; p.px = nullptr;
-  p.font = p.bold = p.small = nullptr;
+  p.font = p.bold = p.smallFont = nullptr;
   if (p.closed) p.closed(p);
 }
 
@@ -224,7 +224,7 @@ inline bool create(Panel& p, HINSTANCE inst, int x, int y, int wDip, int hDip, f
   };
   p.font = mk(13.f, FW_NORMAL);
   p.bold = mk(14.5f, FW_SEMIBOLD);
-  p.small = mk(11.5f, FW_NORMAL);
+  p.smallFont = mk(11.5f, FW_NORMAL);
   redraw(p);
   ShowWindow(p.hwnd, SW_SHOW);
   SetForegroundWindow(p.hwnd);
