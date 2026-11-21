@@ -15,6 +15,7 @@ self.onmessage = (e) => {
     const take = (m) => { transfer.push(m.position.buffer, m.index.buffer); if (m.normal) transfer.push(m.normal.buffer); };
     for (const t of res.tiles) for (const b of t.bodies) take(b);
     for (const p of res.parts) take(p.mesh);
+    if (res.moss) { take(res.moss); transfer.push(res.moss.color.buffer); }
     self.postMessage({ id, res }, transfer);
   } catch (err) {
     self.postMessage({ id, error: String((err && err.stack) || err) });

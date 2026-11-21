@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.11.0
+
+- **Moss trays (new, in Panels):** Pattern → **Moss** turns a panel into a deep tray with a landscape carved into its flat top and flat-floored beds for preserved moss. The 3D view shows the moss in place (preview only: you glue real moss in after printing).
+  - Seven landscapes:
+    - **Topo**: smooth valleys winding into deep round pits, with beds of moss bordered by the flat top. It is the stepped contour tray, without the steps.
+    - **Isles**: smooth stone islands rising out of a sea of moss.
+    - **Brook**: river stones lying in moss.
+    - **River**: a river of moss winding between rolling banks.
+    - **Zen**: moss islands in raked gravel, the rakes ringing each island and running straight between them.
+    - **Cells**: a web of rounded walls; some cells hold moss, the rest are smooth bowls.
+    - **Swell**: long rolling waves with moss lying in some of the troughs.
+  - Moss controls: **Moss depth** (4 to 30 mm; sheet moss wants 8 to 12, cushion moss 15 or more) and **Share of moss** (or the river's width, or how much moss lies between the stones). Tray depth, Scale, Variation, Angle, Warp and Seed work as for any panel.
+  - Every bed has a flat floor, scored on the diagonals so the glue grips, and is walled in all round: by the flat top, by ground that reaches at least the moss's surface, or by a raised stone ring. The tray's rim (the frame, or 3 mm without one) closes every bed at the edge, and its sides are upright.
+  - Finish → **Moss** picks the moss's colour in the preview, from dark forest to pale reindeer moss.
+  - The print check gives the beds' depth and their area, so you know how much moss to buy, and warns if the tray is too shallow for the moss depth you asked for. The export's notes say how to glue the moss in.
+- New starting panels: **Moor** (Topo, after the stepped contour tray), **Archipel** (Isles), **Brook**, **Kyoto** (Zen) and **Fjord** (River).
+
 ## 2.10.0
 
 - **Patterns keep the same size everywhere.** Before, every pattern had the same number of cells all the way round, so where a piece narrowed (a round or pointed bottom, a neck, a narrow base) its cells shrank and bunched up, down to nothing at a tip. Now cells keep the size they have at the widest point, and fewer fit round where it narrows. How a pattern does that depends on how it is built:

@@ -1,7 +1,7 @@
 // Weft panels: the Panels compartment. A wall panel you shape, pattern and slice into tiles that fit the
 // bed, beside the studio in the same app. The geometry lives in panel.js and builds in panel-worker.js.
 import {
-  PANEL_PATTERNS, PANEL_PATTERN_ORDER, PANEL_SHAPES, RIB_FIELDS, normalizePanel, panelDefaults, planPanel, buildPanel,
+  PANEL_PATTERNS, PANEL_PATTERN_ORDER, PANEL_SHAPES, RIB_FIELDS, MOSS_ORDER, normalizePanel, panelDefaults, planPanel, buildPanel,
   previewRes, panelChecks, outlinePath, _compile, fitTestPanel,
 } from './panel.js';
 import { readDEM, mosaic, DEM_EXTENSIONS } from './dem.js';
@@ -32,10 +32,18 @@ export const PANEL_PRESETS = [
   { name: 'Shingle', pattern: 'scale', width: 440, height: 560, scale: 46, depth: 9, vary: 0.35, edge: 'frame', edgeW: 16, finish: { color: '#5b4a3a', material: 'satin' } },
   { name: 'Kinetic', pattern: 'pyramid', width: 520, height: 360, scale: 52, depth: 12, vary: 0.7, edge: 'flush', tiles: { joint: 'none' }, finish: { color: '#c9cbc8' } },
   { name: 'Truchet', pattern: 'truchet', width: 480, height: 360, scale: 40, depth: 8, vary: 0.4, edge: 'frame', edgeW: 14, finish: { color: '#eeebe4', color2: '#26324a', twoTone: true, toneAt: 0.45 } },
+  // moss trays: a landscape carved into a deep tray, with beds for preserved moss
+  { name: 'Moor', mode: 'moss', pattern: 'topo', width: 450, height: 300, scale: 40, depth: 26, base: 4, vary: 0.5, seed: 7, edge: 'frame', edgeW: 12, moss: { depth: 12, amount: 0.2, color: '#4b6a2a' }, tiles: { joint: 'dovetail' }, finish: { color: '#cfccc4', material: 'matte', wall: '#e4e1da' } },
+  { name: 'Archipel', mode: 'moss', pattern: 'isles', width: 600, height: 400, scale: 70, depth: 24, base: 4, vary: 0.45, seed: 12, edge: 'frame', edgeW: 14, moss: { depth: 10, amount: 0.42, color: '#5c7a32' }, finish: { color: '#eeebe4', material: 'matte', wall: '#cfd5c9' } },
+  { name: 'Brook', mode: 'moss', pattern: 'brook', width: 500, height: 340, scale: 36, depth: 22, base: 4, vary: 0.4, seed: 5, edge: 'frame', edgeW: 12, moss: { depth: 10, amount: 0.45, color: '#4b6a2a' }, finish: { color: '#8d8f8e', material: 'satin', wall: '#e4e1da' } },
+  { name: 'Kyoto', mode: 'moss', pattern: 'zen', width: 600, height: 340, scale: 60, depth: 22, base: 4, vary: 0.5, seed: 3, edge: 'frame', edgeW: 16, moss: { depth: 10, amount: 0.4, color: '#3e5a24' }, finish: { color: '#e9e4d8', material: 'matte', wall: '#5d6166' } },
+  { name: 'Fjord', mode: 'moss', pattern: 'river', shape: 'rounded', corner: 24, width: 640, height: 300, scale: 70, depth: 26, base: 4, vary: 0.55, seed: 9, edge: 'frame', edgeW: 12, moss: { depth: 12, amount: 0.32, color: '#6f8f36' }, finish: { color: '#3a3b3d', material: 'matte', wall: '#e4e1da' } },
   { name: 'Odeon', pattern: 'deco', shape: 'arch', width: 420, height: 600, scale: 50, depth: 8, vary: 0.5, edge: 'frame', edgeW: 18, finish: { color: '#d8a647', material: 'silk' } },
 ];
 const PANEL_NAMES = ['Atlas', 'Dune', 'Tide', 'Mesa', 'Strata', 'Loom', 'Riad', 'Kiln', 'Fresco', 'Relief', 'Plinth', 'Facade', 'Cornice', 'Frieze', 'Lintel', 'Tessera', 'Mosaic', 'Zellige', 'Terrazzo', 'Travertine', 'Basalt', 'Quarry', 'Cairn', 'Moraine', 'Delta', 'Estuary', 'Sirocco', 'Mistral', 'Aurora', 'Halcyon', 'Solace', 'Vesper', 'Lumen', 'Odeon', 'Lido', 'Riviera', 'Cloister', 'Atrium', 'Portico', 'Arcade', 'Bastion', 'Rampart', 'Canopy', 'Grove', 'Thicket', 'Bramble', 'Fable', 'Echo', 'Cadence', 'Meridian'];
 const WALLS = [['Plaster', '#e4e1da'], ['Linen', '#ece6dc'], ['Sage', '#cfd5c9'], ['Terracotta', '#c9a48f'], ['Slate', '#5d6166'], ['Night', '#1d1e1c']];
+// preserved moss, for the preview
+const MOSSES = [['Forest', '#3e5a24'], ['Moss', '#4b6a2a'], ['Fern', '#5c7a32'], ['Spring', '#6f8f36'], ['Sage', '#7f8f6a'], ['Lichen', '#a3ab78'], ['Reindeer', '#c9cfae']];
 const LEDS = [['Candle', '#ff9f4a'], ['Warm', '#ffb46b'], ['Soft', '#ffd7a0'], ['Daylight', '#f4f1ff'], ['Rose', '#ff7aa8'], ['Ocean', '#5ab8ff']];
 const DETAIL = { draft: { label: 'Draft', res: 0.8, note: 'quick, a little soft' }, standard: { label: 'Standard', res: 0.55, note: 'sharp for 0.4 mm nozzles' }, fine: { label: 'Fine', res: 0.4, note: 'biggest files' } };
 const STEPS = [
@@ -214,7 +222,8 @@ export function initPanels(api) {
   if (/[?&]debug/.test(location.search)) window.__pnScene = scene;
   panelRoot.scale.setScalar(SC);
   scene.add(panelRoot);
-  let tileGroups = [], beds = null, partsGroup = null;
+  let tileGroups = [], beds = null, partsGroup = null, mossMesh = null;
+  const mossMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.25 });
   let needs = true;
   const invalidate = () => { needs = true; };
   controls.addEventListener('change', invalidate);
@@ -261,7 +270,7 @@ export function initPanels(api) {
   function clearPanel() {
     panelRoot.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); if (o.userData.own) o.material.dispose(); } });
     panelRoot.clear();
-    tileGroups = []; beds = null; partsGroup = null;
+    tileGroups = []; beds = null; partsGroup = null; mossMesh = null;
   }
   function show(res) {
     clearPanel();
@@ -277,6 +286,14 @@ export function initPanels(api) {
       outer.userData = { tile: t };
       panelRoot.add(outer);
       tileGroups.push(outer);
+    }
+    // the moss in a moss tray's beds (the preview only: it is never exported)
+    if (res.moss && res.moss.index.length) {
+      const g = geometry(res.moss);
+      g.setAttribute('color', new THREE.BufferAttribute(res.moss.color, 3));
+      mossMesh = new THREE.Mesh(g, mossMat);
+      mossMesh.castShadow = true; mossMesh.receiveShadow = true;
+      panelRoot.add(mossMesh);
     }
     if (res.parts.length) {
       partsGroup = new THREE.Group();
@@ -303,6 +320,7 @@ export function initPanels(api) {
     panelRoot.rotation.set(0, 0, 0);
     panelRoot.position.set(0, 0, 0);
     if (partsGroup) partsGroup.visible = ps.view === 'print';
+    if (mossMesh) mossMesh.visible = ps.view === 'wall' && !ps.back && ps.moss !== false;
     wall.visible = ps.view !== 'print' && !ps.back;
     if (ps.view === 'print') {
       const bd = bed(), n = tileGroups.length + (partsGroup ? 1 : 0), cols = Math.ceil(Math.sqrt(n)), gap = 40;
@@ -459,7 +477,7 @@ export function initPanels(api) {
     const res = kind === 'draft' && lastMs > 260 ? base * 1.7 : base;
     const t0 = performance.now();
     try {
-      const out = await builder.run(Pn, { res, bed: bed(), normals: true, groups: true, img: imgOpt(), dem: demOpt() });
+      const out = await builder.run(Pn, { res, bed: bed(), normals: true, groups: true, img: imgOpt(), dem: demOpt(), mossPreview: Pn.mode === 'moss' });
       if (kind !== 'draft') lastMs = performance.now() - t0;
       const first = !ps.res || ps.res.plan.W !== out.plan.W || ps.res.plan.H !== out.plan.H;
       ps.res = out; ps.plan = out.plan;
@@ -496,7 +514,7 @@ export function initPanels(api) {
   }
   function updateKind() {
     const Pn = P(), pat = PANEL_PATTERNS[Pn.pattern];
-    el.kind.textContent = `${PANEL_SHAPES[Pn.shape]} panel · ${pat.label} ${Pn.mode === 'cut' ? 'openwork' : Pn.mode === 'ribs' ? 'ribs' : 'relief'}`;
+    el.kind.textContent = Pn.mode === 'moss' ? `${PANEL_SHAPES[Pn.shape]} moss tray · ${pat.label}` : `${PANEL_SHAPES[Pn.shape]} panel · ${pat.label} ${Pn.mode === 'cut' ? 'openwork' : Pn.mode === 'ribs' ? 'ribs' : 'relief'}`;
   }
 
   // ---------------------------------------------------------------- history
@@ -572,18 +590,24 @@ export function initPanels(api) {
     const sc = Math.min(w / Pn.width, hgt / Pn.height) * 0.92, cw = w, ch = hgt;
     cv.width = cw; cv.height = ch;
     const g = cv.getContext('2d'), img = g.createImageData(cw, ch);
-    const T = new Float32Array(cw * ch), M = new Uint8Array(cw * ch);
+    const T = new Float32Array(cw * ch), M = new Uint8Array(cw * ch), G = C.mossMode ? new Float32Array(cw * ch) : null;
     for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
       const x = (i + 0.5 - cw / 2) / sc, y = (ch / 2 - j - 0.5) / sc, R = C.evalAt(x, y), k = j * cw + i;
       T[k] = R.r > 0 ? R.t : Pn.base; M[k] = R.d > 0 && R.c > 0 ? 1 : 0;
+      if (G) G[k] = R.m;
     }
+    const mossCol = C.mossMode ? new THREE.Color(Pn.moss.color) : null;
     const base = new THREE.Color(Pn.finish.color), tips = new THREE.Color(Pn.finish.color2), bg = new THREE.Color(Pn.finish.wall);
     const lx = -0.62, ly = 0.55, lz = 0.56, px = 1 / sc;
     for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
       const k = j * cw + i, o = k * 4;
       let col;
       if (!M[k]) { col = bg.clone().multiplyScalar(0.96); if (light && i > 0 && j > 0 && M[k - 1 - cw]) col.multiplyScalar(0.8); }
-      else {
+      else if (G && G[k] > 0.4) {
+        // the moss: its own green, mottled, a little darker towards the walls of its bed
+        const mot = 0.82 + 0.18 * Math.sin(i * 1.9 + Math.sin(j * 1.3) * 2.5) * Math.cos(j * 1.7 + i * 0.4);
+        col = mossCol.clone().multiplyScalar(mot * (1.05 + 0.3 * Math.min(1, G[k] / 3))).addScalar(0.03);
+      } else {
         const tx = (T[Math.min(k + 1, k - i + cw - 1)] - T[Math.max(k - 1, k - i)]) / (2 * px), ty = (T[Math.max(k - cw, i)] - T[Math.min(k + cw, (ch - 1) * cw + i)]) / (2 * px);
         const nl = Math.hypot(tx, ty, 1), dot = Math.max(0, (-tx * lx - ty * ly + lz) / nl);
         const c0 = C.twoTone && T[k] > C.zc ? tips : base, lift = 0.16 * dot ** 6;
@@ -646,12 +670,13 @@ export function initPanels(api) {
   function patternSwatch(k) {
     const cv = h('canvas', { width: 64, height: 64, 'aria-hidden': 'true' });
     const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-    const ck = `${k}-${P().mode === 'cut' && PANEL_PATTERNS[k].cut ? 'cut' : 'rel'}-${dark}`;
+    const ck = `${k}-${P().mode === 'cut' && PANEL_PATTERNS[k].cut ? 'cut' : 'rel'}-${dark}-${PANEL_PATTERNS[k].mossy ? P().moss.color : ''}`;
     const done = swatchCache.get(ck);
     if (done) { cv.getContext('2d').drawImage(done, 0, 0); return cv; }
     idle(() => {
       const pat = PANEL_PATTERNS[k];
-      const src = panelDefaults({ pattern: k, mode: P().mode === 'cut' && pat.cut ? 'cut' : 'relief', width: 120, height: 120, scale: k === 'reed' ? 14 : k === 'halftone' ? 12 : k === 'contour' || k === 'ridge' ? 34 : k === 'sunburst' || k === 'vortex' || k === 'ripple' ? 18 : 30, depth: 8, edge: 'flush', seed: 3,
+      const src = pat.mossy ? panelDefaults({ pattern: k, mode: 'moss', width: 120, height: 120, scale: { topo: 22, isles: 30, brook: 16, river: 28, zen: 30, cells: 24, swell: 22 }[k] || 24, depth: 18, edge: 'frame', edgeW: 5, seed: 3, moss: { amount: 0.35, color: P().moss.color },
+        finish: { color: dark ? '#cfcec7' : '#eeebe4', wall: dark ? '#22231f' : '#ffffff' } }) : panelDefaults({ pattern: k, mode: P().mode === 'cut' && pat.cut ? 'cut' : 'relief', width: 120, height: 120, scale: k === 'reed' ? 14 : k === 'halftone' ? 12 : k === 'contour' || k === 'ridge' ? 34 : k === 'sunburst' || k === 'vortex' || k === 'ripple' ? 18 : 30, depth: 8, edge: 'flush', seed: 3,
         finish: { color: dark ? '#cfcec7' : '#eeebe4', wall: dark ? '#22231f' : '#ffffff' } });
       shade(cv, src, { w: 64, hgt: 64, light: false });
       const c2 = document.createElement('canvas'); c2.width = 64; c2.height = 64; c2.getContext('2d').drawImage(cv, 0, 0); swatchCache.set(ck, c2);
@@ -659,11 +684,19 @@ export function initPanels(api) {
     return cv;
   }
   function panePattern() {
-    const Pn = P(), pat = PANEL_PATTERNS[Pn.pattern], cut = Pn.mode === 'cut', ribs = Pn.mode === 'ribs';
+    const Pn = P(), pat = PANEL_PATTERNS[Pn.pattern], cut = Pn.mode === 'cut', ribs = Pn.mode === 'ribs', moss = Pn.mode === 'moss';
     const setMode = (m) => {
       if (Pn.mode === m) return;
+      const wasMoss = Pn.mode === 'moss';
       Pn.mode = m;
-      if (m === 'cut') { Pn.depth = Math.min(Pn.depth, 4); if (Pn.tiles.seams === 'pattern') Pn.tiles.seams = 'straight'; }
+      if (wasMoss && PANEL_PATTERNS[Pn.pattern].mossy) { Pn.pattern = m === 'ribs' ? 'silk' : 'contour'; Pn.depth = Math.min(Pn.depth, 30); }
+      if (m === 'moss') {
+        // a deep tray with a frame round it
+        if (!PANEL_PATTERNS[Pn.pattern].mossy) Pn.pattern = 'topo';
+        Pn.depth = clamp(Math.max(Pn.depth, 24), 8, 60); Pn.base = Math.max(Pn.base, 4); Pn.edge = 'frame'; Pn.edgeW = clamp(Pn.edgeW, 10, 20);
+        Pn.finish.twoTone = false;
+        tunePattern(Pn, Pn.pattern);
+      } else if (m === 'cut') { Pn.depth = Math.min(Pn.depth, 4); if (Pn.tiles.seams === 'pattern') Pn.tiles.seams = 'straight'; }
       else if (m === 'ribs') {
         Pn.depth = Math.max(Pn.depth, 22); Pn.base = Math.max(Pn.base, 5); if (Pn.tiles.seams === 'pattern') Pn.tiles.seams = 'straight';
         if (!RIB_FIELDS.includes(Pn.pattern)) { Pn.pattern = 'silk'; }
@@ -672,7 +705,7 @@ export function initPanels(api) {
       commit(); rebuild(); renderAll();
     };
     const grid = h('div', { class: 'patterns', role: 'group', 'aria-label': 'Pattern' });
-    for (const k of PANEL_PATTERN_ORDER) {
+    for (const k of moss ? MOSS_ORDER : PANEL_PATTERN_ORDER) {
       const p = PANEL_PATTERNS[k], off = cut && !p.cut;
       grid.append(h('button', { class: 'pat', type: 'button', 'aria-pressed': Pn.pattern === k, disabled: off, title: off ? `${p.label} has no openwork` : p.note, onclick: () => { Pn.pattern = k; tunePattern(Pn, k); commit(); rebuild(); renderAll(); } }, patternSwatch(k), p.label));
     }
@@ -683,10 +716,16 @@ export function initPanels(api) {
         h('div', { class: 'seg', role: 'group', 'aria-label': 'Relief, ribs or openwork' },
           h('button', { type: 'button', 'aria-pressed': Pn.mode === 'relief', title: 'A solid relief surface', onclick: () => setMode('relief') }, 'Relief'),
           h('button', { type: 'button', 'aria-pressed': ribs, title: 'Parallel ribs whose heights follow the pattern', onclick: () => setMode('ribs') }, 'Ribs'),
-          pat.cut ? h('button', { type: 'button', 'aria-pressed': cut, title: 'Cut right through, so light and the wall show through', onclick: () => setMode('cut') }, 'Openwork') : null),
+          pat.cut ? h('button', { type: 'button', 'aria-pressed': cut, title: 'Cut right through, so light and the wall show through', onclick: () => setMode('cut') }, 'Openwork') : null,
+          h('button', { type: 'button', 'aria-pressed': moss, title: 'A deep tray with a landscape carved into it and beds for preserved moss', onclick: () => setMode('moss') }, 'Moss')),
         grid,
         cut ? h('p', { class: 'note' }, 'Openwork cuts right through, so light and the wall show through. Every tile keeps solid rails along its seams and round its joints and pockets.') : null,
-        ribs ? h('p', { class: 'note' }, 'Thin parallel ribs stand on the back, each one following the pattern\'s height. Broad patterns read best: Silk, Bloom, Lens, Dune, Ripple, Vortex, Contour.') : null),
+        ribs ? h('p', { class: 'note' }, 'Thin parallel ribs stand on the back, each one following the pattern\'s height. Broad patterns read best: Silk, Bloom, Lens, Dune, Ripple, Vortex, Contour.') : null,
+        moss ? h('p', { class: 'note' }, 'A deep tray: a landscape is carved into its flat top, and flat-floored beds hold preserved moss, which you glue in after printing. The moss in the preview is only there to show how it looks; it is not part of the print.') : null),
+      moss ? group('Moss', 'The beds the moss is glued into.',
+        sliderCtl('pn-mossd', 'Moss depth', { min: 4, max: 30, step: 0.5, fmt: mmf }, () => Pn.moss.depth, (v) => { Pn.moss.depth = v; }, local()),
+        sliderCtl('pn-mossa', Pn.pattern === 'river' ? 'River width' : Pn.pattern === 'brook' ? 'Moss between the stones' : 'Share of moss', { min: 0.08, max: 0.8, step: 0.01, fmt: pct }, () => Pn.moss.amount, (v) => { Pn.moss.amount = v; }, local()),
+        h('p', { class: 'note' }, 'Sheet and flat moss want 8 to 12 mm; cushion and ball moss 15 mm or more. Every bed has a flat floor, scored so the glue grips, and is walled in all round.')) : null,
       pat.terrain ? group('From swisstopo', 'Type a peak, a place or coordinates, frame the area, and Weft downloads the swissALTI3D heights and stitches them. Switzerland and Liechtenstein.', ...swisstopoCtl()) : null,
       pat.terrain ? group('Elevation model', 'The landscape on the panel. You can also load files you downloaded yourself: swissALTI3D as GeoTIFF or XYZ (also zipped), or DHM25 and other ASCII grids. Neighbouring tiles are stitched by their coordinates.', ...terrainCtl()) : null,
       ribs ? group('Ribs', 'Every rib is a straight-sided wall, so it prints crisp without supports.',
@@ -698,28 +737,33 @@ export function initPanels(api) {
         h('p', { class: 'note' }, `${Math.round(Pn.width / (Pn.ribs.width + Pn.ribs.gap))} ribs across. Straight upright or level ribs keep the seams in the gaps between them.`)) : null,
       img ? group('Picture', pat.image ? 'The relief follows its brightness: light areas stand out.' : 'Without a picture the dots follow a gradient from the origin.', pictureCtl()) : null,
       group('Relief', null,
-        sliderCtl('pn-depth', cut ? 'Bar relief' : ribs ? 'Rib depth' : 'Depth', { min: 0, max: cut ? 10 : pat.terrain ? maxDepth() : ribs ? 60 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, { local: true, after: () => { commit(true); rebuild(false); if (pat.terrain) refreshTerrainNote(); } }),
+        sliderCtl('pn-depth', cut ? 'Bar relief' : ribs ? 'Rib depth' : moss ? 'Tray depth' : 'Depth', { min: moss ? 8 : 0, max: cut ? 10 : pat.terrain ? maxDepth() : ribs || moss ? 60 : 30, step: 0.5, fmt: mmf }, () => Pn.depth, (v) => { Pn.depth = v; }, { local: true, after: () => { commit(true); rebuild(false); if (pat.terrain) refreshTerrainNote(); } }),
         sliderCtl('pn-scale', ribs ? 'Wave size' : 'Scale', { min: 8, max: ribs ? 600 : 240, step: 1, fmt: mmf }, () => Pn.scale, (v) => { Pn.scale = v; }, local()),
         pat.image || pat.terrain ? null : sliderCtl('pn-vary', pat.blocks ? 'Tilt' : 'Variation', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.vary, (v) => { Pn.vary = v; }, local()),
         pat.blocks && Pn.mode === 'relief' ? sliderCtl('pn-groove', 'Groove between blocks', { min: 1.2, max: 8, step: 0.1, fmt: mmf }, () => Pn.groove, (v) => { Pn.groove = v; }, local()) : null,
         cut ? sliderCtl('pn-open', 'Openness', { min: 0, max: 1, step: 0.01, fmt: pct }, () => Pn.open, (v) => { Pn.open = v; }, local()) : null,
         sliderCtl('pn-angle', 'Angle', { min: -90, max: 90, step: 1, fmt: deg }, () => Pn.angle, (v) => { Pn.angle = v; }, local()),
         pat.image ? null : sliderCtl('pn-warp', 'Warp', { min: 0, max: 1, step: 0.01, fmt: (v) => (v ? pct(v) : 'none') }, () => Pn.warp, (v) => { Pn.warp = v; }, local()),
-        cut ? null : switchCtl('pn-inv', pat.label === 'Reed' ? 'Invert (flutes)' : 'Invert', () => Pn.invert, (v) => { Pn.invert = v; }, local()),
+        cut || moss ? null : switchCtl('pn-inv', pat.label === 'Reed' ? 'Invert (flutes)' : 'Invert', () => Pn.invert, (v) => { Pn.invert = v; }, local()),
         radial ? chipsCtl('Centre', [{ value: 'centre', label: 'Middle' }, { value: 'bottom', label: 'Bottom' }, { value: 'top', label: 'Top' }, { value: 'left', label: 'Left' }, { value: 'corner', label: 'Corner' }], () => Pn.origin, (v) => { Pn.origin = v; }, local()) : null,
         h('div', { class: 'row-ctl' }, h('span', {}, `Seed ${Pn.seed}`), h('button', { class: 'mini-btn', type: 'button', onclick: () => { Pn.seed = 1 + Math.floor(Math.random() * 9999); commit(); rebuild(); renderPane('pattern'); }, html: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${DICE}</svg><span>New seed</span>` }))),
-      cut ? null : group('Morph', 'Blend into a second pattern across the panel.',
+      cut || moss ? null : group('Morph', 'Blend into a second pattern across the panel.',
         h('select', { class: 'select', 'aria-label': 'Second pattern', onchange: (e) => { Pn.morph = e.target.value; commit(); rebuild(); renderPane('pattern'); } },
           h('option', { value: 'none', selected: Pn.morph === 'none' }, 'No morph'),
           ...PANEL_PATTERN_ORDER.filter((k) => k !== Pn.pattern && !PANEL_PATTERNS[k].image).map((k) => h('option', { value: k, selected: Pn.morph === k }, `Into ${PANEL_PATTERNS[k].label}`))),
         Pn.morph !== 'none' ? chipsCtl('Direction', [{ value: 'up', label: 'Upwards' }, { value: 'right', label: 'Left to right' }, { value: 'out', label: 'Outwards' }], () => Pn.morphDir, (v) => { Pn.morphDir = v; }, local()) : null),
-      group('Fade', 'Let the pattern melt away towards one side.',
+      moss ? null : group('Fade', 'Let the pattern melt away towards one side.',
         sliderCtl('pn-fade', 'Fade', { min: 0, max: 1, step: 0.01, fmt: (v) => (v ? pct(v) : 'none') }, () => Pn.fade, (v) => { Pn.fade = v; }, local(true)),
         Pn.fade > 0 ? chipsCtl('Towards', [{ value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }, { value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }, { value: 'centre', label: 'Middle' }, { value: 'edges', label: 'Edges' }], () => Pn.fadeDir, (v) => { Pn.fadeDir = v; }, local()) : null),
     ];
   }
   // sensible numbers when a pattern is picked
   function tunePattern(Pn, k) {
+    if (PANEL_PATTERNS[k].mossy) {
+      const M = { topo: 40, isles: 66, brook: 36, river: 64, zen: 60, cells: 50, swell: 48 };
+      Pn.scale = Math.round((M[k] || 50) * clamp(Math.sqrt((Pn.width * Pn.height) / (450 * 300)), 0.75, 1.5));
+      return;
+    }
     if (k === 'diffuser' && Pn.mode === 'relief') { Pn.scale = 30; Pn.depth = Math.max(Pn.depth, 40); Pn.vary = Math.max(Pn.vary, 0.6); Pn.edge = 'flush'; return; }
     if (k === 'terrain') { Pn.edge = Pn.edge === 'frame' ? 'frame' : 'flush'; if (Pn.mode === 'relief') Pn.depth = Math.max(Pn.depth, 18); }
     if (Pn.mode === 'ribs') {
@@ -1081,6 +1125,10 @@ export function initPanels(api) {
         switchCtl('pn-two', 'Two-tone', () => F.twoTone, (v) => { F.twoTone = v; }, local(true)),
         F.twoTone ? h('div', { class: 'group', style: 'gap:8px' }, ...swatchRow('Tips colour', () => F.color2, (c) => { F.color2 = c; })) : null,
         F.twoTone ? sliderCtl('pn-tone', 'Split height', { min: 0.1, max: 0.9, step: 0.01, fmt: (v) => `${mmf(Pn.base + v * Pn.depth)} up` }, () => F.toneAt, (v) => { F.toneAt = v; }, local()) : null),
+      Pn.mode === 'moss' ? group('Moss', 'Preview only: the preserved moss you glue in.',
+        h('div', { class: 'swatches', role: 'group', 'aria-label': 'Moss colour' }, ...MOSSES.map(([n, c]) => h('button', { class: 'sw', type: 'button', style: `--c:${c}`, title: n, 'aria-label': `${n} moss`, 'aria-pressed': Pn.moss.color === c,
+          onclick: () => { Pn.moss.color = c; commit(); rebuild(); renderPane('finish'); } }))),
+        h('p', { class: 'note' }, `${MOSSES.find(([, c]) => c === Pn.moss.color)?.[0] || 'Custom'}. Preserved moss comes as flat sheet moss, cushion (mood) moss and reindeer moss; any of them glues into the beds.`)) : null,
       group('Material', 'Preview only', chipsCtl('', Object.entries(MATERIALS).map(([k, m]) => ({ value: k, label: m.label })), () => F.material, (v) => { F.material = v; }, { local: true, after: () => { refreshMaterials(); commit(); } })),
       group('Wall', 'The wall in the preview.', walls),
       group('Backlight', 'An LED strip on the back lights the wall round the panel, and through it if it is openwork.',
@@ -1121,7 +1169,16 @@ export function initPanels(api) {
   // ---------------------------------------------------------------- shuffle
   function shuffle(what = 'all') {
     const Pn = P();
-    if (what === 'all' || what === 'pattern') {
+    if ((what === 'all' || what === 'pattern') && Pn.mode === 'moss') {
+      // a moss tray stays a moss tray: another landscape, share of moss and look
+      const k = pick(MOSS_ORDER.filter((q) => q !== Pn.pattern));
+      Pn.pattern = k; tunePattern(Pn, k);
+      Pn.scale = Math.round(Pn.scale * rnd(0.8, 1.25));
+      Pn.vary = Math.round(rnd(0.2, 0.8) * 100) / 100; Pn.seed = 1 + Math.floor(Math.random() * 9999);
+      Pn.moss.amount = Math.round(rnd(0.18, 0.5) * 100) / 100; Pn.moss.depth = pick([10, 10, 12, 12, 15]);
+      Pn.depth = Math.max(Pn.depth, Pn.moss.depth + 10); Pn.angle = Math.random() < 0.8 ? 0 : pick([90, 30, -30]); Pn.warp = 0;
+      if (what === 'all') Pn.moss.color = pick(MOSSES.slice(0, 5))[1];
+    } else if (what === 'all' || what === 'pattern') {
       const ribsNext = Math.random() < (Pn.mode === 'ribs' ? 0.6 : 0.28);
       const pool = (ribsNext ? RIB_FIELDS : PANEL_PATTERN_ORDER).filter((k) => !PANEL_PATTERNS[k].image && k !== Pn.pattern);
       const k = pick(pool), pat = PANEL_PATTERNS[k];
@@ -1149,7 +1206,7 @@ export function initPanels(api) {
       if (Pn.tiles.seams === 'pattern' && (!pat.cell || Pn.mode === 'cut')) { Pn.tiles.seams = 'straight'; Pn.tiles.joint = 'dovetail'; }
     }
     if (what === 'all' || what === 'shape') {
-      Pn.edge = Pn.mode === 'ribs' ? pick(['flush', 'flush', 'frame', 'fade']) : pick(['frame', 'frame', 'flush', 'bevel', 'fade']);
+      Pn.edge = Pn.mode === 'moss' ? 'frame' : Pn.mode === 'ribs' ? pick(['flush', 'flush', 'frame', 'fade']) : pick(['frame', 'frame', 'flush', 'bevel', 'fade']);
       Pn.edgeW = Pn.edge === 'fade' ? Math.round(rnd(30, 70)) : Math.round(rnd(10, 24));
       if (what === 'shape' || Math.random() < 0.3) {
         Pn.shape = pick(['rect', 'rounded', 'arch', 'oval', 'hex']);
@@ -1160,7 +1217,7 @@ export function initPanels(api) {
     if (what === 'all' || what === 'colour') {
       const fil = FILAMENTS.map(([, c]) => c);
       Pn.finish.color = pick(fil);
-      Pn.finish.twoTone = Pn.mode !== 'cut' && Pn.depth > 6 && Math.random() < (what === 'colour' ? 0.5 : 0.28);
+      Pn.finish.twoTone = Pn.mode !== 'cut' && Pn.mode !== 'moss' && Pn.depth > 6 && Math.random() < (what === 'colour' ? 0.5 : 0.28);
       if (Pn.finish.twoTone) {
         const lum = (c) => { const n = parseInt(c.slice(1), 16); return 0.3 * (n >> 16) + 0.59 * ((n >> 8) & 255) + 0.11 * (n & 255); };
         const far = fil.filter((c) => Math.abs(lum(c) - lum(Pn.finish.color)) > 70);
@@ -1327,7 +1384,7 @@ export function initPanels(api) {
     for (let r = plan.rows - 1; r >= 0; r--) grid.push('   ' + plan.tiles.filter((t) => t.r === r).map((t) => (t.empty ? '  ' : t.label).padEnd(4)).join(''));
     const F = Pn.finish, g = built.reduce((s, t) => s + t.grams, 0);
     const lines = [
-      `${Pn.name} · ${PANEL_SHAPES[Pn.shape]} wall panel, ${Math.round(Pn.width)} × ${Math.round(Pn.height)} mm, ${PANEL_PATTERNS[Pn.pattern].label} ${Pn.mode === 'cut' ? 'openwork' : 'relief'}`,
+      `${Pn.name} · ${PANEL_SHAPES[Pn.shape]} ${Pn.mode === 'moss' ? 'moss tray' : 'wall panel'}, ${Math.round(Pn.width)} × ${Math.round(Pn.height)} mm, ${PANEL_PATTERNS[Pn.pattern].label}${Pn.mode === 'moss' ? '' : Pn.mode === 'cut' ? ' openwork' : ' relief'}`,
       `Made with Weft Studio. ${built.length} tiles, about ${g > 1000 ? `${(g / 1000).toFixed(2)} kg` : `${Math.round(g)} g`} of filament.`,
       '', 'Tiles, seen from the front', ...grid,
       '', 'Each tile has its name and an arrow pointing up engraved in its back. assembly-map.svg shows every tile in place with its size, wall-template.svg is the same at actual size, and parts-list.csv lists every part.',
@@ -1337,6 +1394,13 @@ export function initPanels(api) {
       '• A textured PEI plate gives the back a fine grip pattern; a smooth plate keeps it flat for tape.',
       '• Print one tile first and check it against the next before printing the rest.',
     ];
+    if (Pn.mode === 'moss') {
+      const M = ps.res?.info?.moss;
+      lines.push('', 'Moss',
+        `• The beds take preserved moss ${M ? `${M.bedDepth.toFixed(0)} mm deep, about ${Math.round(M.area / 100)} cm² in all` : ''}. Sheet moss and cushion (mood) moss both work; buy a little more than the area.`,
+        '• Assemble and hang the tray first, then glue the moss in: hot glue or a clear craft glue on the scored floor of each bed, and press the moss down into it.',
+        '• Preserved moss needs no water or light. Keep it out of strong sun, which fades it.');
+    }
     if (F.twoTone) lines.push('', 'Two-tone',
       `• The tips are their own part from ${zc.toFixed(2)} mm up. Bambu Studio or OrcaSlicer: open the 3MF; base and tips are already set to filaments 1 and 2. With an AMS it swaps by itself.`,
       `• No AMS: print it all in the base colour and add a filament change (M600 or pause) at ${zc.toFixed(2)} mm.`);
