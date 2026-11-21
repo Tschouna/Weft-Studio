@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.12.0
+
+- **Moss trays: clean walls.** The beds' walls were drawn as the surface dropping from one grid point to the next, so they came out jagged and streaky. Now every bed has a true flat floor and straight walls that follow its outline exactly, in the preview and in the print, and the moss in the preview fills each bed right to its walls. Tile joints across steep ground also meet more cleanly.
+- **New moss tray designs.** All seven landscapes are new, smooth all over, with no sharp creases:
+  - **Topo**: after the stepped contour tray, without the steps: a flat top with smooth funnels flowing down into it, deepest at their cores, and big beds of moss flush with the top.
+  - **Pebbles**: smooth river pebbles of every size and shape, bedded in moss.
+  - **Meander**: a river of moss winding through smooth banks, with ripples running along it.
+  - **Zen**: raked gravel round islands of moss, each with a stone in it; the rake lines ring the islands and run straight between.
+  - **Drift**: wind-swept dunes, a long rise and a steeper fall, with moss lying in the hollows.
+  - **Pools**: round pools of moss in a flat top, each ringed by ripples that spread out and meet.
+  - **Hive**: hexagons with soft walls: moss in some, round dimples in the rest.
+- New starting panels: **Karst** (Topo), **Riverbed** (Pebbles), **Oxbow** (Meander), **Ryoan** (Zen), **Erg** (Drift), **Rain** (Pools) and **Apiary** (Hive). They replace Moor, Archipel, Brook, Kyoto and Fjord.
+- Moss trays you saved open with the closest new landscape: Isles as Pools, Brook as Pebbles, River as Meander, Cells as Hive and Swell as Drift.
+- The share of moss you set is now the share you get, also where walls take part of each bed (Hive).
+
 ## 2.11.1
 
 Faster all round.

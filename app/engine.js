@@ -41,7 +41,7 @@ function crest(x, kind) {
 }
 
 // the release this geometry comes from (pictures drawn of it are kept until it changes)
-export const ENGINE_VERSION = '2.11.1';
+export const ENGINE_VERSION = '2.12.0';
 
 // ---------------------------------------------------------------- growable buffers
 class Buf {

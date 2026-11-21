@@ -6,7 +6,7 @@ Every piece is built as a watertight mesh, oriented for printing, with overhangs
 
 **Panels** is a second studio in the same app, for wall panels:
 - Pick an outline and one of 29 patterns as a relief, as wave ribs (slatted wall art whose ribs follow the pattern) or as openwork, and set the size, up to 2.4 m. The patterns include an acoustic-style diffuser of slanted blocks, your own photo, and real terrain: type a Swiss peak or place and Weft downloads swisstopo's swissALTI3D heights for the area you frame on the map, or load elevation files yourself (GeoTIFF, XYZ, ASCII grids), with neighbouring tiles stitched together.
-- Or make it a **moss tray**: a deep tray with a landscape carved into its flat top (smooth valleys and pits, stone islands, river stones, a winding river, a raked zen garden, cells or waves) and flat-floored beds that you fill with preserved moss. The 3D view shows the moss in place.
+- Or make it a **moss tray**: a deep tray with a landscape carved into it (a flat top with smooth funnels, river pebbles, a winding river, a raked zen garden, wind-swept dunes, rippling pools or hexagons) and flat-floored, straight-walled beds that you fill with preserved moss. The 3D view shows the moss in place.
 - It slices the panel into tiles that fit your printer's bed. The tiles join with dovetail or jigsaw tabs, hidden bowtie keys, or seams that follow the pattern.
 - Each tile prints face up with no supports, with its name engraved in the back and pockets for magnets, screws or LED halo stand-offs.
 - The download is a production kit: 3MF and STL tiles, an assembly map, a 1:1 wall template and a parts list.
@@ -108,7 +108,7 @@ Then `test/panel.mjs` checks panels:
 5. A batch of random panels all build closed.
 6. Elevation files read back exactly: test GeoTIFFs of every kind (byte orders, strips and tiles, uncompressed, LZW and Deflate, both predictors, BigTIFF), XYZ and ASCII grids, and a zip of two tiles that must stitch. Terrain panels built from them come out closed.
 7. The swisstopo downloader, against a stand-in for the services (no network needed): the summit comes first in the search, typed coordinates land on the spot, the catalogue is followed page by page for the newest 2 m survey, and the download stitches north up into the framed area, with the part outside Switzerland left empty. Cancelling stops it.
-8. Moss trays: every landscape builds closed with its preview moss; every bed has a flat floor the asked depth below the moss's surface and is walled in all round; the share of moss follows the setting; a tray too shallow for its moss says so.
+8. Moss trays: every landscape builds closed with its preview moss; every bed has a flat floor the asked depth below the moss's surface and straight walls all round; the share of moss follows the setting; a tray too shallow for its moss says so.
 
 `ONLY=4 node test/panel.mjs` runs one section.
 

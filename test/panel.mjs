@@ -9,8 +9,8 @@
 //  7. the swisstopo downloader, against a stand-in for the services: place search, the tile catalogue
 //     (paged, newest survey, right grid) and the download stitched and cropped to the area
 //  8. moss trays: every landscape builds closed with its preview moss; each bed has a flat floor the asked
-//     depth below the moss's surface and is walled in all round; the share of moss follows the setting;
-//     a tray too shallow for its moss says so
+//     depth below the moss's surface and straight walls all round; the share of moss follows the setting;
+//     a tray too shallow for its moss says so; older moss landscapes open as their new ones
 import { buildPanel, panelDefaults, normalizePanel, planPanel, panelChecks, fitTestPanel, PANEL_PATTERNS, PANEL_PATTERN_ORDER, MOSS_PATTERNS, MOSS_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
 import { PANEL_PRESETS } from '../app/panels.js';
 import { readDEM, mosaic } from '../app/dem.js';
@@ -345,22 +345,33 @@ if (run(7)) {
 if (run(8)) {
 console.log('8. moss trays');
 for (const k of MOSS_ORDER) {
-  const src = panelDefaults({ pattern: k, mode: 'moss', width: 300, height: 200, scale: { topo: 30, isles: 44, brook: 26, river: 46, zen: 44, cells: 36, swell: 34 }[k], depth: 24, base: 4, edge: 'frame', edgeW: 10, seed: 5, moss: { depth: 12, amount: 0.3 } });
+  const src = panelDefaults({ pattern: k, mode: 'moss', width: 300, height: 200, scale: { topo: 34, stones: 24, meander: 44, zen: 40, drift: 32, pools: 34, hive: 26 }[k], depth: 24, base: 4, edge: 'frame', edgeW: 10, seed: 5, moss: { depth: 12, amount: 0.3 } });
   const P = normalizePanel(src), C = _compile(P, null, null), M = C.moss, top = P.base + P.depth;
   const { r, bad } = checkBuild(`moss ${k}`, src, { res: 1.4 });
-  // walk the tray on a 1 mm grid: inside a bed the floor is flat (bar its scored lines); just outside one
-  // the ground stands at least as high as the moss's surface (or the top, where the plateau holds it in)
-  let floorOff = 0, beds = 0, leaks = 0, lowest = Infinity;
+  // walk the tray on a 1 mm grid: inside a bed the ground stands clear above its floor (so its walls have
+  // height); just outside one it stands at least as high as the moss's surface (or the top, where the
+  // plateau holds it in)
+  let beds = 0, leaks = 0, low = 0;
   const need = MOSS_PATTERNS[k].rim === 'top' ? top - 0.6 : M.surfT;
   for (let y = -P.height / 2 + 1; y < P.height / 2; y += 1) for (let x = -P.width / 2 + 1; x < P.width / 2; x += 1) {
     const R = C.evalAt(x, y);
     if (R.d <= 0) continue;
-    if (R.m > 0.6) { beds++; floorOff = Math.max(floorOff, Math.abs(R.t - M.floorT) > 0.65 ? Math.abs(R.t - M.floorT) : 0); lowest = Math.min(lowest, R.t); }
+    if (R.m > 0.6) { beds++; if (R.t < M.floorT + 0.79) low++; }
     else if (R.m < -0.4 && R.m > -1.0 && R.t < need - 0.05) leaks++;
   }
+  // the beds' floors: flat faces at the floor's level, facing up, in the printed tiles
+  let floorArea = 0;
+  for (const t of r.tiles) for (const b of t.bodies) {
+    const p = b.position, I = b.index;
+    for (let q = 0; q < I.length; q += 3) {
+      const a = I[q] * 3, bb = I[q + 1] * 3, c = I[q + 2] * 3;
+      if (Math.abs(p[a + 2] - M.floorT) > 1e-3 || Math.abs(p[bb + 2] - M.floorT) > 1e-3 || Math.abs(p[c + 2] - M.floorT) > 1e-3) continue;
+      floorArea += ((p[bb] - p[a]) * (p[c + 1] - p[a + 1]) - (p[c] - p[a]) * (p[bb + 1] - p[a + 1])) / 2;
+    }
+  }
   const preview = buildPanel(src, { res: 2, bed: [256, 256], mossPreview: true }).moss;
-  const ok = !bad && beds > 50 && floorOff === 0 && leaks === 0 && Math.abs(M.bedDepth - 12) < 0.01 && lowest >= P.base + 1.2 - 0.61 && preview && preview.index.length > 300 && preview.color.length === preview.position.length;
-  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${k}: ${r.tiles.length} tiles, beds ${M.bedDepth.toFixed(1)} mm deep over ${Math.round(M.share * 100)}% of the tray, ${leaks} leaks round them, preview moss ${preview ? preview.index.length / 3 : 0} triangles`);
+  const ok = !bad && beds > 50 && low === 0 && leaks === 0 && Math.abs(M.bedDepth - 12) < 0.01 && M.floorT >= P.base + 1.2 - 1e-6 && floorArea > 0.5 * beds && preview && preview.index.length > 300 && preview.color.length === preview.position.length;
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${k}: ${r.tiles.length} tiles, beds ${M.bedDepth.toFixed(1)} mm deep over ${Math.round(M.share * 100)}% of the tray (floors ${Math.round(floorArea / 100)} cm²), ${leaks} leaks round them, ${low} low walls, preview moss ${preview ? preview.index.length / 3 : 0} triangles`);
   if (!ok) fail(`moss ${k}`);
 }
 // the share of moss follows the setting (for the landscapes whose beds come from a field)
@@ -372,14 +383,15 @@ for (const k of MOSS_ORDER.filter((q) => MOSS_PATTERNS[q].raw)) {
 }
 // a tray too shallow for its moss says so; the moss notes are there
 {
-  const shallow = panelDefaults({ pattern: 'isles', mode: 'moss', width: 300, height: 200, depth: 12, moss: { depth: 14 } });
+  const shallow = panelDefaults({ pattern: 'pools', mode: 'moss', width: 300, height: 200, depth: 12, moss: { depth: 14 } });
   const plan = planPanel(normalizePanel(shallow), [256, 256]), checks = panelChecks(shallow, plan, null);
   const ok = checks.some((c) => c.level === 'warn' && /only .* mm deep/.test(c.text)) && checks.some((c) => /Glue preserved moss/.test(c.text));
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} a shallow tray warns that its beds are too shallow`);
   if (!ok) fail('moss shallow warning');
   // switching a moss landscape into another mode keeps it a moss tray; a moss tray without one gets Topo
   const a = normalizePanel({ pattern: 'zen', mode: 'relief' }), b = normalizePanel({ pattern: 'dune', mode: 'moss' });
-  const ok2 = a.mode === 'moss' && b.pattern === 'topo' && b.mode === 'moss';
+  const old = ['isles', 'brook', 'river', 'cells', 'swell'].map((q) => normalizePanel({ pattern: q, mode: 'moss' }).pattern);
+  const ok2 = a.mode === 'moss' && b.pattern === 'topo' && b.mode === 'moss' && old.join() === 'pools,stones,meander,hive,drift';
   console.log(`  ${ok2 ? 'ok  ' : 'FAIL'} moss landscapes and moss trays always go together`);
   if (!ok2) fail('moss normalize');
 }

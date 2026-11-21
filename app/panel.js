@@ -174,127 +174,184 @@ const MS = { h: 1, m: -1 };
 const bedFrom = (f, u, v, o, e = 0.02) => { const f0 = f(u, v, o), gx = (f(u + e, v, o) - f0) / e, gy = (f(u, v + e, o) - f0) / e; return (f0 - o.mossQ) / Math.max(0.05, Math.hypot(gx, gy)); };
 // the slow warp that makes noise flow like a landscape
 const flow = (u, v, s, k = 1.2) => [u + k * (fbm(u * 0.18 + 3.1, v * 0.18 - 1.7, s + 5, 3) - 0.5), v + k * (fbm(u * 0.18 - 4.2, v * 0.18 + 2.9, s + 9, 3) - 0.5)];
-const topoMossRaw = (u, v, o) => { const [x, y] = flow(u, v, o.seed, 1.7); return fbm(x * 0.26 + 7.1, y * 0.26 - 3.3, o.seed + 41, 3); };
-const islesRaw = (u, v, o) => { const [x, y] = flow(u, v, o.seed, 1.4); return 1 - fbm(x * 0.34, y * 0.34, o.seed + 3, 3); };
-function zenIslands(u, v, o) {
-  // islands on a jittered grid 2.4 units apart, each a little lumpy; returns the distance outside the
-  // nearest (negative inside), in pattern units
-  const L = 2.4, i0 = Math.floor(u / L), j0 = Math.floor(v / L);
-  let best = 9;
+// a smooth 0..1 ease that starts and ends flat, and a ramp that starts flat (x <= 0: 0; then x - k / 2 past k)
+const sease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+const sramp = (x, k) => (x <= 0 ? 0 : x < k ? (x * x) / (2 * k) : x - k / 2);
+const smink = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
+const smaxk = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.max(a, b) + h * h * k * 0.25; };
+
+// Topo: a flat top with smooth funnels flowing down into it, and moss beds flush with the top
+const topoBedRaw = (u, v, o) => { const x = u + 1.3 * (fbm(u * 0.16 + 3.1, v * 0.16 - 1.7, o.seed + 15, 2) - 0.5), y = v + 1.3 * (fbm(u * 0.16 - 4.2, v * 0.16 + 2.9, o.seed + 19, 2) - 0.5); return fbm(x * 0.21 + 3.3, y * 0.21 - 8.1, o.seed + 41, 2); };
+// the funnels: a teardrop on most cells of a jittered grid (an oval, and a smaller one off to one end where it
+// is deepest), summed, so neighbours run together; the field is about 1 at a core
+function topoPitRaw(u, v, o) {
+  const [x, y] = flow(u, v, o.seed, 0.9), L = 1.55, i0 = Math.floor(x / L), j0 = Math.floor(y / L);
+  let F = 0;
   for (let j = j0 - 1; j <= j0 + 1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) {
-    if (hash2(i, j, o.seed + 61) > 0.42 + 0.35 * o.mossAmount) continue;
-    const cx = (i + 0.5 + 0.5 * (hash2(i, j, o.seed + 62) - 0.5)) * L, cy = (j + 0.5 + 0.5 * (hash2(i, j, o.seed + 63) - 0.5)) * L;
-    const r0 = (0.32 + 0.5 * o.mossAmount) * (0.65 + 0.6 * hash2(i, j, o.seed + 64));
-    const th = Math.atan2(v - cy, u - cx), ph = hash2(i, j, o.seed + 65) * TAU;
-    const r = r0 * (1 + 0.13 * Math.sin(3 * th + ph) + 0.07 * Math.sin(5 * th + 2 * ph));
-    best = Math.min(best, Math.hypot(u - cx, v - cy) - r);
+    if (hash2(i, j, o.seed + 21) > 0.78) continue;
+    const cx = (i + 0.5 + 0.7 * (hash2(i, j, o.seed + 22) - 0.5)) * L, cy = (j + 0.5 + 0.7 * (hash2(i, j, o.seed + 23) - 0.5)) * L;
+    const sg = L * (0.2 + 0.2 * hash2(i, j, o.seed + 24)), el = 1.2 + 1.3 * hash2(i, j, o.seed + 25), th = hash2(i, j, o.seed + 26) * Math.PI, c = Math.cos(th), sn = Math.sin(th);
+    const dx = x - cx, dy = y - cy, a = (dx * c + dy * sn) / el, b = -dx * sn + dy * c;
+    F += Math.exp(-(a * a + b * b) / (sg * sg));
+    // the core, toward one end
+    const ox = cx + c * sg * el * 0.55, oy = cy + sn * sg * el * 0.55, s2 = sg * 0.5;
+    F += 0.55 * Math.exp(-((x - ox) ** 2 + (y - oy) ** 2) / (s2 * s2));
   }
-  return best;
+  return F;
+}
+// Zen: islands on a jittered grid, each a little lumpy; ZI says how far the nearest is (negative inside, in
+// pattern units), its centre and its size
+const ZI = { d: 9, soft: 9, cx: 0, cy: 0, r: 1, id: 0 };
+function zenIslands(u, v, o) {
+  const L = 3.2, i0 = Math.floor(u / L), j0 = Math.floor(v / L);
+  ZI.d = 9; ZI.soft = 9;
+  for (let j = j0 - 2; j <= j0 + 2; j++) for (let i = i0 - 2; i <= i0 + 2; i++) {
+    if (hash2(i, j, o.seed + 61) > 0.38 + 0.3 * o.mossAmount) continue;
+    const cx = (i + 0.5 + 0.45 * (hash2(i, j, o.seed + 62) - 0.5)) * L, cy = (j + 0.5 + 0.45 * (hash2(i, j, o.seed + 63) - 0.5)) * L;
+    const r0 = (0.42 + 0.55 * o.mossAmount) * (0.7 + 0.55 * hash2(i, j, o.seed + 64));
+    const th = Math.atan2(v - cy, u - cx), ph = hash2(i, j, o.seed + 65) * TAU;
+    const r = r0 * (1 + (0.1 + 0.1 * o.vary) * Math.sin(2 * th + ph) + 0.05 * Math.sin(3 * th + 2 * ph));
+    const d = Math.hypot(u - cx, v - cy) - r;
+    ZI.soft = smink(ZI.soft, d, 1.4);
+    if (d < ZI.d) { ZI.d = d; ZI.cx = cx; ZI.cy = cy; ZI.r = r0; ZI.id = i * 7919 + j; }
+  }
+  return ZI;
 }
 export const MOSS_PATTERNS = {
   topo: {
-    label: 'Topo', note: 'Smooth valleys winding into deep pits, carved into a flat top, with beds of moss: a contour map without the steps', surf: 0.97, rim: 'top', raw: topoMossRaw,
+    label: 'Topo', note: 'A flat top with smooth funnels flowing down into it and beds of moss: a contour map without the steps', surf: 0.96, rim: 'top', raw: topoBedRaw,
     moss(u, v, o) {
-      const [x, y] = flow(u, v, o.seed, 1.6);
-      // basins where the land is low, and winding channels that join them (where a second field crosses
-      // its middle); each falls from a rounded shoulder down smooth slopes to its floor
-      const e = fbm(x * 0.36, y * 0.36, o.seed, 3), c = Math.abs(fbm(x * 0.5 + 13.3, y * 0.5 - 7.7, o.seed + 23, 2) - 0.5);
-      const tb = (0.46 + 0.06 * o.vary - e) / 0.14, tc = (0.045 + 0.03 * o.vary - c) / 0.05;
-      // (a crisp edge where a valley leaves the top, then slopes that ease into its floor)
-      const ease = (q) => 1 - (1 - Math.min(1, q)) ** 1.7;
-      const basin = ease(tb), chan = 0.62 * ease(tc);
-      let h = 1 - 0.88 * Math.max(tb > 0 ? basin : 0, tc > 0 ? chan : 0);
-      // deep round pits in the basin floors
-      const L = 1.15, i0 = Math.floor(u / L), j0 = Math.floor(v / L), deep = smooth(0.35, 0.95, tb);
-      if (deep > 0) for (let j = j0 - 1; j <= j0 + 1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) {
-        if (hash2(i, j, o.seed + 31) > 0.6 + 0.3 * o.vary) continue;
-        const cx = (i + 0.5 + 0.7 * (hash2(i, j, o.seed + 32) - 0.5)) * L, cy = (j + 0.5 + 0.7 * (hash2(i, j, o.seed + 33) - 0.5)) * L;
-        const rp = 0.15 + 0.17 * hash2(i, j, o.seed + 34), d = Math.hypot(u - cx, v - cy);
-        if (d < rp) h -= deep * 0.55 * smooth(rp, 0, d) ** 0.7;
+      const bed = bedFrom(topoBedRaw, u, v, o);
+      // funnels where a second smooth field is high, a flat margin clear of the beds; their sides follow that
+      // field's contours, steep under a rounded lip and easing out into a deep floor
+      const margin = 14 / o.s, F = topoPitRaw(u, v, o) - 0.75 * sease((bed + margin) / margin);
+      const x = (F - (0.4 - 0.12 * o.vary)) / 1.05;
+      let h = 1;
+      if (x > 0) {
+        // (the stronger the field, the deeper: big funnels fall to a small deep core, small ones stay shallow)
+        const lip = 0.05, xe = x < lip ? (x * x) / (2 * lip) : x - lip / 2;
+        h = 1 - ((o.depth - 1.4) / o.depth) * (1 - (1 - Math.min(1, xe)) ** 1.3);
       }
-      MS.h = clamp(h, 0, 1); MS.m = bedFrom(topoMossRaw, u, v, o);
+      MS.h = h; MS.m = bed;
       return MS;
     },
   },
-  isles: {
-    label: 'Isles', note: 'Smooth stone islands rising out of a sea of moss', surf: 0.62, rim: 'lip', raw: islesRaw,
+  stones: {
+    label: 'Pebbles', note: 'Smooth river pebbles of every size, bedded in moss', surf: 0.56, rim: 'none',
     moss(u, v, o) {
-      const f = islesRaw(u, v, o);
-      // the shore starts at the moss and rises, rounded, to the plateau; Variation makes the islands steeper
-      const t = (o.mossQ - f) / (0.11 + 0.1 * (1 - o.vary));
-      MS.h = o.surf + (1 - o.surf) * (t <= 0 ? 0 : dome(Math.min(1, t)));
-      MS.m = bedFrom(islesRaw, u, v, o);
-      return MS;
-    },
-  },
-  brook: {
-    label: 'Brook', note: 'River stones lying in moss', surf: 0.58, rim: 'lip',
-    moss(u, v, o) {
-      // a stone in every cell of a jittered grid, each its own size, shape and turn; moss between them
-      const i0 = Math.floor(u), j0 = Math.floor(v), size = 0.62 - 0.32 * o.mossAmount;
+      // a pebble in most cells of a jittered grid, each its own size, shape and turn; moss between them
+      const i0 = Math.floor(u), j0 = Math.floor(v), size = 0.62 - 0.26 * o.mossAmount;
       let h = 0, m = 9;
       for (let j = j0 - 1; j <= j0 + 1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) {
-        const cx = i + 0.5 + 0.55 * (hash2(i, j, o.seed + 71) - 0.5), cy = j + 0.5 + 0.55 * (hash2(i, j, o.seed + 72) - 0.5);
-        const r = size * (0.55 + 0.45 * hash2(i, j, o.seed + 73)) * (1 - 0.3 * o.vary * hash2(i, j, o.seed + 74));
-        const el = 1 + 0.6 * hash2(i, j, o.seed + 75), th = hash2(i, j, o.seed + 76) * Math.PI;
-        const dx = u - cx, dy = v - cy, a = (dx * Math.cos(th) + dy * Math.sin(th)) * Math.sqrt(1 / el), b = (-dx * Math.sin(th) + dy * Math.cos(th)) * Math.sqrt(el);
-        const q = Math.hypot(a, b) / r, top = 0.7 + 0.3 * hash2(i, j, o.seed + 77);
-        if (q < 1) h = Math.max(h, top * dome(1 - q));
+        if (hash2(i, j, o.seed + 70) < 0.1 + 0.25 * o.mossAmount) continue;
+        const cx = i + 0.5 + 0.5 * (hash2(i, j, o.seed + 71) - 0.5), cy = j + 0.5 + 0.5 * (hash2(i, j, o.seed + 72) - 0.5);
+        const r = size * (0.58 + 0.42 * hash2(i, j, o.seed + 73)) * (1 - 0.3 * o.vary * hash2(i, j, o.seed + 74));
+        const el = 1 + (0.25 + 0.5 * o.vary) * hash2(i, j, o.seed + 75), th = hash2(i, j, o.seed + 76) * Math.PI, c = Math.cos(th), sn = Math.sin(th);
+        const dx = u - cx, dy = v - cy, a = Math.abs((dx * c + dy * sn) / Math.sqrt(el)), b = Math.abs((-dx * sn + dy * c) * Math.sqrt(el));
+        // a little squarer than an ellipse, like a worn stone
+        const q = (a ** 2.4 + b ** 2.4) ** (1 / 2.4) / r;
         m = Math.min(m, (q - 1) * r);
+        if (q < 1) {
+          // a low cap that meets the moss at a slope, not straight down, so its edge stays crisp
+          const cap = (Math.sqrt(1 - 0.84 * q * q) - 0.4) / 0.6;
+          const tall = (0.5 + 0.5 * hash2(i, j, o.seed + 77)) * Math.min(1, (r * o.s * 0.62) / Math.max(1, o.depth * (1 - o.surf)));
+          h = Math.max(h, o.surf + 0.035 + (1 - o.surf - 0.035) * tall * cap);
+        }
       }
-      MS.h = o.surf + (1 - o.surf) * h; MS.m = m;
+      MS.h = h || o.surf; MS.m = m;
       return MS;
     },
   },
-  river: {
-    label: 'River', note: 'A river of moss winding between rolling banks. Turn it with Angle', surf: 0.74, rim: 'lip',
+  meander: {
+    label: 'Meander', note: 'A river of moss winding through smooth banks, with ripples flowing along it. Turn it with Angle', surf: 0.58, rim: 'none',
     moss(u, v, o) {
-      const lam = 3.4, A = 0.25 + 0.55 * o.vary, ph = (TAU * u) / lam + o.seed;
-      const yc = A * Math.sin(ph) + 0.6 * (fbm(u * 0.14, 3.7, o.seed + 81, 3) - 0.5), slope = (A * TAU * Math.cos(ph)) / lam;
-      const w = (0.22 + 0.7 * o.mossAmount) * (1 + 0.45 * (fbm(u * 0.3, 9.1, o.seed + 82, 2) - 0.5));
-      const dist = Math.abs(v - yc) / Math.sqrt(1 + slope * slope), edge = dist - w / 2;
-      // the banks rise from the moss into rolling hills
-      const hills = fbm(u * 0.4, v * 0.4, o.seed + 83, 3), rise = smooth(0, 0.7 + 0.9 * hills, edge);
-      MS.h = o.surf + (1 - o.surf) * clamp(rise * (0.45 + 0.9 * hills), 0, 1);
-      MS.m = -edge;
+      // the river's middle: a meander whose swing and width wander
+      const lam = 4.6, A = 0.45 + 0.75 * o.vary;
+      const yc = (x) => A * Math.sin((TAU * x) / lam + o.seed * 0.37 + 0.7 * Math.sin((TAU * x) / (lam * 2.9) + o.seed)) + 0.9 * (fbm(x * 0.09, 7.7, o.seed + 81, 2) - 0.5);
+      const y0 = yc(u), slope = (yc(u + 0.02) - yc(u - 0.02)) / 0.04;
+      const dist = Math.abs(v - y0) / Math.sqrt(1 + slope * slope);
+      const w = (0.3 + 0.9 * o.mossAmount) * (1 + 0.5 * (fbm(u * 0.2, 3.1, o.seed + 82, 2) - 0.5));
+      const em = (dist - w / 2) * o.s;
+      // the banks: a rounded shoulder up from the moss, rolling ground beyond, and ripples running along
+      const rise = 1 - Math.exp(-((Math.max(0, em) / 26) ** 1.6)), roll = fbm(u * 0.22, v * 0.22, o.seed + 83, 2) - 0.5;
+      const rip = (0.5 - 0.5 * Math.cos((TAU * Math.max(0, em)) / 7)) * sease((em - 3) / 6) * Math.exp(-Math.max(0, em) / 70);
+      MS.h = clamp(o.surf + 0.04 + (1 - o.surf - 0.04) * clamp(rise * (0.8 + 0.5 * roll), 0, 1) - (1.1 / o.depth) * rip, o.surf + 0.03, 1);
+      MS.m = -em / o.s;
       return MS;
     },
   },
   zen: {
-    label: 'Zen', note: 'Moss islands in raked gravel: the rakes ring each island and run straight between', surf: 0.86, rim: 'ring',
+    label: 'Zen', note: 'Raked gravel round islands of moss, each with a stone in it; the rake lines ring the islands and run straight between', surf: 0.74, rim: 'ring',
     moss(u, v, o) {
-      const d = zenIslands(u, v, o);
-      // ridges 5 mm apart and 1.4 mm high, in mm whatever the Scale
-      const pitch = 5 / o.s, amp = Math.min(0.12, 1.4 / Math.max(1, o.depth)), ring = (ph) => 0.5 + 0.5 * Math.cos(TAU * ph);
-      const near = 1 - smooth(0.85, 1.25, d), rk = lerp(ring(v / pitch), ring(Math.max(0, d) / pitch), near);
-      MS.h = 0.52 + amp * rk; MS.m = -d;
+      const I = zenIslands(u, v, o), d = I.d, ds = ZI.soft;
+      // a rugged stone in each island, off its middle
+      const ang = hash2(I.id, 3, o.seed + 66) * TAU, rr = I.r * (0.3 + 0.12 * hash2(I.id, 5, o.seed + 67));
+      const sx = I.cx + Math.cos(ang) * I.r * 0.3, sy = I.cy + Math.sin(ang) * I.r * 0.3, th = Math.atan2(v - sy, u - sx), ph = hash2(I.id, 7, o.seed + 68) * TAU;
+      const q = Math.hypot(u - sx, (v - sy) * 1.2) / (rr * (1 + 0.16 * Math.sin(2 * th + ph) + 0.08 * Math.sin(5 * th + 3 * ph)));
+      // the rake lines (7 mm apart): straight far out, bending into rings round the islands
+      const pitch = 7 / o.s, wgt = 1 - sease((ds - 0.3) / 2.4), phase = lerp(v, ds, wgt);
+      const groove = 0.5 - 0.5 * Math.cos((TAU * phase) / pitch), amp = Math.min(0.08, 1.3 / Math.max(1, o.depth));
+      let h = 0.56 - amp * groove;
+      if (q < 1) h = Math.max(h, o.surf + 0.08 + (1 - o.surf - 0.08) * (0.65 + 0.35 * hash2(I.id, 9, o.seed + 69)) * (1 - q * q) ** 0.75);
+      MS.h = h; MS.m = Math.min(-d, (q - 1) * rr);
       return MS;
     },
   },
-  cells: {
-    label: 'Cells', note: 'A web of rounded walls: some cells hold moss, the rest are smooth bowls. Variation loosens the cells', surf: 0.97, rim: 'top',
+  drift: {
+    label: 'Drift', note: 'Wind-swept dunes, a long rise and a steeper fall, with moss lying in the hollows between them', surf: 0.58, rim: 'none',
     moss(u, v, o) {
-      const c = voronoi(u, v, o.seed, 0.2 + 0.7 * o.vary), wall = Math.max(0.035, 1.3 / o.s), e = c[4] - wall;
-      const bed = hash2(c[0], c[1], o.seed + 91) < o.mossAmount;
-      // the walls are the plateau, rounded over; a bowl's sides fall in a smooth dish
-      MS.h = e <= 0 ? 1 : bed ? 1 : 1 - 0.62 * smooth(0, 0.2, e);
-      MS.m = bed ? e : -1;
-      return MS;
-    },
-  },
-  swell: {
-    label: 'Swell', note: 'Long rolling waves with moss lying in some of the troughs', surf: 0.6, rim: 'lip',
-    moss(u, v, o) {
-      const lam = 1.1, ph = v / lam + (0.18 + 0.3 * o.vary) * Math.sin((TAU * u) / (3.3 * lam) + 0.8 * Math.sin((TAU * v) / 7.3)), k = Math.round(ph), fr = ph - k;
-      MS.h = o.surf + (1 - o.surf) * Math.pow(0.5 + 0.5 * Math.cos(TAU * fr), 0.75);
-      // a trough runs between crests k and k + 1; stretches of it hold moss, with rounded ends
-      const tr = Math.abs(fr - 0.5) * lam, half = (0.16 + 0.2 * o.mossAmount) * lam, kk = Math.floor(ph);
-      const seg = (gnoise(u * 0.22, kk * 3.7, o.seed + 95) - (0.66 - 0.45 * o.mossAmount)) * 3;
+      const lam = 1;
+      const ph = v / lam + (0.22 + 0.32 * o.vary) * Math.sin((TAU * u) / (3.4 * lam) + 0.8 * Math.sin((TAU * v) / (6.1 * lam) + o.seed)) + 0.5 * (fbm(u * 0.12, v * 0.12, o.seed + 90, 2) - 0.5);
+      const k = Math.floor(ph), fr = ph - k, cr = 0.66;
+      const prof = fr < cr ? 0.5 - 0.5 * Math.cos((Math.PI * fr) / cr) : 0.5 + 0.5 * Math.cos((Math.PI * (fr - cr)) / (1 - cr));
+      const tallK = 0.7 + 0.3 * sease(gnoise(u * 0.18, k * 1.7, o.seed + 91) * 1.4 - 0.2);
+      MS.h = o.surf + 0.03 + (1 - o.surf - 0.03) * tallK * prof;
+      // stretches of each hollow hold moss, with rounded ends
+      const kk = Math.round(ph), tr = Math.abs(ph - kk) * lam, half = (0.11 + 0.16 * o.mossAmount) * lam;
+      const seg = (gnoise(u * 0.24, kk * 3.7, o.seed + 95) - (0.64 - 0.42 * o.mossAmount)) * 2.5;
       MS.m = Math.min(half - tr, seg);
       return MS;
     },
   },
+  pools: {
+    label: 'Pools', note: 'Round pools of moss in a flat top, each ringed by ripples that spread out and meet', surf: 0.94, rim: 'top',
+    moss(u, v, o) {
+      const L = 2.3, i0 = Math.floor(u / L), j0 = Math.floor(v / L);
+      let near = 9, soft = 9;
+      for (let j = j0 - 2; j <= j0 + 2; j++) for (let i = i0 - 2; i <= i0 + 2; i++) {
+        if (hash2(i, j, o.seed + 51) > 0.42 + 0.45 * o.mossAmount) continue;
+        const cx = (i + 0.5 + 0.55 * (hash2(i, j, o.seed + 52) - 0.5)) * L, cy = (j + 0.5 + 0.55 * (hash2(i, j, o.seed + 53) - 0.5)) * L;
+        const r = (0.2 + 0.36 * hash2(i, j, o.seed + 54)) * (0.7 + 0.8 * o.mossAmount) * (1 - 0.3 * o.vary * hash2(i, j, o.seed + 55));
+        const dd = Math.hypot(u - cx, v - cy) - r;
+        near = Math.min(near, dd); soft = smink(soft, dd, 0.5);
+      }
+      // ripples 8 mm apart, fading out as they spread; where two rings meet they merge
+      const rho = Math.max(0, soft) * o.s, amp = Math.exp(-rho / 30) * sease((rho - 2) / 5);
+      MS.h = 1 - (Math.min(2.6, o.depth * 0.14) / o.depth) * amp * (0.5 - 0.5 * Math.cos((TAU * rho) / 8));
+      MS.m = -near;
+      return MS;
+    },
+  },
+  hive: {
+    label: 'Hive', note: 'Hexagons with soft rounded walls: moss in some, round dimples in the rest', surf: 0.95, rim: 'top', raw: (u, v, o) => hiveCell(u, v, o),
+    moss(u, v, o) {
+      const c = hexCell(u, v), w = Math.max(0.035, 1.6 / o.s), e = c[4] - w, q0 = c[0], r0 = c[1], cx = c[2], cy = c[3];
+      const bed = hiveCell(u, v, o) >= o.mossQ;
+      let h = 1;
+      if (!bed) {
+        // a round dimple inside the hexagon: a rounded lip, then a smooth dish
+        const R = 0.5 - w - 0.02, f = 1 - Math.hypot(u - cx, v - cy) / R;
+        if (f > 0) { const deep = 0.3 + 0.2 * hash2(q0, r0, o.seed + 97), fe = f < 0.08 ? (f * f) / 0.16 : f - 0.04; h = 1 - deep * (1 - (1 - Math.min(1, fe * 1.1)) ** 2); }
+      }
+      MS.h = h; MS.m = bed ? e : Math.min(-0.02, -e);
+      return MS;
+    },
+  },
 };
+// which hexagons of Hive hold moss: clustered, not scattered
+const hiveCell = (u, v, o) => { const c = hexCell(u, v), q = c[0], r = c[1], cx = c[2], cy = c[3]; return fbm(cx * 0.16 + 2.1, cy * 0.16 - 1.3, o.seed + 93, 2) + 0.18 * (hash2(q, r, o.seed + 94) - 0.5); };
+// older names of the moss landscapes
+export const MOSS_ALIAS = { isles: 'pools', brook: 'stones', river: 'meander', cells: 'hive', swell: 'drift' };
 export const MOSS_ORDER = Object.keys(MOSS_PATTERNS);
 
 // ============================================================ patterns
@@ -575,6 +632,7 @@ export function panelDefaults(over = {}) {
 // Fills in anything an older saved panel is missing and keeps every value in range.
 export function normalizePanel(src) {
   const P = panelDefaults(src || {});
+  if (MOSS_ALIAS[P.pattern]) P.pattern = MOSS_ALIAS[P.pattern];
   if (!PANEL_PATTERNS[P.pattern]) P.pattern = 'dune';
   if (!PANEL_SHAPES[P.shape]) P.shape = 'rect';
   P.width = clamp(+P.width || 480, 30, 2400); P.height = clamp(+P.height || 320, 30, 2400);
@@ -755,12 +813,17 @@ function compile(P, img, dem) {
       const x = -a + ((i + 0.5) / n) * 2 * a, y = -b + ((j + 0.5) / n) * 2 * b;
       if (outline(x, y) > rimEW) inside.push([x, y]);
     }
+    const countBeds = () => { let k = 0; for (const [x, y] of inside) { toUV(x, y); if (pat.moss(uv[0], uv[1], o).m > 0) k++; } return k; };
+    let inBed = 0;
     if (pat.raw && inside.length) {
       const vals = inside.map(([x, y]) => { toUV(x, y); return pat.raw(uv[0], uv[1], o); }).sort((p, q) => q - p);
-      o.mossQ = vals[clamp(Math.floor(P.moss.amount * (vals.length - 1)), 0, vals.length - 1)];
-    }
-    let inBed = 0;
-    for (const [x, y] of inside) { toUV(x, y); if (pat.moss(uv[0], uv[1], o).m > 0) inBed++; }
+      const qAt = (amt) => vals[clamp(Math.floor(amt * (vals.length - 1)), 0, vals.length - 1)];
+      o.mossQ = qAt(P.moss.amount);
+      inBed = countBeds();
+      // (walls and margins take some of each bed: ask for a little more to get the share set)
+      const got = inBed / inside.length;
+      if (got > 0.01 && Math.abs(got - P.moss.amount) > 0.02) { o.mossQ = qAt(clamp((P.moss.amount * P.moss.amount) / got, 0.02, 0.95)); inBed = countBeds(); }
+    } else inBed = inside.length ? countBeds() : 0;
     const surfT = base + depth * pat.surf, floorT = Math.max(base + 1.2, surfT - P.moss.depth);
     moss = {
       rimEW, surfT, floorT, lipT: Math.min(top, surfT + 0.8), ringT: Math.min(top, surfT + 1.6), ringW: 3.5, rimW: 2.5,
@@ -774,25 +837,21 @@ function compile(P, img, dem) {
     const d = outline(x, y);
     toUV(x, y);
     const M = pat.moss(uv[0], uv[1], o), inner = d - moss.rimEW;
-    // (a bed ends at the foot of the slope down from the rim, so its floor is flat right to its edge)
-    const mm = Math.min(M.m * s, inner - (top - moss.floorT) / 1.6);
-    let t;
-    if (mm > 0) {
-      // the bed: a flat floor, scored on the diagonals so the glue grips
-      const g1 = (x + y) * 0.70710678 / 6, g2 = (x - y) * 0.70710678 / 6;
-      const line = Math.min(Math.abs(g1 - Math.round(g1)), Math.abs(g2 - Math.round(g2))) * 6;
-      t = moss.floorT - 0.6 * Math.max(0, 1 - line / 0.55);
-    } else {
-      const dOut = -mm;
-      t = base + depth * clamp(M.h, 0, 1);
-      if (pat.rim === 'top') t = Math.max(t, top - Math.max(0, dOut - moss.rimW) * 1.6);
-      else if (pat.rim === 'ring') t = Math.max(t, dOut < moss.ringW ? moss.ringT : moss.ringT - (dOut - moss.ringW) * 1.6);
-      else t = Math.max(t, moss.lipT - Math.max(0, dOut - 1.2) * 1.6);
-    }
+    // the bed (positive inside, mm): its floor is a flat level, walled in straight up to the ground round it
+    // all the way along its exact outline, and it may run right up to the rim
+    const mm = Math.min(M.m * s, inner);
+    // the ground carries on smoothly under the beds, so their walls meet it cleanly
+    const dOut = Math.max(0, -mm);
+    let t = base + depth * clamp(M.h, 0, 1);
+    // (every join is rounded over, so no crease runs across the grid)
+    if (pat.rim === 'top') t = smaxk(t, top - 1.6 * sramp(dOut - moss.rimW, 2), 1.2);
+    else if (pat.rim === 'ring') t = smaxk(t, moss.ringT - 1.6 * sramp(dOut - moss.ringW, 1.6), 0.8);
+    else if (pat.rim === 'lip') t = smaxk(t, moss.lipT - 1.6 * sramp(dOut - 1.2, 1.2), 0.6);
     // a rim (the frame, or 3 mm without one) runs round the whole tray at the top, so no bed is open
-    t = inner <= 0 ? top : Math.max(t, top - inner * 1.6);
+    t = inner <= 0 ? top : smaxk(t, top - 1.6 * sramp(inner, 2.4), 1.5);
     // (the tray's sides are upright, with a small chamfer along the top edge)
-    R.t = Math.min(Math.max(t, base + 0.8), top - 1 + Math.max(0, d));
+    // (and round a bed it stands clear above the bed's floor, so every wall has height)
+    R.t = Math.min(Math.max(t, base + 0.8, mm > -1.5 ? moss.floorT + 0.8 : 0), top - 1 + Math.max(0, d));
     R.c = 1; R.r = 1; R.d = d; R.m = mm;
     return R;
   };
@@ -834,7 +893,7 @@ function compile(P, img, dem) {
   };
   let zc = 0;
   if (P.finish.twoTone) zc = clamp(base + clamp(P.finish.toneAt, 0.05, 0.95) * depth, (layerMode ? base + 0.6 : pd.edgeLow) + 0.3, base + depth - 0.3);
-  return { P, pat, patB, cutMode, ribMode, blockMode, layerMode, mossMode, moss, pitch, outline, evalAt, toUV, fromUV, o, s, a, b, pd, zc, twoTone: !!P.finish.twoTone && depth > 1.2 && zc > (layerMode ? base + 0.6 : pd.edgeLow) };
+  return { P, pat, patB, cutMode, ribMode, blockMode, layerMode, mossMode, moss, pitch, outline, evalAt, toUV, fromUV, o, s, a, b, pd, zc, twoTone: !mossMode && !!P.finish.twoTone && depth > 1.2 && zc > (layerMode ? base + 0.6 : pd.edgeLow) };
 }
 // A picture becomes brightness 0..1 over the panel, filling it like a cover photo.
 function sampler(img, a, b) {
@@ -1493,10 +1552,15 @@ function buildTile(C, plan, tile, res, opts) {
   const gx1 = right ? C.a + 1.5 : shape ? tile.x1 + room : tile.x1 - c2;
   const gy0 = bottom ? -C.b - 1.5 : shape ? tile.y0 - room : tile.y0 + c2;
   const gy1 = top ? C.b + 1.5 : shape ? tile.y1 + room : tile.y1 - c2;
-  const nx = Math.max(2, Math.ceil((gx1 - gx0) / res)), ny = Math.max(2, Math.ceil((gy1 - gy0) / res));
-  const gx = (gx1 - gx0) / nx, gy = (gy1 - gy0) / ny, W1 = nx + 1, NG = W1 * (ny + 1);
+  // (with shaped joints the grid reaches past the cut, and every tile samples the same lattice, so
+  // neighbours' surfaces meet exactly however steep they are)
+  const sx0 = shape ? Math.floor(gx0 / res) * res : gx0, sy0 = shape ? Math.floor(gy0 / res) * res : gy0;
+  const nx = Math.max(2, Math.ceil((gx1 - sx0) / res - 1e-9)), ny = Math.max(2, Math.ceil((gy1 - sy0) / res - 1e-9));
+  const gx = shape ? res : (gx1 - gx0) / nx, gy = shape ? res : (gy1 - gy0) / ny, W1 = nx + 1, NG = W1 * (ny + 1);
   const T = new Float32Array(NG);
   const Fo = new Float32Array(NG), Fc = C.cutMode ? new Float32Array(NG) : null, Fs = shape ? new Float32Array(NG) : null, Fr = C.layerMode ? new Float32Array(NG) : null;
+  // a moss tray's beds: positive inside
+  const Fm = C.mossMode ? new Float32Array(NG) : null;
   const depthsSet = [...new Set(pockets.filter((p) => p.depth > 0.25).map((p) => +p.depth.toFixed(2)))].sort((p, q) => p - q);
   const Fp = depthsSet.map(() => new Float32Array(NG));
   // values right at zero make crossings that sit on the grid points: keep every value a little clear of zero
@@ -1515,14 +1579,15 @@ function buildTile(C, plan, tile, res, opts) {
     return v;
   } : null;
   for (let j = 0; j <= ny; j++) {
-    const y = gy0 + j * gy;
+    const y = sy0 + j * gy;
     for (let i = 0; i <= nx; i++) {
-      const x = gx0 + i * gx, k = j * W1 + i;
+      const x = sx0 + i * gx, k = j * W1 + i;
       const R = C.evalAt(x, y);
       T[k] = R.t;
       Fo[k] = nudge(R.d);
       if (Fc) Fc[k] = nudge(Math.max(R.c, rail(x, y)));
       if (Fr) Fr[k] = nudge(R.r);
+      if (Fm) Fm[k] = nudge(R.m);
       if (Fs) Fs[k] = nudge(shape(x, y));
       for (let q = 0; q < depthsSet.length; q++) {
         let v = -1e9;
@@ -1536,11 +1601,11 @@ function buildTile(C, plan, tile, res, opts) {
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const v00 = j * W1 + i, a = T[v00], b = T[v00 + 1], d = T[v00 + W1], c = T[v00 + W1 + 1];
     if (opts.final) {
-      const m = C.evalAt(gx0 + (i + 0.5) * gx, gy0 + (j + 0.5) * gy).t;
+      const m = C.evalAt(sx0 + (i + 0.5) * gx, sy0 + (j + 0.5) * gy).t;
       diag[j * nx + i] = Math.abs((b + d) / 2 - m) < Math.abs((a + c) / 2 - m) ? 1 : 0;
     } else diag[j * nx + i] = Math.abs(b - d) < Math.abs(a - c) ? 1 : 0;
   }
-  const G = { nx, ny, x0: gx0, y0: gy0, gx, gy, T, diag };
+  const G = { nx, ny, x0: sx0, y0: sy0, gx, gy, T, diag };
   // a block's top is a true plane: every point on it takes its height from the block, not from the grid
   const topFn = C.blockMode ? (x, y) => C.evalAt(x, y).t : null;
   const solid = [Fo, Fc, Fs].filter(Boolean);
@@ -1552,15 +1617,18 @@ function buildTile(C, plan, tile, res, opts) {
     const ns = solid.length, sb = Sclip(solid), Stags = (1 << ns) - 1;
     const ri = Fr ? ns : -1, p0 = ns + (Fr ? 1 : 0);
     const fields = [...solid, ...(Fr ? [Fr] : []), ...Fp];
+    // moss beds: a flat floor at its own level, the ground everywhere else
+    const fm = Fm ? fields.push(Fm) - 1 : -1;
     let Ftz = null;
     if (C.twoTone) { Ftz = new Float32Array(NG); for (let k = 0; k < NG; k++) Ftz[k] = tzOf(T[k]); fields.push(Ftz); }
     const tz = C.twoTone ? fields.length - 1 : -1;
-    const levels = [{ z: 0 }, ...depthsSet.map((z) => ({ z })), ...(Fr ? [{ z: P.base }] : []), C.twoTone ? { cap: C.zc } : {}];
-    const Ltop = levels.length - 1, Lb = Fr ? Ltop - 1 : -1;
-    const topClip = Fr ? [...sb, ri, 1] : sb;
+    const levels = [{ z: 0 }, ...depthsSet.map((z) => ({ z })), ...(Fr ? [{ z: P.base }] : []), ...(Fm ? [{ z: C.moss.floorT }] : []), C.twoTone ? { cap: C.zc } : {}];
+    const Ltop = levels.length - 1, Lb = Fr ? Ltop - 1 : -1, Lf = Fm ? Ltop - 1 : -1;
+    const topClip = Fr ? [...sb, ri, 1] : Fm ? [...sb, fm, -1] : sb;
     const faces = [{ clip: [...sb, ...Fp.flatMap((_, q) => [p0 + q, -1])], L: 0, up: false, flat: true }];
     depthsSet.forEach((_, q) => faces.push({ clip: [...sb, p0 + q, 1], L: 1 + q, up: false, flat: true }));
     if (Fr) faces.push({ clip: [...sb, ri, -1], L: Lb, up: true, flat: true });
+    if (Fm) faces.push({ clip: [...sb, fm, 1], L: Lf, up: true, flat: true });
     if (C.twoTone) { faces.push({ clip: [...topClip, tz, -1], L: Ltop, up: true }); faces.push({ clip: [...topClip, tz, 1], L: Ltop, up: true, flat: true }); }
     else faces.push({ clip: topClip, L: Ltop, up: true });
     const walls = [];
@@ -1569,6 +1637,8 @@ function buildTile(C, plan, tile, res, opts) {
       walls.push({ clip: [...sb, ...open.flatMap((q) => [p0 + q, -1])], tags: Stags | open.reduce((m, q) => m | (1 << (p0 + q)), 0), lo: k, hi: k + 1 });
     }
     if (Fr) walls.push({ clip: topClip, tags: Stags | (1 << ri), lo: Lb, hi: Ltop });
+    // (the outside walls stop at the bed floor inside a bed; above it they and the beds' walls rise to the ground)
+    if (Fm) walls.push({ clip: topClip, tags: Stags | (1 << fm), lo: Lf, hi: Ltop });
     const m = meshBody(G, { fields, levels, faces, walls, groups: opts.groups, noMerge: !!opts.normals, topFn });
     bodies.push({ tone: 0, ...m });
   }
@@ -1624,27 +1694,27 @@ function buildParts(C, plan, opts) {
 export function mossPreview(C, res = 1.6) {
   const P = C.P, M = C.moss, a = C.a, b = C.b, seed = P.seed | 0;
   const nx = Math.ceil((2 * a) / res), ny = Math.ceil((2 * b) / res), W1 = nx + 1, NG = W1 * (ny + 1), gx = (2 * a) / nx, gy = (2 * b) / ny;
-  const pos = new Float32Array(NG * 3), col = new Float32Array(NG * 3), inBed = new Float32Array(NG);
+  const T = new Float32Array(NG), Fm = new Float32Array(NG), eps = 0.05 * Math.min(gx, gy);
   // (vertex colours are linear: the sRGB colour is converted)
   const base = [1, 3, 5].map((q) => (parseInt(P.moss.color.slice(q, q + 2), 16) / 255) ** 2.2);
-  const lift = clamp((M.surfT - M.floorT) * 0.22, 0.8, 2.4);
+  const lift = clamp((M.surfT - M.floorT) * 0.18, 0.7, 2);
+  // cushions a few mm across on broader swells, and a fine fuzz; the moss fills its bed right to the walls
+  const tex = (x, y) => [fbm(x / 8, y / 8, seed + 501, 3), fbm(x / 26, y / 26, seed + 502, 2), gnoise(x / 1.7, y / 1.7, seed + 503)];
+  const zAt = (x, y) => { const [cu, sw, fz] = tex(x, y); return M.surfT + lift * (0.25 + 1.4 * (cu - 0.5) + 0.8 * (sw - 0.5) + 0.35 * (fz - 0.5)); };
   for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) {
-    const x = -a + i * gx, y = -b + j * gy, k = j * W1 + i, R = C.evalAt(x, y);
-    inBed[k] = R.m;
-    // cushions a few mm across on broader swells, and a fine fuzz
-    const cush = fbm(x / 8, y / 8, seed + 501, 3), swell = fbm(x / 26, y / 26, seed + 502, 2), fuzz = gnoise(x / 1.7, y / 1.7, seed + 503);
-    const zTop = M.surfT + lift * (1.6 * (cush - 0.5) + 0.9 * (swell - 0.5) + 0.35 * (fuzz - 0.5));
-    pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = M.floorT + (zTop - M.floorT) * smooth(-0.3, 2.4, R.m);
-    const shade = 0.72 + 0.5 * (cush - 0.5) + 0.3 * (swell - 0.5) + 0.18 * (fuzz - 0.5), warm = 0.1 * (swell - 0.5);
-    col[k * 3] = clamp(base[0] * shade * (1 + warm), 0, 1); col[k * 3 + 1] = clamp(base[1] * shade, 0, 1); col[k * 3 + 2] = clamp(base[2] * shade * (1 - warm), 0, 1);
+    const x = -a + i * gx, y = -b + j * gy, k = j * W1 + i, mv = C.evalAt(x, y).m;
+    Fm[k] = mv >= 0 ? (mv < eps ? eps : mv) : mv > -eps ? -eps : mv;
   }
-  const idx = [];
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-    const k = j * W1 + i, q = [k, k + 1, k + W1 + 1, k + W1];
-    if (Math.max(inBed[q[0]], inBed[q[1]], inBed[q[2]], inBed[q[3]]) <= 0) continue;
-    idx.push(q[0], q[1], q[2], q[0], q[2], q[3]);
+  // the moss's outline is the beds' exact outline, the same the walls follow
+  const m = meshBody({ nx, ny, x0: -a, y0: -b, gx, gy, T, diag: new Uint8Array(nx * ny) },
+    { fields: [Fm], levels: [{}], faces: [{ clip: [0, 1], L: 0, up: true }], walls: [], noMerge: true, topFn: zAt });
+  const pos = m.position, col = new Float32Array(pos.length);
+  for (let v = 0; v < pos.length; v += 3) {
+    const [cu, sw, fz] = tex(pos[v], pos[v + 1]);
+    const shade = 0.72 + 0.5 * (cu - 0.5) + 0.3 * (sw - 0.5) + 0.18 * (fz - 0.5), warm = 0.1 * (sw - 0.5);
+    col[v] = clamp(base[0] * shade * (1 + warm), 0, 1); col[v + 1] = clamp(base[1] * shade, 0, 1); col[v + 2] = clamp(base[2] * shade * (1 - warm), 0, 1);
   }
-  const m = { position: pos, color: col, index: new Uint32Array(idx) };
+  m.color = col;
   addNormals(m);
   return m;
 }
@@ -1706,7 +1776,7 @@ export function panelChecks(src, plan, built) {
     const M = built?.info?.moss || compile(P, null, null).moss, short = M.bedDepth < P.moss.depth - 0.4;
     out.push({ level: short ? 'warn' : 'ok', text: short
       ? `The moss beds are only ${M.bedDepth.toFixed(1)} mm deep, not the ${P.moss.depth} mm asked for: raise Depth to ${Math.ceil(P.depth + P.moss.depth - M.bedDepth)} mm, or lower Moss depth.`
-      : `Beds for preserved moss, ${M.bedDepth.toFixed(0)} mm deep below the moss's surface, about ${Math.round(M.area / 100)} cm² in all (${Math.round(M.share * 100)}% of the tray). Their floors are scored so the glue grips.` });
+      : `Beds for preserved moss, ${M.bedDepth.toFixed(0)} mm deep below the moss's surface, about ${Math.round(M.area / 100)} cm² in all (${Math.round(M.share * 100)}% of the tray). Their floors are flat and their walls straight, so sheet moss lies flat and cushions sit snug.` });
     out.push({ level: 'ok', text: 'Glue preserved moss in with hot glue or a clear craft glue, pressing it down into each bed. It needs no water or light; keep it out of strong sun so it keeps its colour.' });
   }
   if (P.mode === 'relief' && pat.blocks) out.push({ level: 'ok', text: `Blocks stand ${P.groove} mm apart with flat, slanted tops. They print solid, so expect a heavy panel.` });

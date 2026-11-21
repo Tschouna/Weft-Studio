@@ -33,11 +33,13 @@ export const PANEL_PRESETS = [
   { name: 'Kinetic', pattern: 'pyramid', width: 520, height: 360, scale: 52, depth: 12, vary: 0.7, edge: 'flush', tiles: { joint: 'none' }, finish: { color: '#c9cbc8' } },
   { name: 'Truchet', pattern: 'truchet', width: 480, height: 360, scale: 40, depth: 8, vary: 0.4, edge: 'frame', edgeW: 14, finish: { color: '#eeebe4', color2: '#26324a', twoTone: true, toneAt: 0.45 } },
   // moss trays: a landscape carved into a deep tray, with beds for preserved moss
-  { name: 'Moor', mode: 'moss', pattern: 'topo', width: 450, height: 300, scale: 40, depth: 26, base: 4, vary: 0.5, seed: 7, edge: 'frame', edgeW: 12, moss: { depth: 12, amount: 0.2, color: '#4b6a2a' }, tiles: { joint: 'dovetail' }, finish: { color: '#cfccc4', material: 'matte', wall: '#e4e1da' } },
-  { name: 'Archipel', mode: 'moss', pattern: 'isles', width: 600, height: 400, scale: 70, depth: 24, base: 4, vary: 0.45, seed: 12, edge: 'frame', edgeW: 14, moss: { depth: 10, amount: 0.42, color: '#5c7a32' }, finish: { color: '#eeebe4', material: 'matte', wall: '#cfd5c9' } },
-  { name: 'Brook', mode: 'moss', pattern: 'brook', width: 500, height: 340, scale: 36, depth: 22, base: 4, vary: 0.4, seed: 5, edge: 'frame', edgeW: 12, moss: { depth: 10, amount: 0.45, color: '#4b6a2a' }, finish: { color: '#8d8f8e', material: 'satin', wall: '#e4e1da' } },
-  { name: 'Kyoto', mode: 'moss', pattern: 'zen', width: 600, height: 340, scale: 60, depth: 22, base: 4, vary: 0.5, seed: 3, edge: 'frame', edgeW: 16, moss: { depth: 10, amount: 0.4, color: '#3e5a24' }, finish: { color: '#e9e4d8', material: 'matte', wall: '#5d6166' } },
-  { name: 'Fjord', mode: 'moss', pattern: 'river', shape: 'rounded', corner: 24, width: 640, height: 300, scale: 70, depth: 26, base: 4, vary: 0.55, seed: 9, edge: 'frame', edgeW: 12, moss: { depth: 12, amount: 0.32, color: '#6f8f36' }, finish: { color: '#3a3b3d', material: 'matte', wall: '#e4e1da' } },
+  { name: 'Karst', mode: 'moss', pattern: 'topo', width: 450, height: 300, scale: 46, depth: 26, base: 4, vary: 0.45, seed: 21, edge: 'frame', edgeW: 12, moss: { depth: 12, amount: 0.24, color: '#4b6a2a' }, tiles: { joint: 'dovetail' }, finish: { color: '#d6d2ca', material: 'matte', wall: '#ece9e3' } },
+  { name: 'Riverbed', mode: 'moss', pattern: 'stones', width: 500, height: 340, scale: 38, depth: 22, base: 4, vary: 0.5, seed: 5, edge: 'frame', edgeW: 12, moss: { depth: 10, amount: 0.34, color: '#3e5a24' }, finish: { color: '#a9aaa6', material: 'satin', wall: '#e4e1da' } },
+  { name: 'Oxbow', mode: 'moss', pattern: 'meander', shape: 'rounded', corner: 24, width: 640, height: 300, scale: 56, depth: 26, base: 4, vary: 0.5, seed: 9, edge: 'frame', edgeW: 12, moss: { depth: 12, amount: 0.34, color: '#6f8f36' }, finish: { color: '#3a3b3d', material: 'matte', wall: '#e4e1da' } },
+  { name: 'Ryoan', mode: 'moss', pattern: 'zen', width: 600, height: 340, scale: 54, depth: 22, base: 4, vary: 0.5, seed: 3, edge: 'frame', edgeW: 16, moss: { depth: 10, amount: 0.6, color: '#3e5a24' }, finish: { color: '#ebe7de', material: 'matte', wall: '#5d6166' } },
+  { name: 'Erg', mode: 'moss', pattern: 'drift', width: 560, height: 360, scale: 44, depth: 26, base: 4, vary: 0.5, seed: 4, edge: 'frame', edgeW: 12, moss: { depth: 12, amount: 0.45, color: '#5c7a32' }, finish: { color: '#d8c6a5', material: 'matte', wall: '#efe9de' } },
+  { name: 'Rain', mode: 'moss', pattern: 'pools', width: 480, height: 480, scale: 44, depth: 24, base: 4, vary: 0.4, seed: 8, edge: 'frame', edgeW: 12, moss: { depth: 10, amount: 0.55, color: '#4b6a2a' }, finish: { color: '#c3c1bb', material: 'matte', wall: '#e4e1da' } },
+  { name: 'Apiary', mode: 'moss', pattern: 'hive', width: 520, height: 360, scale: 34, depth: 22, base: 4, vary: 0.4, seed: 7, edge: 'frame', edgeW: 12, moss: { depth: 10, amount: 0.35, color: '#6f8f36' }, finish: { color: '#2e2f2e', material: 'matte', wall: '#e4e1da' } },
   { name: 'Odeon', pattern: 'deco', shape: 'arch', width: 420, height: 600, scale: 50, depth: 8, vary: 0.5, edge: 'frame', edgeW: 18, finish: { color: '#d8a647', material: 'silk' } },
 ];
 const PANEL_NAMES = ['Atlas', 'Dune', 'Tide', 'Mesa', 'Strata', 'Loom', 'Riad', 'Kiln', 'Fresco', 'Relief', 'Plinth', 'Facade', 'Cornice', 'Frieze', 'Lintel', 'Tessera', 'Mosaic', 'Zellige', 'Terrazzo', 'Travertine', 'Basalt', 'Quarry', 'Cairn', 'Moraine', 'Delta', 'Estuary', 'Sirocco', 'Mistral', 'Aurora', 'Halcyon', 'Solace', 'Vesper', 'Lumen', 'Odeon', 'Lido', 'Riviera', 'Cloister', 'Atrium', 'Portico', 'Arcade', 'Bastion', 'Rampart', 'Canopy', 'Grove', 'Thicket', 'Bramble', 'Fable', 'Echo', 'Cadence', 'Meridian'];
@@ -677,7 +679,7 @@ export function initPanels(api) {
     if (done) { cv.getContext('2d').drawImage(done, 0, 0); return cv; }
     idle(() => {
       const pat = PANEL_PATTERNS[k];
-      const src = pat.mossy ? panelDefaults({ pattern: k, mode: 'moss', width: 120, height: 120, scale: { topo: 22, isles: 30, brook: 16, river: 28, zen: 30, cells: 24, swell: 22 }[k] || 24, depth: 18, edge: 'frame', edgeW: 5, seed: 3, moss: { amount: 0.35, color: P().moss.color },
+      const src = pat.mossy ? panelDefaults({ pattern: k, mode: 'moss', width: 120, height: 120, scale: { topo: 24, stones: 14, meander: 26, zen: 26, drift: 22, pools: 22, hive: 17 }[k] || 24, depth: 18, edge: 'frame', edgeW: 5, seed: 3, moss: { amount: 0.35, color: P().moss.color },
         finish: { color: dark ? '#cfcec7' : '#eeebe4', wall: dark ? '#22231f' : '#ffffff' } }) : panelDefaults({ pattern: k, mode: P().mode === 'cut' && pat.cut ? 'cut' : 'relief', width: 120, height: 120, scale: k === 'reed' ? 14 : k === 'halftone' ? 12 : k === 'contour' || k === 'ridge' ? 34 : k === 'sunburst' || k === 'vortex' || k === 'ripple' ? 18 : 30, depth: 8, edge: 'flush', seed: 3,
         finish: { color: dark ? '#cfcec7' : '#eeebe4', wall: dark ? '#22231f' : '#ffffff' } });
       shade(cv, src, { w: 64, hgt: 64, light: false });
@@ -726,8 +728,8 @@ export function initPanels(api) {
         moss ? h('p', { class: 'note' }, 'A deep tray: a landscape is carved into its flat top, and flat-floored beds hold preserved moss, which you glue in after printing. The moss in the preview is only there to show how it looks; it is not part of the print.') : null),
       moss ? group('Moss', 'The beds the moss is glued into.',
         sliderCtl('pn-mossd', 'Moss depth', { min: 4, max: 30, step: 0.5, fmt: mmf }, () => Pn.moss.depth, (v) => { Pn.moss.depth = v; }, local()),
-        sliderCtl('pn-mossa', Pn.pattern === 'river' ? 'River width' : Pn.pattern === 'brook' ? 'Moss between the stones' : 'Share of moss', { min: 0.08, max: 0.8, step: 0.01, fmt: pct }, () => Pn.moss.amount, (v) => { Pn.moss.amount = v; }, local()),
-        h('p', { class: 'note' }, 'Sheet and flat moss want 8 to 12 mm; cushion and ball moss 15 mm or more. Every bed has a flat floor, scored so the glue grips, and is walled in all round.')) : null,
+        sliderCtl('pn-mossa', Pn.pattern === 'meander' ? 'River width' : Pn.pattern === 'stones' ? 'Moss between the stones' : Pn.pattern === 'zen' ? 'Island size' : Pn.pattern === 'pools' ? 'Pools' : Pn.pattern === 'drift' ? 'Moss in the hollows' : 'Share of moss', { min: 0.08, max: 0.8, step: 0.01, fmt: pct }, () => Pn.moss.amount, (v) => { Pn.moss.amount = v; }, local()),
+        h('p', { class: 'note' }, 'Sheet and flat moss want 8 to 12 mm; cushion and ball moss 15 mm or more. Every bed has a flat floor and straight walls all round.')) : null,
       pat.terrain ? group('From swisstopo', 'Type a peak, a place or coordinates, frame the area, and Weft downloads the swissALTI3D heights and stitches them. Switzerland and Liechtenstein.', ...swisstopoCtl()) : null,
       pat.terrain ? group('Elevation model', 'The landscape on the panel. You can also load files you downloaded yourself: swissALTI3D as GeoTIFF or XYZ (also zipped), or DHM25 and other ASCII grids. Neighbouring tiles are stitched by their coordinates.', ...terrainCtl()) : null,
       ribs ? group('Ribs', 'Every rib is a straight-sided wall, so it prints crisp without supports.',
@@ -762,7 +764,7 @@ export function initPanels(api) {
   // sensible numbers when a pattern is picked
   function tunePattern(Pn, k) {
     if (PANEL_PATTERNS[k].mossy) {
-      const M = { topo: 40, isles: 66, brook: 36, river: 64, zen: 60, cells: 50, swell: 48 };
+      const M = { topo: 46, stones: 30, meander: 56, zen: 50, drift: 44, pools: 44, hive: 34 };
       Pn.scale = Math.round((M[k] || 50) * clamp(Math.sqrt((Pn.width * Pn.height) / (450 * 300)), 0.75, 1.5));
       return;
     }
@@ -1400,7 +1402,7 @@ export function initPanels(api) {
       const M = ps.res?.info?.moss;
       lines.push('', 'Moss',
         `• The beds take preserved moss ${M ? `${M.bedDepth.toFixed(0)} mm deep, about ${Math.round(M.area / 100)} cm² in all` : ''}. Sheet moss and cushion (mood) moss both work; buy a little more than the area.`,
-        '• Assemble and hang the tray first, then glue the moss in: hot glue or a clear craft glue on the scored floor of each bed, and press the moss down into it.',
+        '• Assemble and hang the tray first, then glue the moss in: hot glue or a clear craft glue on the floor of each bed, and press the moss down into it.',
         '• Preserved moss needs no water or light. Keep it out of strong sun, which fades it.');
     }
     if (F.twoTone) lines.push('', 'Two-tone',
