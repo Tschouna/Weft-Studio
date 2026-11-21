@@ -22,13 +22,32 @@ function hash2(i, j, s) {
   h ^= h >>> 15;
   return (h >>> 0) / 4294967296;
 }
-// gradient noise, about 0..1
+// gradient noise, about 0..1 (each lattice point's gradient is one of 1024 directions round the circle,
+// from a table, picked by the top bits of its hash)
+const GN_X = new Float64Array(1024), GN_Y = new Float64Array(1024);
+for (let k = 0; k < 1024; k++) { const t = ((k + 0.5) / 1024) * TAU; GN_X[k] = Math.cos(t); GN_Y[k] = Math.sin(t); }
+function ghash(i, j, s1) {
+  let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ s1;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822519);
+  h ^= h >>> 15;
+  return h >>> 22;
+}
 function gnoise(x, y, s) {
-  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, s1 = Math.imul((s | 0) + 1, 1442695041);
   const ux = fx * fx * fx * (fx * (fx * 6 - 15) + 10), uy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
-  const g = (a, b, dx, dy) => { const t = hash2(a, b, s) * TAU; return Math.cos(t) * dx + Math.sin(t) * dy; };
-  const n = lerp(lerp(g(i, j, fx, fy), g(i + 1, j, fx - 1, fy), ux), lerp(g(i, j + 1, fx, fy - 1), g(i + 1, j + 1, fx - 1, fy - 1), ux), uy);
-  return 0.5 + n * 0.72;
+  const i0 = i | 0, j0 = j | 0, i1 = (i + 1) | 0, j1 = (j + 1) | 0;
+  let k = ghash(i0, j0, s1);
+  const n00 = GN_X[k] * fx + GN_Y[k] * fy;
+  k = ghash(i1, j0, s1);
+  const n10 = GN_X[k] * (fx - 1) + GN_Y[k] * fy;
+  k = ghash(i0, j1, s1);
+  const n01 = GN_X[k] * fx + GN_Y[k] * (fy - 1);
+  k = ghash(i1, j1, s1);
+  const n11 = GN_X[k] * (fx - 1) + GN_Y[k] * (fy - 1);
+  const a = n00 + (n10 - n00) * ux, b = n01 + (n11 - n01) * ux;
+  return 0.5 + (a + (b - a) * uy) * 0.72;
 }
 function fbm(x, y, s, oct) {
   let v = 0, a = 0.5, n = 0;

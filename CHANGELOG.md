@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.11.1
+
+Faster all round.
+
+- **Dragging a slider stays smooth.** Quick drafts while you drag and the full build when you let go now run side by side, each on its own worker, so a draft never waits for a full build to finish. The view shows each new draft as it comes in, instead of only once you stop.
+- **The Collection no longer slows down the studio.** Its pictures used to be drawn in the background as soon as the app opened, and while you were in Panels, holding up your own edits for the first minute or two. Now a card's picture is drawn only when the Collection is open and the card scrolls into view, and it is kept, so next time the Collection opens straight away. The pictures are drawn again after an update.
+- **Less work for the graphics card.** The shadows are drawn again only when the piece or the light changes, not on every frame, and the turntable spin runs at 30 frames a second. While the piece spins that is less than half the work it was, and turning the view in the studio or in Panels no longer redraws the shadows.
+- **Panels with noise patterns build up to 2½ times faster.** The moss trays benefit most (Moor and Archipel build in under half the time), and so do the swatches and starting-panel pictures.
+- **Shells build a little faster:** fewer throwaway values while the pattern is worked out, and buffers sized up front. Building every piece in the Collection now takes about as long as it did in 2.7, though the Collection has grown since.
+
 ## 2.11.0
 
 - **Moss trays (new, in Panels):** Pattern → **Moss** turns a panel into a deep tray with a landscape carved into its flat top and flat-floored beds for preserved moss. The 3D view shows the moss in place (preview only: you glue real moss in after printing).

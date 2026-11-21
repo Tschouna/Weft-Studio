@@ -224,9 +224,11 @@ export function initPanels(api) {
   scene.add(panelRoot);
   let tileGroups = [], beds = null, partsGroup = null, mossMesh = null;
   const mossMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.25 });
-  let needs = true;
-  const invalidate = () => { needs = true; };
-  controls.addEventListener('change', invalidate);
+  // (shadows are drawn again only when something other than the camera changed)
+  let needs = true, needsShadow = true;
+  const invalidate = () => { needs = true; needsShadow = true; };
+  renderer.shadowMap.autoUpdate = false;
+  controls.addEventListener('change', () => { needs = true; });
   function resize() {
     const r = el.stage.getBoundingClientRect();
     if (!r.width || !r.height) return;
@@ -240,7 +242,7 @@ export function initPanels(api) {
   function loop() {
     if (ps.active) {
       if (controls.update()) needs = true;
-      if (needs) { renderer.render(scene, camera); placeLabels(); needs = false; }
+      if (needs) { renderer.shadowMap.needsUpdate = needsShadow; renderer.render(scene, camera); placeLabels(); needs = needsShadow = false; }
     }
     requestAnimationFrame(loop);
   }
@@ -1503,6 +1505,7 @@ export function initPanels(api) {
     const W = 2000, Hh = 1500, size = renderer.getSize(new THREE.Vector2()), pr = renderer.getPixelRatio();
     renderer.setPixelRatio(1); renderer.setSize(W, Hh, false);
     camera.aspect = W / Hh; camera.updateProjectionMatrix();
+    renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
     const out = document.createElement('canvas'); out.width = W; out.height = Hh;
     const g = out.getContext('2d');

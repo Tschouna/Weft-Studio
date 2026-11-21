@@ -25,7 +25,9 @@
 //     cell apart; ribs halve),
 //     wherever the piece is at least two fifths as wide as at its widest; every pattern builds closed on a domed planter, and openwork stays printable
 //     where its count steps; with even sizing off, the count is the same all the way round
-import { generate, makeProfile, easeProfile, shapeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, evenMin, evenStyle, __test } from '../app/engine.js';
+// 14. the engine's version is the release's (collection pictures are kept until it changes)
+import { readFileSync } from 'node:fs';
+import { generate, makeProfile, easeProfile, shapeProfile, globeShape, glowTest, GLOW_STEPS, facetedWall, evenMin, evenStyle, ENGINE_VERSION, __test } from '../app/engine.js';
 import { COLLECTION, design } from '../app/presets.js';
 
 const { buildSurface, sampleRows, cellFor, processRelief, makeSection } = __test;
@@ -730,6 +732,14 @@ for (const [name, obj, form, pat] of [['lattice lantern', 'lantern', { height: 2
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} openwork ${name}: ${open} open edges, overhang ${(p.stats.overhang / 100).toFixed(1)} cm², bridges ${(p.stats.bridge / 100).toFixed(1)} cm²`);
   if (!ok) fail(`even openwork ${name}`);
 }
+}
+
+console.log('14. engine version');
+{
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const ok = ENGINE_VERSION === pkg.version;
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ENGINE_VERSION ${ENGINE_VERSION}, package.json ${pkg.version}`);
+  if (!ok) fail('ENGINE_VERSION must match package.json');
 }
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

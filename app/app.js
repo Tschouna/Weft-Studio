@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
-import { generate, swatch, makeProfile, easeProfile, shapeProfile, makeSection, glowTest, GLOW_STEPS, evenStyle } from './engine.js';
+import { generate, swatch, makeProfile, easeProfile, shapeProfile, makeSection, glowTest, GLOW_STEPS, evenStyle, ENGINE_VERSION } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 import { initPanels } from './panels.js';
 
@@ -408,6 +408,8 @@ class EngineClient {
   }
 }
 const engine = new EngineClient();
+// (drafts and thumbnails have a worker of their own)
+const quick = new EngineClient();
 
 // ============================================================ 3D stage
 const SCALE = 0.01; // one scene unit = 100 mm
@@ -454,9 +456,12 @@ controls.minDistance = 0.4;
 controls.maxDistance = 30;
 controls.maxPolarAngle = Math.PI * 0.495;
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
-let needsRender = true;
-const invalidate = () => { needsRender = true; };
-controls.addEventListener('change', invalidate);
+// The view draws only when something changed. Its shadows are drawn again only when something other than
+// the camera changed: orbiting the view reuses them.
+let needsRender = true, needsShadow = true;
+const invalidate = () => { needsRender = true; needsShadow = true; };
+renderer.shadowMap.autoUpdate = false;
+controls.addEventListener('change', () => { needsRender = true; });
 controls.addEventListener('start', () => { $('#hint').style.opacity = 0; if (state.spin) setSpin(false); });
 
 function resize() {
@@ -469,13 +474,26 @@ function resize() {
 }
 new ResizeObserver(resize).observe(canvas.parentElement);
 
-let last = performance.now();
+// The turntable turns at 30 frames a second, and its shadows follow it every degree or so: a slow turn
+// looks the same, at a fraction of the work.
+let lastSpin = performance.now(), spinShadow = 0;
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-  if (state.spin && state.view === 'studio') { stage.spin.rotation.y += dt * 0.22; needsRender = true; }
+  if (state.spin && state.view === 'studio') {
+    if (now - lastSpin >= 31) {
+      const da = Math.min(0.05, (now - lastSpin) / 1000) * 0.22;
+      lastSpin = now;
+      stage.spin.rotation.y += da; needsRender = true;
+      spinShadow += da;
+      if (spinShadow > 0.016) { spinShadow = 0; needsShadow = true; }
+    }
+  } else lastSpin = now;
   if (controls.update()) needsRender = true;
-  if (needsRender) { updateHandles(); updateDims(); renderer.render(stage.scene, stage.camera); needsRender = false; }
+  if (needsRender) {
+    updateHandles(); updateDims();
+    renderer.shadowMap.needsUpdate = needsShadow;
+    renderer.render(stage.scene, stage.camera);
+    needsRender = needsShadow = false;
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -1508,7 +1526,11 @@ canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 
 // ============================================================ build pipeline
-let building = false, pending = null, finalTimer = 0, lastFinalMs = 200;
+// Two lanes, each with a worker of its own: quick drafts while a slider moves, and the full build once it
+// rests. A draft never waits behind a full build, and the view shows the newest result as soon as it has
+// it (a full build is never replaced by an older draft).
+let building = false, pending = false, drafting = false, pendingDraft = false, finalTimer = 0, lastFinalMs = 200;
+let shownV = -1, shownFinal = false;
 function rebuild(final) {
   state.version++;
   clearTimeout(finalTimer);
@@ -1516,29 +1538,39 @@ function rebuild(final) {
   else { request('draft'); finalTimer = setTimeout(() => request('final'), 260); }
 }
 function request(kind) {
-  pending = { kind, version: state.version };
-  pump();
+  if (kind === 'draft') { pendingDraft = true; pumpDraft(); } else { pending = true; pump(); }
+}
+const buildsBusy = () => building || drafting || pending || pendingDraft;
+const syncBusy = () => $('#busy').classList.toggle('show', buildsBusy());
+function present(res, v, final) {
+  if (v < shownV || (v === shownV && (shownFinal || !final))) return;
+  shownV = v; shownFinal = final;
+  showResult(res);
 }
 async function pump() {
   if (building || !pending) return;
-  const job = pending; pending = null;
-  building = true;
-  $('#busy').classList.add('show');
-  const q = job.kind === 'draft' ? 0.5 : 1;
-  const t0 = performance.now();
+  pending = false; building = true; syncBusy();
+  const v = state.version, t0 = performance.now();
   try {
-    const res = await engine.run(engineParams(state.design), q);
-    if (job.kind === 'final') lastFinalMs = performance.now() - t0;
-    if (job.version === state.version || !pending) showResult(res);
+    const res = await engine.run(engineParams(state.design), 1);
+    lastFinalMs = performance.now() - t0;
+    present(res, v, true);
   } catch (err) {
     console.error(err);
-    toast('That combination could not be built. Try a smaller value.');
+    if (v === state.version) toast('That combination could not be built. Try a smaller value.');
   }
-  building = false;
-  if (!pending) $('#busy').classList.remove('show');
-  if (pending) pump();
-  else if (thumbQueue.length) setTimeout(pumpThumbs, 60);
+  building = false; syncBusy();
+  if (pending) pump(); else afterBuilds();
 }
+async function pumpDraft() {
+  if (drafting || !pendingDraft) return;
+  pendingDraft = false; drafting = true; syncBusy();
+  const v = state.version;
+  try { present(await quick.run(engineParams(state.design), 0.5), v, false); } catch (err) { console.error(err); }
+  drafting = false; syncBusy();
+  if (pendingDraft) pumpDraft(); else afterBuilds();
+}
+function afterBuilds() { if (!buildsBusy() && thumbQueue.length) setTimeout(pumpThumbs, 60); }
 
 function onEdit(commit, structural) {
   if (structural) renderAll();
@@ -2805,6 +2837,7 @@ async function saveCover() {
 // the dimensions and size reference (keepAids); small saved thumbnails drop them too.
 function cleanRender(fn, keepAids = false) {
   const hidden = [];
+  renderer.shadowMap.needsUpdate = true;
   stage.content?.traverse((o) => { if (o.userData.hazard && o.visible) { o.visible = false; hidden.push(o); } });
   for (const g of [handleState.group, keepAids ? null : dimState.group, keepAids ? null : refState.group]) if (g?.visible) { g.visible = false; hidden.push(g); }
   try { return fn(); } finally {
@@ -2826,30 +2859,97 @@ const thumbRenderer = (() => {
 })();
 const thumbStage = thumbRenderer ? makeStage(thumbRenderer) : null;
 if (thumbStage) { thumbStage.camera.aspect = 4 / 3; thumbStage.camera.updateProjectionMatrix(); }
+// Collection thumbnails are drawn only while the collection is on screen, one card at a time as it scrolls
+// into view, and kept between visits (keyed by the engine's version and the design), so the studio never
+// waits behind them.
 const thumbQueue = [];
 let thumbBusy = false;
+const thumbKey = (d) => {
+  const s = JSON.stringify(d);
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${ENGINE_VERSION}:${(h2 >>> 0).toString(36)}${(h1 >>> 0).toString(36)}`;
+};
+const thumbDB = (() => {
+  let db = null;
+  const open = () => db || (db = new Promise((res) => {
+    try {
+      const rq = indexedDB.open('weft-thumbs', 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore('t');
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = rq.onblocked = () => res(null);
+    } catch { res(null); }
+  }));
+  const run = async (mode, fn) => {
+    const d = await open();
+    if (!d) return null;
+    return new Promise((res) => {
+      try {
+        const tx = d.transaction('t', mode), rq = fn(tx.objectStore('t'));
+        tx.oncomplete = () => res(rq ? rq.result ?? null : null);
+        tx.onerror = tx.onabort = () => res(null);
+      } catch { res(null); }
+    });
+  };
+  return {
+    get: (k) => run('readonly', (st) => st.get(k)),
+    put: (k, v) => run('readwrite', (st) => st.put(v, k)),
+    // thumbnails drawn by another version of the engine are dropped
+    prune: () => run('readwrite', (st) => { const rq = st.openCursor(); rq.onsuccess = () => { const c = rq.result; if (!c) return; if (!String(c.key).startsWith(`${ENGINE_VERSION}:`)) c.delete(); c.continue(); }; return null; }),
+  };
+})();
+function showThumb(img, blob) {
+  img.src = URL.createObjectURL(blob);
+  img.hidden = false;
+  img.previousElementSibling?.remove();
+}
+// thumbnails are drawn only while their page is the one in front (the classic page shows everything)
+const thumbsWanted = () => UI !== 'v2' || document.body.dataset.view === 'collection';
 async function pumpThumbs() {
-  if (thumbBusy || building || pending || !thumbQueue.length || !thumbStage) return;
+  if (thumbBusy || buildsBusy() || !thumbQueue.length || !thumbStage || !thumbsWanted()) return;
   thumbBusy = true;
   const { d, img } = thumbQueue.shift();
   try {
-    const res = await engine.run(d, 0.45);
+    const res = await quick.run(d, 0.45);
     const { root } = buildDisplay(res, d, { mode: 'studio', overhangs: false, multicolor: false });
-    if (thumbStage.content) { thumbStage.spin.remove(thumbStage.content); disposeGroup(thumbStage.content); }
-    thumbStage.content = root; thumbStage.spin.add(root);
+    thumbStage.spin.add(root);
     thumbStage.spin.rotation.y = -0.5;
     thumbStage.target = null;
     const f = frameStage(thumbStage, root, { keepDir: false, fit: 0.8 });
     thumbStage.camera.lookAt(f.target);
     applyLook(thumbStage, false);
     thumbRenderer.render(thumbStage.scene, thumbStage.camera);
-    img.src = thumbRenderer.domElement.toDataURL('image/png');
-    img.hidden = false;
-    img.previousElementSibling?.remove();
+    // (the meshes leave the GPU straight away; the picture is encoded off the main thread)
+    thumbStage.spin.remove(root); disposeGroup(root);
+    const blob = await new Promise((r) => thumbRenderer.domElement.toBlob(r, 'image/webp', 0.9));
+    if (blob) { showThumb(img, blob); thumbDB.put(thumbKey(d), blob); }
   } catch (e) { console.warn('thumbnail', e); }
   thumbBusy = false;
   if (thumbQueue.length) setTimeout(pumpThumbs, 30);
 }
+// a card asks for its thumbnail when it comes near the screen: from the cache, or drawn
+const thumbWatch = typeof IntersectionObserver === 'function' ? new IntersectionObserver((list) => {
+  for (const e of list) {
+    if (!e.isIntersecting) continue;
+    thumbWatch.unobserve(e.target);
+    const job = e.target.__thumb;
+    if (job) needThumb(job);
+  }
+}, { rootMargin: '300px' }) : null;
+async function needThumb(job) {
+  const blob = await thumbDB.get(thumbKey(job.d));
+  if (blob) { showThumb(job.img, blob); return; }
+  thumbQueue.push(job);
+  pumpThumbs();
+}
+function watchThumb(card, d, img) {
+  if (!thumbWatch) { thumbQueue.push({ d, img }); return; }
+  card.__thumb = { d, img };
+  thumbWatch.observe(card);
+}
+setTimeout(() => thumbDB.prune(), 8000);
 
 function designCard(d, onOpen, thumb) {
   const img = h('img', { alt: `${d.name}, ${OBJECTS[d.object].label.toLowerCase()}`, hidden: !thumb });
@@ -2908,7 +3008,7 @@ function renderCollection() {
     const { card, img } = designCard(d, () => openDesign(d));
     grid.append(card);
     cards.push({ d, card });
-    thumbQueue.push({ d, img });
+    watchThumb(card, d, img);
   }
   const count = $('#coll-count');
   if (count) count.textContent = COLLECTION.length;

@@ -40,6 +40,9 @@ function crest(x, kind) {
   }
 }
 
+// the release this geometry comes from (pictures drawn of it are kept until it changes)
+export const ENGINE_VERSION = '2.11.1';
+
 // ---------------------------------------------------------------- growable buffers
 class Buf {
   constructor(Type, n = 1 << 16) { this.T = Type; this.a = new Type(n); this.n = 0; }
@@ -50,7 +53,11 @@ class Buf {
 }
 
 class Mesh {
-  constructor() { this.P = new Buf(Float32Array); this.I = new Buf(Uint32Array); this.W = new Buf(Int32Array); this.G = new Buf(Uint8Array); this.nv = 0; this.g = 0; }
+  // (nv, nt: about how many vertices and triangles it will get, so its buffers rarely need to grow)
+  constructor(nv = 1 << 14, nt = 1 << 14) {
+    const v = Math.max(1 << 12, Math.ceil(nv)), t = Math.max(1 << 12, Math.ceil(nt));
+    this.P = new Buf(Float32Array, 3 * v); this.I = new Buf(Uint32Array, 3 * t); this.W = new Buf(Int32Array, v); this.G = new Buf(Uint8Array, t); this.nv = 0; this.g = 0;
+  }
   // weld: identity of the geometric point; render vertices sharing it are merged on export
   v(x, y, z, weld) { this.P.push3(x, y, z); this.W.push1(weld); return this.nv++; }
   tri(a, b, c) { if (a !== b && b !== c && a !== c) { this.I.push3(a, b, c); this.G.push1(this.g); } }
@@ -898,12 +905,11 @@ function buildSurface(rows, NU, S, mode, opts) {
           if (pid === 'ribs') {
             // the lean and the wave, as turns round the piece (with even sizing off: as before)
             const offT = even ? helix[j] + (wavePhase * w0) / (TAU * r) : (t * tanB + wavePhase) / NN;
-            const rib = (Nz) => { const sz = Nz * (th + offT); return [sz, Math.abs(sz - Math.round(sz)) * ((TAU * r) / Nz) * cosB]; };
-            [s, d] = rib(NN);
+            s = NN * (th + offT); d = Math.abs(s - Math.round(s)) * Sc * cosB;
             g = halfW - d;
             h = crest(d / Math.max(0.2, fill * Sc * cosB * 0.5), prof);
             // where the count halves, every other rib tapers out and the rest widen to fill the space
-            if (wB > 0) { const [, d2] = rib(No); h = (1 - wB) * h + wB * crest(d2 / Math.max(0.2, fill * ((TAU * r) / No) * cosB * 0.5), prof); }
+            if (wB > 0) { const s2 = No * (th + offT), d2 = Math.abs(s2 - Math.round(s2)) * ((TAU * r) / No) * cosB; h = (1 - wB) * h + wB * crest(d2 / Math.max(0.2, fill * ((TAU * r) / No) * cosB * 0.5), prof); }
           } else {
             s = sig + chA * (1 - 4 * Math.abs(fract(t / chP + 0.25) - 0.5)); d = Math.abs(s - Math.round(s)) * Sc * cosZ;
             g = halfW - d;
@@ -1028,9 +1034,12 @@ function buildSurface(rows, NU, S, mode, opts) {
           // wind ripples: a long gentle rise facing down and a short steep fall facing up, so they print
           const u = TAU * th, v = vArr[j];
           let w = 0;
-          for (const [Nz, wt] of wB > 0 ? [[NN, 1 - wB], [No, wB]] : [[NN, 1]]) {
-            const k = Nz / N;
-            for (const q of warp) w += wt * q.w * Math.sin((k === 1 ? q.a : Math.sign(q.a) * Math.max(1, Math.round(Math.abs(q.a) * k))) * u + q.b * v + q.p);
+          for (let z = 0; z < (wB > 0 ? 2 : 1); z++) {
+            const k = (z ? No : NN) / N, wt = wB > 0 ? (z ? wB : 1 - wB) : 1;
+            for (let qi = 0; qi < warp.length; qi++) {
+              const q = warp[qi];
+              w += wt * q.w * Math.sin((k === 1 ? q.a : Math.sign(q.a) * Math.max(1, Math.round(Math.abs(q.a) * k))) * u + q.b * v + q.p);
+            }
           }
           const ph = fract(rowsN * lt + waveA * w);
           const fall = 0.28;
@@ -1506,7 +1515,7 @@ function buildShell(rows, NU, F, D, t, floor, top, opts = {}) {
     }
   }
 
-  const mesh = new Mesh();
+  const mesh = new Mesh(NC * 2.4, NC * 4.4);
   const mapO = new Int32Array(K).fill(-1), mapI = new Int32Array(K).fill(-1), mapW = new Int32Array(2 * K).fill(-1);
   let px = 0, py = 0, pz = 0;
 
