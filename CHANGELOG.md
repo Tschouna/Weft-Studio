@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.13.0
+
+- **Huge pieces, for a whole wall.** Panels → Shape → Size → **Huge piece** lets a panel run to 8 m either way, so a 6 × 2.5 m wall piece is one design. Sizes go in metres, with quick picks from 2 × 1.2 m to 8 × 3 m (and 2.5 × 6 m standing up).
+  - It slices into as many tiles as it takes (a 6 × 2.5 m piece is about 290 tiles on a 256 mm bed); rows are lettered on past Z (AA, AB…).
+  - Every tile hangs on its own screws and butts up to its neighbours, so the wall goes up a row at a time from the bottom. Switching Huge on sets the mounting to hanging slots and the joint to none; the print check says so if you change them back, and the notes explain how to mark out and hang the wall.
+  - The preview is coarser than on a small panel, so it stays quick to turn and edit; the print files have the full detail.
+  - Export downloads it in parts of a few whole rows each (one button per part, ticked once saved). Each part is a complete kit for its tiles, with the maps, parts list and notes for the whole wall; the loose parts come with part 1.
+  - The print check counts the kilos and spools of filament and the weight on every square metre of wall.
+- Every panel download is now packed as it is made, so a big kit no longer needs twice its size in memory.
+
 ## 2.12.0
 
 - **Moss trays: clean walls.** The beds' walls were drawn as the surface dropping from one grid point to the next, so they came out jagged and streaky. Now every bed has a true flat floor and straight walls that follow its outline exactly, in the preview and in the print, and the moss in the preview fills each bed right to its walls. Tile joints across steep ground also meet more cleanly.

@@ -11,7 +11,9 @@
 //  8. moss trays: every landscape builds closed with its preview moss; each bed has a flat floor the asked
 //     depth below the moss's surface and straight walls all round; the share of moss follows the setting;
 //     a tray too shallow for its moss says so; older moss landscapes open as their new ones
-import { buildPanel, panelDefaults, normalizePanel, planPanel, panelChecks, fitTestPanel, PANEL_PATTERNS, PANEL_PATTERN_ORDER, MOSS_PATTERNS, MOSS_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
+//  9. huge pieces: up to 8 m only when asked for, a coarser preview that stays near its budget, rows lettered
+//     past Z, a 6 x 2.5 m wall builds closed tile by tile, and its print check talks about hanging and weight
+import { buildPanel, panelDefaults, normalizePanel, planPanel, panelChecks, previewRes, fitTestPanel, PANEL_PATTERNS, PANEL_PATTERN_ORDER, MOSS_PATTERNS, MOSS_ORDER, _compile, _tileShape, tabDepth } from '../app/panel.js';
 import { PANEL_PRESETS } from '../app/panels.js';
 import { readDEM, mosaic } from '../app/dem.js';
 import { searchPlaces, listTiles, fetchTerrain, areaRect, tilesFor, lv95ToWgs, wgsToLv95 } from '../app/swisstopo.js';
@@ -395,6 +397,32 @@ for (const k of MOSS_ORDER.filter((q) => MOSS_PATTERNS[q].raw)) {
   console.log(`  ${ok2 ? 'ok  ' : 'FAIL'} moss landscapes and moss trays always go together`);
   if (!ok2) fail('moss normalize');
 }
+}
+
+console.log('9. huge pieces');
+{
+  const small = normalizePanel({ width: 6000, height: 2500 }), big = normalizePanel({ huge: true, width: 6000, height: 2500 }), most = normalizePanel({ huge: true, width: 20000, height: 9000 });
+  const okSize = small.width === 2400 && small.height === 2400 && big.width === 6000 && big.height === 2500 && most.width === 8000 && most.height === 8000;
+  console.log(`  ${okSize ? 'ok  ' : 'FAIL'} sizes: ${small.width} × ${small.height} without Huge, ${big.width} × ${big.height} with it, at most ${most.width} × ${most.height}`);
+  if (!okSize) fail('huge sizes');
+  const res = previewRes(big), samples = (big.width * big.height) / (res * res);
+  const okRes = res > 4 && res < 8 && samples < 500000 && previewRes(normalizePanel({ width: 2400, height: 2400 })) <= 4;
+  console.log(`  ${okRes ? 'ok  ' : 'FAIL'} preview grid ${res.toFixed(1)} mm, ${Math.round(samples / 1000)}k samples`);
+  if (!okRes) fail('huge preview');
+  const tall = planPanel(normalizePanel({ huge: true, width: 600, height: 6000 }), [180, 180]), names = tall.tiles.map((t) => t.label);
+  const okNames = tall.rows > 26 && new Set(names).size === names.length && names.includes('A1') && names.includes('AA1') && names.every((n) => /^[A-Z]+\d+$/.test(n));
+  console.log(`  ${okNames ? 'ok  ' : 'FAIL'} ${tall.rows} rows on a small bed, named A to ${names[0].replace(/\d+$/, '')}, every name different`);
+  if (!okNames) fail('huge row names');
+  const wall = { name: 'Wall', huge: true, width: 6000, height: 2500, pattern: 'dune', scale: 120, depth: 10, mount: 'tape', tiles: { joint: 'dovetail' } };
+  const plan = planPanel(normalizePanel(wall), [256, 256]), live = plan.tiles.filter((t) => !t.empty);
+  // a few tiles at full detail: a corner, the middle and the far corner
+  const pick = [live[0], live[Math.floor(live.length / 2)], live[live.length - 1]];
+  let open = 0;
+  for (const t of pick) { const r = buildPanel(wall, { res: 1.2, bed: [256, 256], final: true, only: [t.index] }); for (const b of r.tiles[0].bodies) open += openEdges(b); }
+  const txt = panelChecks(wall, plan, null).map((c) => c.text).join(' ');
+  const okWall = live.length > 200 && open === 0 && /Tape will not hold/.test(txt) && /lock the tiles together/.test(txt) && /in parts/.test(txt);
+  console.log(`  ${okWall ? 'ok  ' : 'FAIL'} 6 × 2.5 m: ${live.length} tiles, ${pick.map((t) => t.label).join(', ')} closed (${open} open edges); the check asks for screws, no tabs and a download in parts`);
+  if (!okWall) fail('huge wall');
 }
 
 console.log(failures ? `\n${failures} panel check(s) failed` : '\nall panel checks passed');

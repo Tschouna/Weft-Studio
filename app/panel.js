@@ -608,9 +608,13 @@ export const PANEL_SHAPES = {
 };
 
 // ============================================================ the panel
+// the most a huge piece may measure either way (mm)
+export const HUGE_MAX = 8000;
+// rows are lettered A to Z, then AA, AB and on
+const rowName = (k) => (k < 26 ? String.fromCharCode(65 + k) : rowName(Math.floor(k / 26) - 1) + String.fromCharCode(65 + (k % 26)));
 export const PANEL_BASE = {
   kind: 'panel', name: 'Dune',
-  shape: 'rect', width: 480, height: 320, corner: 40,
+  shape: 'rect', width: 480, height: 320, corner: 40, huge: false,
   base: 5, edge: 'frame', edgeW: 16,
   pattern: 'dune', mode: 'relief', depth: 10, scale: 60, angle: 0, vary: 0.4, warp: 0, seed: 7, open: 0.5,
   invert: false, origin: 'centre', morph: 'none', morphDir: 'up', fade: 0, fadeDir: 'top',
@@ -635,7 +639,10 @@ export function normalizePanel(src) {
   if (MOSS_ALIAS[P.pattern]) P.pattern = MOSS_ALIAS[P.pattern];
   if (!PANEL_PATTERNS[P.pattern]) P.pattern = 'dune';
   if (!PANEL_SHAPES[P.shape]) P.shape = 'rect';
-  P.width = clamp(+P.width || 480, 30, 2400); P.height = clamp(+P.height || 320, 30, 2400);
+  // a huge piece (a whole wall) may run to 8 m either way; anything else to 2.4 m
+  P.huge = !!P.huge;
+  const most = P.huge ? HUGE_MAX : 2400;
+  P.width = clamp(+P.width || 480, 30, most); P.height = clamp(+P.height || 320, 30, most);
   const terrain = !!PANEL_PATTERNS[P.pattern]?.terrain;
   P.base = clamp(+P.base || 5, 2.4, 14); P.depth = clamp(+P.depth, 0, terrain ? 400 : P.mode === 'ribs' || P.mode === 'moss' || PANEL_PATTERNS[P.pattern]?.mossy ? 60 : 30); P.scale = clamp(+P.scale || 60, 6, 600);
   if (P.mode === 'ribs') {
@@ -1013,7 +1020,7 @@ export function planPanel(P, bed = [256, 256]) {
     const x0 = xs[c], x1 = xs[c + 1], y0 = ys[r], y1 = ys[r + 1];
     let inside = -1e9;
     for (let j = 0; j <= 12; j++) for (let i = 0; i <= 12; i++) inside = Math.max(inside, outline(lerp(x0, x1, i / 12), lerp(y0, y1, j / 12)));
-    const label = `${String.fromCharCode(65 + (rows - 1 - r))}${c + 1}`;
+    const label = `${rowName(rows - 1 - r)}${c + 1}`;
     tiles.push({ index: tiles.length, c, r, label, x0, x1, y0, y1, empty: inside < 2 });
   }
   const at = (c, r) => tiles[r * cols + c];
@@ -1740,7 +1747,9 @@ export function buildPanel(src, opts = {}) {
 }
 // A grid spacing that keeps the whole panel near the given number of samples.
 export function previewRes(P, budget = 260000) {
-  const r = clamp(Math.sqrt((P.width * P.height) / budget), 0.6, 4);
+  // (a huge piece gets more samples, and coarser ones: it is seen from across the room)
+  if (P.huge && P.width * P.height > 2400 * 2400) budget = Math.max(budget, 420000);
+  const r = clamp(Math.sqrt((P.width * P.height) / budget), 0.6, P.huge ? 16 : 4);
   // ribs and the diffuser's grooves need a few samples across them to keep their walls straight
   if (P.mode === 'ribs' && P.ribs) return Math.max(Math.min(r, Math.min(P.ribs.width, P.ribs.gap) / 2.5), Math.sqrt((P.width * P.height) / 1.1e6));
   if (P.mode === 'relief' && PANEL_PATTERNS[P.pattern]?.blocks) return Math.max(Math.min(r, (P.groove || 2) / 2.2), Math.sqrt((P.width * P.height) / 1.1e6));
@@ -1759,7 +1768,10 @@ export function panelChecks(src, plan, built) {
   if (bed[2] && P.base + P.depth > bed[2] - 2) out.push({ level: 'bad', text: `Tiles stand ${Math.round(P.base + P.depth)} mm tall and the printer builds up to ${bed[2]} mm. Lower Depth to ${Math.floor(bed[2] - 2 - P.base)} mm or less.` });
   else out.push({ level: 'ok', text: `${n} tile${n > 1 ? 's' : ''}, each fits the ${bed[0]} × ${bed[1]} mm bed${plan.rotated ? ' turned a quarter' : ''}.` });
   out.push({ level: 'ok', text: 'No overhangs: every tile prints face up, flat on its back, without supports.' });
-  if (n > 36) out.push({ level: 'warn', text: `${n} tiles make a big download. Draft detail keeps the files smaller, or use a larger printer.` });
+  if (n > 54) out.push({ level: 'ok', text: `${n} tiles come down in parts of a few whole rows each, under Files. Draft detail keeps them quicker and smaller.` });
+  else if (n > 36) out.push({ level: 'warn', text: `${n} tiles make a big download. Draft detail keeps the files smaller, or use a larger printer.` });
+  if (P.huge && !plan.pattern && plan.joint !== 'none') out.push({ level: 'warn', text: `${plan.joint === 'keys' ? 'Keys' : 'Tabs'} lock the tiles together on a table before hanging, which a whole wall cannot be. Choose no joint under Tiles: the tiles butt up to each other and each hangs on its own screws.` });
+  if (P.huge && P.mount !== 'slots') out.push({ level: 'warn', text: P.mount === 'tape' ? 'Tape will not hold a wall this size for long. Choose Hanging slots under Tiles, so every tile hangs on its own screws.' : 'On a wall this size, hang every tile on its own screws: choose Hanging slots under Tiles.' });
   if (P.base < 3) out.push({ level: 'warn', text: `A ${P.base} mm back can bow on a wide tile. 4 mm or more stays flat.` });
   if (P.mode === 'cut') {
     const bw2 = P.pattern === 'reed' || P.pattern === 'bubble' || P.pattern === 'halftone' || P.pattern === 'moroccan' ? null : 2 * Math.max(1.1 / P.scale, 0.035 + 0.15 * (1 - P.open)) * P.scale;
@@ -1790,7 +1802,8 @@ export function panelChecks(src, plan, built) {
   if (P.mount === 'slots' && pd.slot < 3.4) out.push({ level: 'warn', text: `Hanging slots are only ${pd.slot.toFixed(1)} mm deep, so a screw head may hold the panel off the wall. Raise Back thickness.` });
   if (built) {
     const g = built.tiles.reduce((s, t) => s + t.bodies.reduce((q, b) => q + b.grams, 0), 0);
-    if (g > 2000) out.push({ level: 'warn', text: `About ${(g / 1000).toFixed(1)} kg of filament. Check you have enough on the spool, or lower Depth.` });
+    if (g > 20000) out.push({ level: 'warn', text: `About ${Math.round(g / 1000)} kg of filament, ${Math.ceil(g / 1000)} 1 kg spools or so, and about ${(g / 1000 / Math.max(0.01, (P.width * P.height) / 1e6)).toFixed(1)} kg on every square metre of wall. A shallower Depth or a thinner Back makes it lighter.` });
+    else if (g > 2000) out.push({ level: 'warn', text: `About ${(g / 1000).toFixed(1)} kg of filament. Check you have enough on the spool, or lower Depth.` });
   }
   if (pat.image && !src._hasImage) out.push({ level: 'warn', text: 'Pick a picture in Pattern for the relief to follow.' });
   return out;

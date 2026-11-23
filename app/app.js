@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { zipSync, strToU8 } from 'fflate';
+import { zipSync, strToU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 import { generate, swatch, makeProfile, easeProfile, shapeProfile, makeSection, glowTest, GLOW_STEPS, evenStyle, ENGINE_VERSION } from './engine.js';
 import { BASE, OBJECTS, SILHOUETTES, COLLECTION, clone } from './presets.js';
 import { initPanels } from './panels.js';
@@ -3453,7 +3453,7 @@ syncToggles();
 renderCollection();
 renderSaved();
 panels = initPanels({
-  THREE, OrbitControls, RoomEnvironment, zipSync, strToU8, h, store, toast, saveFile, stl, sliderCtl, chipsCtl, switchCtl, group, groupAct,
+  THREE, OrbitControls, RoomEnvironment, zipSync, strToU8, Zip, ZipDeflate, ZipPassThrough, h, store, toast, saveFile, stl, sliderCtl, chipsCtl, switchCtl, group, groupAct,
   FILAMENTS, MATERIALS, PRINTERS, UI, desktop, slug, clamp, copyText, bedMesh, syncUndo,
   getPrinter: () => state.printer,
   setPrinter: (v) => { state.printer = v; store.set('weft.printer', v); if (state.tab === 'export') renderExport(); },

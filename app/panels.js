@@ -2,7 +2,7 @@
 // bed, beside the studio in the same app. The geometry lives in panel.js and builds in panel-worker.js.
 import {
   PANEL_PATTERNS, PANEL_PATTERN_ORDER, PANEL_SHAPES, RIB_FIELDS, MOSS_ORDER, normalizePanel, panelDefaults, planPanel, buildPanel,
-  previewRes, panelChecks, outlinePath, _compile, fitTestPanel,
+  previewRes, panelChecks, outlinePath, _compile, fitTestPanel, HUGE_MAX,
 } from './panel.js';
 import { readDEM, mosaic, DEM_EXTENSIONS } from './dem.js';
 import { searchPlaces, fetchTerrain, areaRect, tilesFor, mapURL, TILE_MB } from './swisstopo.js';
@@ -58,7 +58,7 @@ const STEPS = [
 
 export function initPanels(api) {
   const {
-    THREE, OrbitControls, RoomEnvironment, zipSync, strToU8, h, store, toast, saveFile, stl, sliderCtl, chipsCtl, switchCtl,
+    THREE, OrbitControls, RoomEnvironment, zipSync, strToU8, Zip, ZipDeflate, ZipPassThrough, h, store, toast, saveFile, stl, sliderCtl, chipsCtl, switchCtl,
     group, groupAct, FILAMENTS, MATERIALS, PRINTERS, UI, desktop, slug, clamp, copyText, bedMesh,
   } = api;
   const v2 = UI === 'v2';
@@ -650,7 +650,9 @@ export function initPanels(api) {
     const saved = store.get('weft.panels.saved', []);
     const savedGrid = saved.length ? h('div', { class: 'pn-cards' }, ...saved.map((s, i) => presetCard(s, () => openPanel(s),
       h('button', { class: 'icon-btn pn-del', type: 'button', title: `Delete ${s.name}`, 'aria-label': `Delete ${s.name}`, onclick: () => { const list = store.get('weft.panels.saved', []); list.splice(i, 1); store.set('weft.panels.saved', list); renderPane('shape'); }, html: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>' })))) : null;
-    const sizeMax = 2400;
+    const huge = !!Pn.huge, sizeMax = huge ? HUGE_MAX : 2400;
+    const mf = (v) => (huge ? `${(v / 1000).toFixed(2)} m` : mmf(v));
+    const sizes = huge ? [[2000, 1200], [3000, 2000], [4000, 2500], [6000, 2500], [8000, 3000], [2500, 6000]] : [[300, 300], [400, 300], [600, 400], [800, 500], [1000, 600], [500, 700]];
     return [
       group('Starting panels', 'Each opens in its own size, pattern, colours and edge, ready to slice for your printer.', presets),
       savedGrid ? group('Your panels', 'Saved from the Export step, on this device.', savedGrid) : null,
@@ -658,11 +660,19 @@ export function initPanels(api) {
         chipsCtl('', Object.entries(PANEL_SHAPES).map(([k, l]) => ({ value: k, label: l })), () => Pn.shape, (v) => { Pn.shape = v; if (v === 'oval' && Math.abs(Pn.width - Pn.height) < 60) Pn.height = Pn.width; }, local(true)),
         Pn.shape === 'rounded' ? sliderCtl('pn-corner', 'Corner radius', { min: 4, max: Math.round(Math.min(Pn.width, Pn.height) / 2), step: 1, fmt: mmf }, () => Pn.corner, (v) => { Pn.corner = v; }, local()) : null,
         Pn.shape === 'arch' ? h('p', { class: 'note' }, 'A semicircle on a straight-sided panel, like a doorway or a mirror.') : null),
-      group('Size', 'Up to 2.4 m either way. The panel slices into as many tiles as it needs.',
-        sliderCtl('pn-w', 'Width', { min: 120, max: sizeMax, step: 10, fmt: mmf }, () => Pn.width, (v) => { Pn.width = v; }, local()),
-        sliderCtl('pn-h', 'Height', { min: 120, max: sizeMax, step: 10, fmt: mmf }, () => Pn.height, (v) => { Pn.height = v; }, local()),
-        h('div', { class: 'chips', role: 'group', 'aria-label': 'Common sizes' }, ...[[300, 300], [400, 300], [600, 400], [800, 500], [1000, 600], [500, 700]].map(([w, hh]) =>
-          h('button', { class: 'chip', type: 'button', onclick: () => { Pn.width = w; Pn.height = hh; commit(); rebuild(); renderPane('shape'); } }, `${w} × ${hh}`)))),
+      group('Size', huge ? 'Up to 8 m either way, for a whole wall. It slices into as many tiles as it needs.' : 'Up to 2.4 m either way. The panel slices into as many tiles as it needs.',
+        switchCtl('pn-huge', 'Huge piece, up to 8 m', () => huge, (v) => {
+          Pn.huge = v;
+          if (!v) { Pn.width = Math.min(Pn.width, 2400); Pn.height = Math.min(Pn.height, 2400); }
+          // a whole wall goes up a tile at a time: every tile hangs on its own screws, and butts up to the next
+          // (tabs and keys lock tiles together on a table first, which a wall this size cannot be)
+          else { Pn.mount = 'slots'; if (Pn.tiles.joint !== 'none') Pn.tiles.joint = 'none'; }
+        }, local(true)),
+        sliderCtl('pn-w', 'Width', { min: 120, max: sizeMax, step: huge ? 50 : 10, fmt: mf }, () => Pn.width, (v) => { Pn.width = v; }, local()),
+        sliderCtl('pn-h', 'Height', { min: 120, max: sizeMax, step: huge ? 50 : 10, fmt: mf }, () => Pn.height, (v) => { Pn.height = v; }, local()),
+        h('div', { class: 'chips', role: 'group', 'aria-label': 'Common sizes' }, ...sizes.map(([w, hh]) =>
+          h('button', { class: 'chip', type: 'button', onclick: () => { Pn.width = w; Pn.height = hh; commit(); rebuild(); renderPane('shape'); } }, huge ? `${w / 1000} × ${hh / 1000} m` : `${w} × ${hh}`))),
+        huge ? h('p', { class: 'note' }, 'A whole wall is hundreds of tiles and tens of kilos of filament: the readout below keeps count. Every tile hangs on its own screws, so the piece goes up a row at a time from the bottom, and Export downloads it in parts, a few rows each. The preview is coarser than the print; the files have the full detail.') : null),
       group('Edge', 'How the pattern meets the outside of the panel.',
         chipsCtl('', [{ value: 'frame', label: 'Frame', title: 'A flat raised border round the pattern' }, { value: 'bevel', label: 'Bevel', title: 'The relief is cut back at 45° to the edge' }, { value: 'fade', label: 'Fade', title: 'The relief eases out towards the edge' }, { value: 'flush', label: 'Flush', title: 'The pattern runs right to the edge' }], () => Pn.edge, (v) => { Pn.edge = v; }, local(true)),
         Pn.edge === 'frame' || Pn.edge === 'fade' ? sliderCtl('pn-ew', Pn.edge === 'frame' ? 'Frame width' : 'Fade width', { min: 4, max: Pn.edge === 'fade' ? 120 : 60, step: 1, fmt: mmf }, () => Pn.edgeW, (v) => { Pn.edgeW = v; }, local()) : null),
@@ -813,7 +823,7 @@ export function initPanels(api) {
       const relief = (m.zmax - m.zmin) * perM, ratio = Math.round(1000 / perM);
       out.push(h('p', { class: 'note pn-terrain-note' }, terrainNote()));
       out.push(h('div', { class: 'btn-row' },
-        h('button', { class: 'btn', type: 'button', title: 'Keep the width and set the height so the whole map fits with nothing cut off', onclick: () => { Pn.height = clamp(Math.round((Pn.width * m.heightM) / m.widthM), 80, 2400); commit(); rebuild(); renderAll(); } }, 'Shape the panel like the map'),
+        h('button', { class: 'btn', type: 'button', title: 'Keep the width and set the height so the whole map fits with nothing cut off', onclick: () => { Pn.height = clamp(Math.round((Pn.width * m.heightM) / m.widthM), 80, Pn.huge ? HUGE_MAX : 2400); commit(); rebuild(); renderAll(); } }, 'Shape the panel like the map'),
         h('button', { class: 'btn', type: 'button', title: 'Depth at the true scale of the map, as far as the printer is tall', onclick: () => {
           const want = +relief.toFixed(1), most = maxDepth();
           Pn.depth = clamp(want, 0.5, most); commit(); rebuild(); renderPane('pattern');
@@ -1152,7 +1162,15 @@ export function initPanels(api) {
     });
     for (const p of res.parts) rows.push(h('tr', {}, h('td', {}, `${p.label} × ${p.count}`), h('td', { class: 'mono' }, `${p.size[0]} × ${p.size[1]} × ${p.size[2].toFixed(1)}`), h('td', { class: 'mono' }, `${Math.round(p.mesh.grams * p.count)} g`)));
     const total = res.tiles.reduce((s, t) => s + t.bodies.reduce((q, b) => q + b.grams, 0), 0) + res.parts.reduce((s, p) => s + p.mesh.grams * p.count, 0);
-    el.dl = h('button', { class: 'btn primary', type: 'button', onclick: exportFiles }, svgIcon('<path d="M10 3v10M6 9l4 4 4-4"/><path d="M3.5 14.5v2h13v-2"/>', 20), h('span', {}, 'Download print files'));
+    const dlIcon = () => svgIcon('<path d="M10 3v10M6 9l4 4 4-4"/><path d="M3.5 14.5v2h13v-2"/>', 20);
+    el.dl = h('button', { class: 'btn primary', type: 'button', onclick: () => exportFiles(0) }, dlIcon(), h('span', {}, 'Download print files'));
+    // a piece with many tiles downloads in parts of whole rows
+    const batches = exportBatches(res.plan), key = JSON.stringify(normalizePanel(Pn));
+    const partBtns = batches.length > 1 ? batches.map((b, k) => {
+      const done = ps.done?.has(`${key}#${k}`);
+      const btn = h('button', { class: `btn${done ? '' : ' primary'}`, type: 'button', onclick: () => exportFiles(k, btn) }, dlIcon(), h('span', {}, `Part ${k + 1}: ${batchName(b)}, ${b.tiles.length} tiles${done ? ' ✓' : ''}`));
+      return btn;
+    }) : null;
     return [
       group('Print check', null, h('ul', { class: 'checks' }, ...checks.map((c) => h('li', { class: c.level === 'ok' ? '' : c.level }, c.text)))),
       group('Parts', `About ${total > 1000 ? `${(total / 1000).toFixed(2)} kg` : `${Math.round(total)} g`} of PLA in all, at 15% infill.`,
@@ -1160,7 +1178,8 @@ export function initPanels(api) {
       group('Files', null,
         chipsCtl('Mesh detail', Object.entries(DETAIL).map(([k, d]) => ({ value: k, label: d.label, title: `${d.res} mm grid: ${d.note}` })), () => ps.detail, (v) => { ps.detail = v; store.set('weft.panel.detail', v); }, { local: true }),
         chipsCtl('Format', [{ value: 'kit', label: 'Complete kit', title: 'A 3MF and an STL for every tile, plus the maps and parts list' }, { value: 'tiles', label: 'A 3MF per tile', title: 'Each tile opens on its own plate, ready to print' }, { value: 'one', label: 'One 3MF', title: 'Every tile in one project, for a MakerWorld listing' }, { value: 'stl', label: 'STL per tile', title: 'For any slicer' }], () => ps.format, (v) => { ps.format = v; store.set('weft.panel.format', v); }, { local: true }),
-        h('div', { class: 'btn-row' }, el.dl),
+        partBtns ? h('p', { class: 'note' }, `${res.tiles.length} tiles is too much for one download, so it comes in ${batches.length} parts of whole rows. Each is a complete kit for its tiles, with the maps and parts list for the whole piece.${ps.format === 'kit' ? ' A 3MF per tile makes each part about half the size.' : ''}`) : null,
+        partBtns ? h('div', { class: 'btn-col' }, ...partBtns) : h('div', { class: 'btn-row' }, el.dl),
         h('p', { class: 'note' }, 'Every download is a production kit: the tiles and loose parts, an assembly map, a 1:1 wall template, a parts list and print settings. Tiles print face up with no supports.')),
       group('Keep it', null,
         h('div', { class: 'btn-row' },
@@ -1383,13 +1402,14 @@ export function initPanels(api) {
     for (const p of parts) lines.push(`${p.label},${p.count},${p.size[0]},${p.size[1]},${p.size[2].toFixed(1)},${Math.round(p.mesh.grams)},${name}-${p.key}`);
     return lines.join('\n') + '\n';
   }
-  function settingsText(Pn, plan, built, parts, name, zc) {
+  function settingsText(Pn, plan, built, parts, name, zc, part = null) {
     const grid = [];
     for (let r = plan.rows - 1; r >= 0; r--) grid.push('   ' + plan.tiles.filter((t) => t.r === r).map((t) => (t.empty ? '  ' : t.label).padEnd(4)).join(''));
     const F = Pn.finish, g = built.reduce((s, t) => s + t.grams, 0);
     const lines = [
       `${Pn.name} · ${PANEL_SHAPES[Pn.shape]} ${Pn.mode === 'moss' ? 'moss tray' : 'wall panel'}, ${Math.round(Pn.width)} × ${Math.round(Pn.height)} mm, ${PANEL_PATTERNS[Pn.pattern].label}${Pn.mode === 'moss' ? '' : Pn.mode === 'cut' ? ' openwork' : ' relief'}`,
       `Made with Weft Studio. ${built.length} tiles, about ${g > 1000 ? `${(g / 1000).toFixed(2)} kg` : `${Math.round(g)} g`} of filament.`,
+      ...(part ? ['', `This download is part ${part.k + 1} of ${part.n}: ${part.what}, ${part.count} tiles. Download every part. The maps, the parts list and these notes cover the whole piece in each part; the loose parts (keys, pucks) come with part 1.`] : []),
       '', 'Tiles, seen from the front', ...grid,
       '', 'Each tile has its name and an arrow pointing up engraved in its back. assembly-map.svg shows every tile in place with its size, wall-template.svg is the same at actual size, and parts-list.csv lists every part.',
       '', 'Printing',
@@ -1417,14 +1437,48 @@ export function initPanels(api) {
     lines.push('', 'Hanging', {
       tape: '• Picture-hanging strips or foam tape on the back of every tile. Hang from the top row down.',
       magnets: '• Glue a 10 × 3 mm neodymium magnet into each pocket (check the polarity matches). Screw a steel washer to the wall behind each one: wall-template.svg shows where, at actual size.',
-      slots: '• Each tile hangs on screws standing 4 mm off the wall. wall-template.svg prints at actual size: tape it to the wall and drill through the red dots.',
+      slots: Pn.huge
+        ? '• Each tile hangs on its own screws, standing 4 mm off the wall. Mark the wall from wall-template.svg (it is at actual size: print it in strips on a plotter, or measure the red dots off it), check the rows with a level, and hang from the bottom row up so each row rests on the one below. A wall this size wants plugs that suit it, two screws a tile.'
+        : '• Each tile hangs on screws standing 4 mm off the wall. wall-template.svg prints at actual size: tape it to the wall and drill through the red dots.',
       halo: `• Press a stand-off puck into each pocket (${parts.find((p) => p.key === 'puck')?.count || 0} pucks, parts file), then stick the pucks to the wall with mounting tape. Run a 5 V or 12 V LED strip round the back, about 2 cm in from the edge, facing the wall.`,
     }[Pn.mount]);
     lines.push('', 'Design code (paste into Weft Panels to edit):', JSON.stringify(Pn));
     return lines.join('\n');
   }
-  async function exportFiles() {
-    const btn = el.dl;
+  // A zip written as it goes: each file is packed the moment it is made, so a big kit never sits in memory
+  // twice. (Without the streaming parts, it falls back to packing everything at the end.)
+  function zipWriter() {
+    if (!Zip) { const files = {}; return { add: (n, d, level = 6) => { files[n] = [d, { level }]; }, blob: () => new Blob([zipSync(files)], { type: 'application/zip' }) }; }
+    const chunks = [];
+    let err = null;
+    const zip = new Zip((e, data) => { if (e) err = e; else chunks.push(data); });
+    return {
+      add(n, d, level = 6) { const f = level ? new ZipDeflate(n, { level }) : new ZipPassThrough(n); zip.add(f); f.push(d, true); },
+      blob() { zip.end(); if (err) throw err; return new Blob(chunks, { type: 'application/zip' }); },
+    };
+  }
+  // A piece with many tiles downloads in parts of whole rows, top row first, each a complete kit for its
+  // tiles (the maps, parts list and settings come with every part; the loose parts with the first).
+  const BATCH = { draft: 36, standard: 24, fine: 16 };
+  function exportBatches(plan) {
+    const per = BATCH[ps.detail] || 24, live = plan.tiles.filter((t) => !t.empty);
+    if (live.length <= per * 1.5) return [{ tiles: live, rows: null }];
+    const out = [];
+    let cur = [], first = null, last = null;
+    for (let r = plan.rows - 1; r >= 0; r--) {
+      const row = live.filter((t) => t.r === r);
+      if (!row.length) continue;
+      if (cur.length && cur.length + row.length > per) { out.push({ tiles: cur, rows: [first, last] }); cur = []; first = null; }
+      cur = cur.concat(row);
+      const nm = row[0].label.replace(/\d+$/, '');
+      if (first === null) first = nm;
+      last = nm;
+    }
+    if (cur.length) out.push({ tiles: cur, rows: [first, last] });
+    return out;
+  }
+  const batchName = (b) => (b.rows ? (b.rows[0] === b.rows[1] ? `row ${b.rows[0]}` : `rows ${b.rows[0]} to ${b.rows[1]}`) : 'all tiles');
+  async function exportFiles(which = 0, btn = el.dl) {
     const label = btn?.lastChild?.textContent;
     const say = (t) => { if (btn) btn.lastChild.textContent = t; };
     if (btn) btn.disabled = true;
@@ -1433,11 +1487,12 @@ export function initPanels(api) {
     try {
       say('Planning…');
       const head = await builder.run(Pn, { res, bed: bd, final: true, only: [], parts: true, img: imgOpt(), dem: demOpt() });
-      const plan = head.plan, parts = head.parts, files = {};
+      const plan = head.plan, batches = exportBatches(plan), batch = batches[Math.min(which, batches.length - 1)];
+      const parts = which === 0 ? head.parts : [], zip = zipWriter();
       const fils = [F.color.toLowerCase()];
       if (F.twoTone && !fils.includes(F.color2.toLowerCase())) fils.push(F.color2.toLowerCase());
       const tiles = [], objs = [];
-      const live = plan.tiles.filter((t) => !t.empty);
+      const live = batch.tiles;
       const cols = Math.ceil(Math.sqrt(live.length)), stride = [bd[0] + 30, bd[1] + 30];
       for (const [k, tile] of live.entries()) {
         say(`Tile ${tile.label} (${k + 1} of ${live.length})…`);
@@ -1446,33 +1501,44 @@ export function initPanels(api) {
         if (!t) continue;
         const bb = t.bodies.reduce((q, b) => [Math.min(q[0], b.bbox[0]), Math.min(q[1], b.bbox[1]), Math.max(q[2], b.bbox[3]), Math.max(q[3], b.bbox[4]), Math.max(q[4], b.bbox[5])], [1e9, 1e9, -1e9, -1e9, 0]);
         tiles.push({ label: t.label, cell: t.cell, pockets: t.pockets, grams: t.bodies.reduce((s, b) => s + b.grams, 0), size: [bb[2] - bb[0], bb[3] - bb[1], bb[4]] });
-        if (ps.format === 'tiles' || ps.format === 'kit') files[`3mf/${name}-${t.label}.3mf`] = [threeMF([tileObject(t, fils, F, plan.rotated, [bd[0] / 2, bd[1] / 2], Pn.name)], fils, `${Pn.name} ${t.label}`), { level: 0 }];
+        if (ps.format === 'tiles' || ps.format === 'kit') zip.add(`3mf/${name}-${t.label}.3mf`, threeMF([tileObject(t, fils, F, plan.rotated, [bd[0] / 2, bd[1] / 2], Pn.name)], fils, `${Pn.name} ${t.label}`), 0);
         if (ps.format === 'one') objs.push(tileObject(t, fils, F, plan.rotated, [(k % cols) * stride[0] + bd[0] / 2, -Math.floor(k / cols) * stride[1] + bd[1] / 2], Pn.name));
         if (ps.format === 'stl' || ps.format === 'kit') {
           for (const b of t.bodies) {
             const m = plateMesh(b, plan.rotated);
-            files[`stl/${name}-${t.label}${F.twoTone ? (b.tone ? '-tips' : '-base') : ''}.stl`] = stl({ pos: m.pos, idx: m.idx }, `${Pn.name} ${t.label}`);
+            zip.add(`stl/${name}-${t.label}${F.twoTone ? (b.tone ? '-tips' : '-base') : ''}.stl`, stl({ pos: m.pos, idx: m.idx }, `${Pn.name} ${t.label}`));
           }
         }
         await new Promise((r) => setTimeout(r, 0));
       }
-      if (ps.format === 'one') files[`${name}.3mf`] = [threeMF(objs.concat(parts.length ? partsObjects(parts, bd).map((o) => ({ ...o, at: [o.at[0] + (live.length % cols) * stride[0], o.at[1] - Math.floor(live.length / cols) * stride[1]] })) : []), fils, Pn.name), { level: 0 }];
+      if (ps.format === 'one') zip.add(`${name}.3mf`, threeMF(objs.concat(parts.length ? partsObjects(parts, bd).map((o) => ({ ...o, at: [o.at[0] + (live.length % cols) * stride[0], o.at[1] - Math.floor(live.length / cols) * stride[1]] })) : []), fils, Pn.name), 0);
       if (parts.length && ps.format !== 'one') {
-        if (ps.format === 'stl' || ps.format === 'kit') for (const p of parts) { const m = plateMesh(p.mesh, false); centreAll([m]); files[`stl/${name}-${p.key}.stl`] = stl({ pos: m.pos, idx: m.idx }, `${Pn.name} ${p.label}`); }
-        if (ps.format !== 'stl') files[`3mf/${name}-parts.3mf`] = [threeMF(partsObjects(parts, bd), [F.color.toLowerCase()], `${Pn.name} parts`), { level: 0 }];
+        if (ps.format === 'stl' || ps.format === 'kit') for (const p of parts) { const m = plateMesh(p.mesh, false); centreAll([m]); zip.add(`stl/${name}-${p.key}.stl`, stl({ pos: m.pos, idx: m.idx }, `${Pn.name} ${p.label}`)); }
+        if (ps.format !== 'stl') zip.add(`3mf/${name}-parts.3mf`, threeMF(partsObjects(parts, bd), [F.color.toLowerCase()], `${Pn.name} parts`), 0);
       }
       say('Packing files…');
-      files['wall-template.svg'] = strToU8(mapSVG(Pn, plan, tiles));
-      files['assembly-map.svg'] = strToU8(assemblySVG(Pn, plan, tiles, parts));
-      files['parts-list.csv'] = strToU8(partsCSV(Pn, tiles, parts, name));
-      files['print-settings.txt'] = strToU8(settingsText(Pn, plan, tiles, parts, name, head.info.zc));
-      const zip = zipSync(files, { level: 6 });
-      await saveFile(`${name}-panel-files.zip`, new Blob([zip], { type: 'application/zip' }));
+      // (the maps and lists cover the whole piece, from the preview's tiles, so every part carries them)
+      const all = batches.length > 1 ? wholeTiles() : tiles;
+      zip.add('wall-template.svg', strToU8(mapSVG(Pn, plan, all)));
+      zip.add('assembly-map.svg', strToU8(assemblySVG(Pn, plan, all, head.parts)));
+      zip.add('parts-list.csv', strToU8(partsCSV(Pn, all, head.parts, name)));
+      zip.add('print-settings.txt', strToU8(settingsText(Pn, plan, all, head.parts, name, head.info.zc, batches.length > 1 ? { n: batches.length, k: which, what: batchName(batch), count: live.length } : null)));
+      const part = batches.length > 1 ? `-part-${which + 1}-of-${batches.length}` : '';
+      await saveFile(`${name}-panel-files${part}.zip`, zip.blob());
+      if (batches.length > 1) { ps.done = ps.done || new Set(); ps.done.add(`${JSON.stringify(Pn)}#${which}`); renderPane('export'); }
     } catch (e) {
       console.error(e);
       toast('Export failed. Try Draft detail or fewer tiles.');
     }
     if (btn) { btn.disabled = false; say(label); }
+  }
+  // every tile of the piece as the preview has it: where it goes, its size and weight
+  function wholeTiles() {
+    const res = ps.res;
+    return (res?.tiles || []).map((t) => {
+      const bb = t.bodies.reduce((q, b) => [Math.min(q[0], b.bbox[0]), Math.min(q[1], b.bbox[1]), Math.max(q[2], b.bbox[3]), Math.max(q[3], b.bbox[4]), Math.max(q[4], b.bbox[5])], [1e9, 1e9, -1e9, -1e9, 0]);
+      return { label: t.label, cell: t.cell, pockets: t.pockets, grams: t.bodies.reduce((s, b) => s + b.grams, 0), size: [bb[2] - bb[0], bb[3] - bb[1], bb[4]] };
+    });
   }
   // two small pieces with one joint, to dial in the clearance before printing the panel
   async function fitTest() {
